@@ -73,6 +73,19 @@ class IODevice:
         self.make_raw_output()
         
 class Output:
+    description = 'generic output'
+    # overridden by subclasses, for example {1:'open', 0:'closed'}
+    allowed_states = {}
+    
+    def instruction_to_string(self,instruction):
+        """gets a human readable description of an instruction"""
+        if isinstance(instruction,dict):
+            return instruction['description']
+        elif allowed_states:
+            return allowed_states[instruction]
+        else:
+            return str(instruction)
+    
     def __init__(self,name,IO_device,outputnumber):
         self.name = name
         self.instructions = {}
@@ -81,7 +94,9 @@ class Output:
     def add_instruction(self,time,instruction):
         #Check that this doesn't collide with previous instructions:
         if time in self.instructions.keys():
-            print self.instructions[time] #...etc  TODO
+            print 'WARNING: State of', self.description, self.name, 'at t=%ss'%str(time),
+            print 'has already been set to %s.'%self.instruction_to_string(self.instructions[t]),
+            print 'Overwriting to %s.\n'%self.self.instruction_to_string(instruction)
         self.instructions[time] = instruction
         
     def perform_checks(self):
@@ -146,30 +161,7 @@ def discretise(t,y):
     ynew= ynew.flatten()[:-1]
     return tnew, ynew
 
-    
-def main():
-    import time
-    start_time = time.time()
-    
-    device1 = IODevice('device 1')
-
-    output1 = Output('output 1',device1,1)
-    output2 = Output('output 2',device1,2)
-    output3 = Output('output 3',device1,3)
-
-    output1.add_instruction(0,2)
-    output1.add_instruction(1, {'function': ramp(1,2,2,3), 'end time' : 3, 'clock rate': 5})
-    #output1.add_instruction(3,3)
-
-    output2.add_instruction(0,3)
-    output2.add_instruction(2, {'function': ramp(2,3,3,4), 'end time' : 5, 'clock rate': 10})
-    output2.add_instruction(6.15,5)
-    output2.add_instruction(7,4)
-    output2.add_instruction(8,5)
-    output3.add_instruction(0, {'function': sine(0,1), 'end time' : 10, 'clock rate': 3})
-
-    device1.make_instruction_table()
-    print time.time() - start_time
+def plot_all():
     colours = ['r','b','g']
     for i, output in enumerate(device1.outputs):
         t,y = discretise(device1.flat_times,output.raw_output)
@@ -182,6 +174,30 @@ def main():
     axis([0,10,-1,5.5])
     show()
     
+def main():
+    import time
+    start_time = time.time()
+    
+    device1 = IODevice('device 1')
+
+    output1 = Output('output 1',device1,1)
+    output2 = Output('output 2',device1,2)
+    output3 = Output('output 3',device1,3)
+
+    output1.add_instruction(0,2)
+    output1.add_instruction(1, {'function': ramp(1,2,2,3), 'end time' : 3, 'clock rate': 5000000})
+    #output1.add_instruction(3,3)
+
+    output2.add_instruction(0,3)
+    output2.add_instruction(2, {'function': ramp(2,3,3,4), 'end time' : 5, 'clock rate': 10000000})
+    output2.add_instruction(6.15,5)
+    output2.add_instruction(7,4)
+    output2.add_instruction(8,5)
+    output3.add_instruction(0, {'function': sine(0,1), 'end time' : 10, 'clock rate': 3000000})
+
+    device1.make_instruction_table()
+    print time.time() - start_time
+    #plot_all()
 
 
 
