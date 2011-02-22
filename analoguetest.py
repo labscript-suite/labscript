@@ -79,22 +79,28 @@ class Output:
         IO_device.outputs.append(self)
         
     def add_instruction(self,time,instruction):
+        #Check that this doesn't collide with previous instructions:
+        if time in self.instructions.keys():
+            print self.instructions[time] #...etc  TODO
         self.instructions[time] = instruction
- 
-    def make_times(self):
+        
+    def perform_checks(self):
+        # Check if there are no instructions. Generate a warning and insert an
+        # instruction telling the output to remain at zero.
+        if not self.instructions:
+            print 'WARNING:', self.name, 'has no instructions. It will be set to zero for all time.'
+            self.add_instruction(0,0)    
         # Check that ramps have instructions following them.
         # If they don't, insert an instruction telling them to hold their final value.
         for instruction in self.instructions.values():
             if isinstance(instruction, dict) and instruction['end time'] not in self.instructions.keys():
                 self.add_instruction(instruction['end time'], instruction['function'](instruction['end time']))
-        # Check if there are no instructions. Generate a warning and insert an
-        # instruction telling the output to remain at zero.
-        if not self.instructions:
-            print 'WARNING:', self.name, 'has no instructions. It will be set to output zero for all time.'
-            self.add_instruction(0,0)
+            
+    def make_times(self):
+        self.perform_checks()
         self.times = self.instructions.keys()
         self.times.sort()
-        
+            
     def make_timeseries(self,change_times):
         self.timeseries = []
         i = 0
@@ -104,7 +110,10 @@ class Output:
                     while change_time >= self.times[i]:
                         i += 1
             except IndexError:
-                pass    
+                # We allow the index to go one higher, since we index self.times[i-1] below.  
+                # Raise the error otherwise.
+                if not i == len(self.times):
+                    raise
             instruction = self.instructions[self.times[i-1]]
             if isinstance(instruction, dict) and instruction['end time'] <= change_time:
                 print 'detected that a ramp has ended!' 
@@ -123,6 +132,20 @@ class Output:
             else:
                 self.outputarray.append(self.timeseries[i])
     
+
+def discretise(t,y):
+    tnew = zeros((len(t),2))
+    ynew = zeros((len(y),2))
+
+    tnew[:,0] = t[:]
+    tnew[:-1,1] = t[1:]
+    tnew= tnew.flatten()[:-1]
+
+    ynew[:,0] = y[:]
+    ynew[:,1] = y[:]
+    ynew= ynew.flatten()[:-1]
+    return tnew, ynew
+
     
 def main():
     import time
@@ -140,17 +163,17 @@ def main():
 
     output2.add_instruction(0,3)
     output2.add_instruction(2, {'function': ramp(2,3,3,4), 'end time' : 5, 'clock rate': 10})
-    output2.add_instruction(5,4)
-    output2.add_instruction(6,5)
+    output2.add_instruction(6.15,5)
     output2.add_instruction(7,4)
     output2.add_instruction(8,5)
-    
+    output3.add_instruction(0, {'function': sine(0,1), 'end time' : 10, 'clock rate': 3})
 
     device1.make_instruction_table()
     print time.time() - start_time
-    pointstrings = ['ro-','bo-','go-']
+    colours = ['r','b','g']
     for i, output in enumerate(device1.outputs):
-        plot(device1.flat_times,output.raw_output,pointstrings[i],label=output.name)
+        t,y = discretise(device1.flat_times,output.raw_output)
+        plot(t,y,colours[i]+'-',label=output.name)
     grid(True)
     xlabel('time (seconds)')
     ylabel('analogue output values')
@@ -158,7 +181,7 @@ def main():
     legend(loc='lower right')
     axis([0,10,-1,5.5])
     show()
-#    
+    
 
 
 
