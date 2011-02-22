@@ -82,6 +82,16 @@ class Output:
         self.instructions[time] = instruction
  
     def make_times(self):
+        # Check that ramps have instructions following them.
+        # If they don't, insert an instruction telling them to hold their final value.
+        for instruction in self.instructions.values():
+            if isinstance(instruction, dict) and instruction['end time'] not in self.instructions.keys():
+                self.add_instruction(instruction['end time'], instruction['function'](instruction['end time']))
+        # Check if there are no instructions. Generate a warning and insert an
+        # instruction telling the output to remain at zero.
+        if not self.instructions:
+            print 'WARNING:', self.name, 'has no instructions. It will be set to output zero for all time.'
+            self.add_instruction(0,0)
         self.times = self.instructions.keys()
         self.times.sort()
         
@@ -95,7 +105,11 @@ class Output:
                         i += 1
             except IndexError:
                 pass    
-            self.timeseries.append(self.instructions[self.times[i-1]])     
+            instruction = self.instructions[self.times[i-1]]
+            if isinstance(instruction, dict) and instruction['end time'] <= change_time:
+                print 'detected that a ramp has ended!' 
+                instruction = instruction['function'](instruction['end time'])
+            self.timeseries.append(instruction)     
     
     def make_outputarray(self,all_times):
         self.outputarray = []
@@ -118,13 +132,14 @@ def main():
 
     output1 = Output('output 1',device1,1)
     output2 = Output('output 2',device1,2)
+    output3 = Output('output 3',device1,3)
 
     output1.add_instruction(0,2)
-    output1.add_instruction(1, {'function': ramp(1,2,2,3), 'clock rate': 10})
-    output1.add_instruction(3,3)
+    output1.add_instruction(1, {'function': ramp(1,2,2,3), 'end time' : 3, 'clock rate': 5})
+    #output1.add_instruction(3,3)
 
     output2.add_instruction(0,3)
-    output2.add_instruction(2, {'function': ramp(2,3,3,4), 'clock rate': 20})
+    output2.add_instruction(2, {'function': ramp(2,3,3,4), 'end time' : 5, 'clock rate': 10})
     output2.add_instruction(5,4)
     output2.add_instruction(6,5)
     output2.add_instruction(7,4)
