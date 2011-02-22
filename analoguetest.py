@@ -33,8 +33,8 @@ class IODevice:
             maxrate = 0
             for output in self.outputs:
                 # check if output is sweeping and has highest clock rate so far:
-                if isinstance(output.timeseries[i],list) and output.timeseries[i][1] > maxrate:
-                    maxrate = output.timeseries[i][1]
+                if isinstance(output.timeseries[i],dict) and output.timeseries[i]['clock rate'] > maxrate:
+                    maxrate = output.timeseries[i]['clock rate']
             if maxrate:
                 # If there was sweeping at this timestep, store an array of times at the max clock rate:
                 n_ticks = int((self.change_times[i+1] - time)*maxrate)
@@ -101,8 +101,8 @@ class Output:
         self.outputarray = []
         for i, time in enumerate(all_times):
             if iterable(time):
-                if iterable(self.timeseries[i]):
-                    outarray = self.timeseries[i][0](time)
+                if isinstance(self.timeseries[i],dict):
+                    outarray = self.timeseries[i]['function'](time)
                 else:
                     outarray = self.timeseries[i]*ones(len(time))
                 self.outputarray.append(outarray)
@@ -120,11 +120,11 @@ def main():
     output2 = Output('output 2',device1,2)
 
     output1.add_instruction(0,2)
-    output1.add_instruction(1, [ramp(1,2,2,3), 10])
+    output1.add_instruction(1, {'function': ramp(1,2,2,3), 'clock rate': 10})
     output1.add_instruction(3,3)
 
     output2.add_instruction(0,3)
-    output2.add_instruction(2, [ramp(2,3,3,4), 20])
+    output2.add_instruction(2, {'function': ramp(2,3,3,4), 'clock rate': 20})
     output2.add_instruction(5,4)
     output2.add_instruction(6,5)
     output2.add_instruction(7,4)
