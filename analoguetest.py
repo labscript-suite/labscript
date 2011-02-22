@@ -1,13 +1,17 @@
 from pylab import *
 
-def ramp(starttime,startvalue,duration,endvalue):
-    m = (endvalue - startvalue)/float(duration) # be sure to prevent integer division!
-    c = startvalue - m*starttime
-    return lambda t: m*t + c
+def ramp(t,initial,duration,final):
+    m = (final - initial)/float(duration) # be sure to prevent integer division!
+    c = initial - m*t
+    return lambda x: m*x + c
+
+def sine(t,frequency):
+    return lambda x: sin(x) + 0.5
 
 class IODevice:
-    def __init__(self):
+    def __init__(self,name):
         self.outputs = []
+        self.name = name
         
     def collect_change_times(self):
         # use a set to avoid duplicates:
@@ -60,9 +64,6 @@ class IODevice:
         self.flat_times = self.flatten(self.all_times,total_points)
         for output in self.outputs:
             output.raw_output = self.flatten(output.outputarray,total_points)
-        for output in self.outputs:
-            plot(self.flat_times,output.raw_output,'ro')
-        show()
         
     def make_instruction_table(self):
         self.collect_change_times()
@@ -108,97 +109,42 @@ class Output:
             else:
                 self.outputarray.append(self.timeseries[i])
     
-    def make_raw_output(self,total_points):
-        raw_output = zeros(total_points)
-        i = 0
-        for outvalue in self.outputarray:
-            if iterable(outvalue):
-                raw_output[i:i+len(outvalue)] = outvalue[:]
-                i += len(outvalue)
-            else:
-                raw_output[i] = outvalue
-                i += 1
-        print raw_output
     
 def main():
-    device1 = IODevice()
+    import time
+    start_time = time.time()
+    
+    device1 = IODevice('device 1')
 
-    output1 = Output('output1',device1,1)
-    output2 = Output('output2',device1,2)
+    output1 = Output('output 1',device1,1)
+    output2 = Output('output 2',device1,2)
 
     output1.add_instruction(0,2)
-    output1.add_instruction(1,[ramp(1,2,2,3),10])
+    output1.add_instruction(1, [ramp(1,2,2,3), 10])
     output1.add_instruction(3,3)
 
     output2.add_instruction(0,3)
-    output2.add_instruction(2,[ramp(2,3,2,4),20])
+    output2.add_instruction(2, [ramp(2,3,3,4), 20])
     output2.add_instruction(5,4)
-    output2.add_instruction(3,3.5)
-    output2.add_instruction(4,4)
-    output2.add_instruction(5,3.5)
-    output2.add_instruction(6,4)
-    output2.add_instruction(7,3.5)
+    output2.add_instruction(6,5)
+    output2.add_instruction(7,4)
+    output2.add_instruction(8,5)
+    
 
     device1.make_instruction_table()
-
+    print time.time() - start_time
+    pointstrings = ['ro-','bo-','go-']
+    for i, output in enumerate(device1.outputs):
+        plot(device1.flat_times,output.raw_output,pointstrings[i],label=output.name)
+    grid(True)
+    xlabel('time (seconds)')
+    ylabel('analogue output values')
+    title('Putting analogue outputs on a common clock')
+    legend(loc='lower right')
+    axis([0,10,-1,5.5])
+    show()
+#    
 
 
 
 main()
-
-
-
-
-
-#class Test:
-#    def make_timeseries(self,change_times):
-#        self.timeseries = []
-#        i = 0
-#        for change_time in change_times:
-#            if i < len(self.times) - 1:
-#                while change_time >= self.times[i]:
-#                    i += 1
-#            self.timeseries.append(self.instructions[self.times[i-1]])     
-#        print self.timeseries
-# 
-#test = Test()       
-#change_times = [1,2,3,4,5,6,7,8,9]
-#test.times = [1,3,5,7]
-#test.instructions = {1:'one',3:'three',5:'five',7:'seven'}
-#test.timeseries = []
-#test.make_timeseries(change_times)
-
-#i = 0
-#for change_time in change_times:
-#    print i
-#    print times[i]
-#    if i < len(times)-1:
-#        while change_time >= times[i]:
-#            i += 1
-#    timeseries.append(instructions[times[i-1]])    
-#    print timeseries
-        
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
-        
-#from pylab import *
-#myramp = ramp(starttime=1,startvalue=2,duration=3,endvalue=4)
-#t = linspace(1,4,100)
-#plot(t,myramp(t))
