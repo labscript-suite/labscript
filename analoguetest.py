@@ -39,7 +39,7 @@ class IODevice:
                 # If there was sweeping at this timestep, store an array of times at the max clock rate:
                 n_ticks = int((self.change_times[i+1] - time)*maxrate)
                 duration = n_ticks/float(maxrate) # avoiding integer division
-                self.all_times.append(linspace(time,time + duration,n_ticks,endpoint=False))
+                self.all_times.append(array(linspace(time,time + duration,n_ticks,endpoint=False),dtype=float32))
             else:
                 self.all_times.append(time)
                 
@@ -48,7 +48,7 @@ class IODevice:
             output.make_outputarray(self.all_times)
             
     def flatten(self,inarray,total_points):
-        flat = zeros(total_points)
+        flat = empty(total_points,dtype=float32)
         i = 0
         for val in inarray:
             if iterable(val):
@@ -62,15 +62,20 @@ class IODevice:
     def make_raw_output(self):
         total_points = sum([len(times) if iterable(times) else 1 for times in self.all_times])
         self.flat_times = self.flatten(self.all_times,total_points)
+        del self.all_times
         for output in self.outputs:
             output.raw_output = self.flatten(output.outputarray,total_points)
-        
+            del output.outputarray
+            
     def make_instruction_table(self):
         self.collect_change_times()
         self.make_timeseries()
         self.expand_change_times()
         self.expand_timeseries()
         self.make_raw_output()
+        
+        
+        
         
 class Output:
     description = 'generic output'
@@ -142,7 +147,8 @@ class Output:
                 if isinstance(self.timeseries[i],dict):
                     outarray = self.timeseries[i]['function'](time)
                 else:
-                    outarray = self.timeseries[i]*ones(len(time))
+                    outarray = empty(len(time),dtype=float32)
+                    outarray.fill(self.timeseries[i])
                 self.outputarray.append(outarray)
             else:
                 self.outputarray.append(self.timeseries[i])
@@ -185,20 +191,28 @@ output2 = Output('output 2',device1,2)
 output3 = Output('output 3',device1,3)
 
 output1.add_instruction(0,2)
-output1.add_instruction(1, {'function': ramp(1,2,2,3), 'end time' : 3, 'clock rate': 5})
-#output1.add_instruction(3,3)
+output1.add_instruction(1, {'function': ramp(1,2,2,3), 'end time' : 3, 'clock rate':  5})
 
 output2.add_instruction(0,3)
 output2.add_instruction(2, {'function': ramp(2,3,3,4), 'end time' : 5, 'clock rate': 10})
 output2.add_instruction(6.15,5)
 output2.add_instruction(7,4)
 output2.add_instruction(8,5)
-output3.add_instruction(0, {'function': sine(0,1), 'end time' : 10, 'clock rate': 3})
+output3.add_instruction(0, {'function': sine(0,1), 'end time' : 10, 'clock rate':    1000000})
 
 device1.make_instruction_table()
 print time.time() - start_time
-plot_all(device1)
+#plot_all(device1)
+
+#count how many numbers are in memory
+count = 0
+for obj in ['device1','output1','output2','output3']:
+    for thing in dir(eval(obj)):
+        if eval('type(%s.%s) == ndarray'%(obj,thing)):
+            thingcount = eval('len(%s.%s)'%(obj,thing))
+            count += thingcount
+            print thing, thingcount
+print count, 'total floats in memory'
 
 
 
-main()
