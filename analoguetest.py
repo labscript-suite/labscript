@@ -161,9 +161,10 @@ def discretise(t,y):
     ynew= ynew.flatten()[:-1]
     return tnew, ynew
 
-def plot_all():
+def plot_all(device):
+    
     colours = ['r','b','g']
-    for i, output in enumerate(device1.outputs):
+    for i, output in enumerate(device.outputs):
         t,y = discretise(device1.flat_times,output.raw_output)
         plot(t,y,colours[i]+'-',label=output.name)
     grid(True)
@@ -174,30 +175,29 @@ def plot_all():
     axis([0,10,-1,5.5])
     show()
     
-def main():
-    import time
-    start_time = time.time()
-    
-    device1 = IODevice('device 1')
+import time
+start_time = time.time()
 
-    output1 = Output('output 1',device1,1)
-    output2 = Output('output 2',device1,2)
-    output3 = Output('output 3',device1,3)
+device1 = IODevice('device 1')
 
-    output1.add_instruction(0,2)
-    output1.add_instruction(1, {'function': ramp(1,2,2,3), 'end time' : 3, 'clock rate': 5000000})
-    #output1.add_instruction(3,3)
+output1 = Output('output 1',device1,1)
+output2 = Output('output 2',device1,2)
+output3 = Output('output 3',device1,3)
 
-    output2.add_instruction(0,3)
-    output2.add_instruction(2, {'function': ramp(2,3,3,4), 'end time' : 5, 'clock rate': 10000000})
-    output2.add_instruction(6.15,5)
-    output2.add_instruction(7,4)
-    output2.add_instruction(8,5)
-    output3.add_instruction(0, {'function': sine(0,1), 'end time' : 10, 'clock rate': 3000000})
+output1.add_instruction(0,2)
+output1.add_instruction(1, {'function': ramp(1,2,2,3), 'end time' : 3, 'clock rate': 5})
+#output1.add_instruction(3,3)
 
-    device1.make_instruction_table()
-    print time.time() - start_time
-    #plot_all()
+output2.add_instruction(0,3)
+output2.add_instruction(2, {'function': ramp(2,3,3,4), 'end time' : 5, 'clock rate': 10})
+output2.add_instruction(6.15,5)
+output2.add_instruction(7,4)
+output2.add_instruction(8,5)
+output3.add_instruction(0, {'function': sine(0,1), 'end time' : 10, 'clock rate': 3})
+
+device1.make_instruction_table()
+print time.time() - start_time
+plot_all(device1)
 
 
 
