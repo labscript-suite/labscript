@@ -12,7 +12,7 @@ def sine(t,frequency):
 class IODevice:
     
     # Device's maximum clock rate. To be overridden by subclasses:
-    clock_limit = 2
+    clock_limit = 5
     
     def __init__(self,name,clock=None):
         self.outputs = []
@@ -66,17 +66,14 @@ class IODevice:
                     # It does have the highest clock rate? Then store that rate to max_rate:
                     maxrate = output.timeseries[i]['clock rate']
             if maxrate:
-                # If there was sweeping at this timestep, store an array of times at the max clock rate:
-                n_ticks = int((self.change_times[i+1] - time)*maxrate)
-#                print n_ticks
-#                n_ticks, remainder = divmod((self.change_times[i+1] - time)*maxrate,1)
-#                print n_ticks, repr(remainder), type(remainder)
-#                n_ticks = int(n_ticks)
-#                # Can we squeeze another clock cycle in at the end?
-#                if remainder*maxrate <= self.clock_limit:
-#                    n_ticks += 1
-#                else:
-#                    print 'a clock cycle was', remainder*100, 'too long'
+                # If there was ramping at this timestep, how many clock ticks fit before the next instruction?
+                n_ticks, remainder = divmod((self.change_times[i+1] - time)*maxrate,1)
+                n_ticks = int(n_ticks)
+                # Can we squeeze the final clock cycle in at the end?
+                if remainder and remainder/float(maxrate) >= 1/float(self.clock_limit):
+                    # Yes we can. Clock speed will be as requested. Otherwise it will be too
+                    # long, by the fraction 'remainder' .
+                    n_ticks += 1
                 duration = n_ticks/float(maxrate) # avoiding integer division
                 self.all_times.append(array(linspace(time,time + duration,n_ticks,endpoint=False),dtype=float32))
             else:
@@ -225,11 +222,11 @@ start_time = time.time()
 
 device1 = IODevice('device 1')
 
-output1 = Output('output 1',device1,1)
+#output1 = Output('output 1',device1,1)
 output2 = Output('output 2',device1,2)
 output3 = Output('output 3',device1,3)
 
-output1.add_instruction(0,2)
+#output1.add_instruction(0,2)
 #output1.add_instruction(1, {'function': ramp(1,2,2,3), 'end time' : 3, 'clock rate':  5})
 
 output2.add_instruction(0,3)
@@ -240,7 +237,7 @@ output2.add_instruction(8,5)
 output3.add_instruction(0, {'function': sine(0,1), 'end time' : 10, 'clock rate':    3})
 
 device1.make_instruction_table()
-print time.time() - start_time
+#print time.time() - start_time
 plot_all(device1)
 
 #count how many numbers are in memory
