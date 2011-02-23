@@ -8,12 +8,25 @@ def ramp(t,initial,duration,final):
 def sine(t,frequency):
     return lambda x: sin(x) + 0.5
 
+
 class IODevice:
-    def __init__(self,name):
+    
+    # Device's maximum clock rate. To be overridden by subclasses:
+    clock_limit = 2
+    
+    def __init__(self,name,clock=None):
         self.outputs = []
         self.name = name
+        self.clock = clock
         
     def collect_change_times(self):
+        """Asks all connected outputs for a list of times that they
+        change state. Takes the union of all of these times. Note
+        that at this point, a change from holding-a-constant-value
+        to ramping-through-values is considered a single state
+        change. The clocking times will be filled in later in the
+        expand_change_times function, and the ramp values filled in with
+        expand_timeseries."""
         # use a set to avoid duplicates:
         self.change_times = set()
         for output in self.outputs:
@@ -23,21 +36,47 @@ class IODevice:
         self.change_times.sort()
         
     def make_timeseries(self):
+        """Instructs each connected output to construct a list of its
+        states at each time in self.change_times, that is at any point in
+        time that one or more connected outputs change state. By state,
+        I don't mean the value of the output at that moment, rather
+        I mean what instruction it has. This might be a single value,
+        or it might be a reference to a function for a ramp etc."""
         for output in self.outputs:
             output.make_timeseries(self.change_times)
         
     def expand_change_times(self):
+        """For each time interval delimited by self.change_times,
+        constructs an array of times at which the clock for this device
+        needs to tick. If the interval has all outputs having constant
+        values, then only the start time is stored.  If one or more
+        outputs are ramping, then the clock ticks at the maximum clock
+        rate requested by any of the outputs. Also produces a higher**************** TODO still
+        level description of the clocking; self.clock. This list contains
+        the information that facilitates programming a pseudo clock
+        using loops."""
         self.all_times = []
         for i, time in enumerate(self.change_times):
             # what's the fastest clock rate?
             maxrate = 0
             for output in self.outputs:
-                # check if output is sweeping and has highest clock rate so far:
+                # check if output is sweeping and has highest clock rate so far. If so,
+                # store its clock rate to max_rate:
                 if isinstance(output.timeseries[i],dict) and output.timeseries[i]['clock rate'] > maxrate:
+                    # It does have the highest clock rate? Then store that rate to max_rate:
                     maxrate = output.timeseries[i]['clock rate']
             if maxrate:
                 # If there was sweeping at this timestep, store an array of times at the max clock rate:
                 n_ticks = int((self.change_times[i+1] - time)*maxrate)
+#                print n_ticks
+#                n_ticks, remainder = divmod((self.change_times[i+1] - time)*maxrate,1)
+#                print n_ticks, repr(remainder), type(remainder)
+#                n_ticks = int(n_ticks)
+#                # Can we squeeze another clock cycle in at the end?
+#                if remainder*maxrate <= self.clock_limit:
+#                    n_ticks += 1
+#                else:
+#                    print 'a clock cycle was', remainder*100, 'too long'
                 duration = n_ticks/float(maxrate) # avoiding integer division
                 self.all_times.append(array(linspace(time,time + duration,n_ticks,endpoint=False),dtype=float32))
             else:
@@ -79,7 +118,7 @@ class IODevice:
         
 class Output:
     description = 'generic output'
-    # overridden by subclasses, for example {1:'open', 0:'closed'}
+    # Overridden by subclasses, for example {1:'open', 0:'closed'}
     allowed_states = {}
     
     def instruction_to_string(self,instruction):
@@ -191,28 +230,28 @@ output2 = Output('output 2',device1,2)
 output3 = Output('output 3',device1,3)
 
 output1.add_instruction(0,2)
-output1.add_instruction(1, {'function': ramp(1,2,2,3), 'end time' : 3, 'clock rate':  5})
+#output1.add_instruction(1, {'function': ramp(1,2,2,3), 'end time' : 3, 'clock rate':  5})
 
 output2.add_instruction(0,3)
-output2.add_instruction(2, {'function': ramp(2,3,3,4), 'end time' : 5, 'clock rate': 10})
-output2.add_instruction(6.15,5)
+#output2.add_instruction(2, {'function': ramp(2,3,3,4), 'end time' : 5, 'clock rate': 10})
+output2.add_instruction(5.9,5)
 output2.add_instruction(7,4)
 output2.add_instruction(8,5)
-output3.add_instruction(0, {'function': sine(0,1), 'end time' : 10, 'clock rate':    1000000})
+output3.add_instruction(0, {'function': sine(0,1), 'end time' : 10, 'clock rate':    3})
 
 device1.make_instruction_table()
 print time.time() - start_time
-#plot_all(device1)
+plot_all(device1)
 
 #count how many numbers are in memory
-count = 0
-for obj in ['device1','output1','output2','output3']:
-    for thing in dir(eval(obj)):
-        if eval('type(%s.%s) == ndarray'%(obj,thing)):
-            thingcount = eval('len(%s.%s)'%(obj,thing))
-            count += thingcount
-            print thing, thingcount
-print count, 'total floats in memory'
+#count = 0
+#for obj in ['device1','output1','output2','output3']:
+#    for thing in dir(eval(obj)):
+#        if eval('type(%s.%s) == ndarray'%(obj,thing)):
+#            thingcount = eval('len(%s.%s)'%(obj,thing))
+#            count += thingcount
+#            print '%s.%s'%(obj,thing), thingcount, 'floats'
+#print count, 'total floats in memory'
 
 
 
