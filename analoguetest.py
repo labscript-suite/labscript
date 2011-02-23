@@ -78,6 +78,11 @@ class IODevice:
                     n_ticks += 1
                 duration = n_ticks/float(maxrate) # avoiding integer division
                 self.all_times.append(array(linspace(time,time + duration,n_ticks,endpoint=False),dtype=float32))
+                # Note that even though all arrays are single precision
+                # floating point, the numbers stored to the clock list
+                # below are double precision. This is important so that
+                # rounding errors in the stepsize don't become significant
+                # after many clock cycles.
                 self.clock.append({'start': time, 'reps': n_ticks, 'step': 1/float(maxrate)}) # prevent integer division
             else:
                 self.all_times.append(time)
