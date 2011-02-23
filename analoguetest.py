@@ -51,17 +51,18 @@ class IODevice:
         needs to tick. If the interval has all outputs having constant
         values, then only the start time is stored.  If one or more
         outputs are ramping, then the clock ticks at the maximum clock
-        rate requested by any of the outputs. Also produces a higher**************** TODO still
+        rate requested by any of the outputs. Also produces a higher
         level description of the clocking; self.clock. This list contains
         the information that facilitates programming a pseudo clock
         using loops."""
         self.all_times = []
+        self.clock = []
         for i, time in enumerate(self.change_times):
             # what's the fastest clock rate?
             maxrate = 0
             for output in self.outputs:
-                # check if output is sweeping and has highest clock rate so far. If so,
-                # store its clock rate to max_rate:
+                # Check if output is sweeping and has highest clock rate
+                # so far. If so, store its clock rate to max_rate:
                 if isinstance(output.timeseries[i],dict) and output.timeseries[i]['clock rate'] > maxrate:
                     # It does have the highest clock rate? Then store that rate to max_rate:
                     maxrate = output.timeseries[i]['clock rate']
@@ -71,13 +72,17 @@ class IODevice:
                 n_ticks = int(n_ticks)
                 # Can we squeeze the final clock cycle in at the end?
                 if remainder and remainder/float(maxrate) >= 1/float(self.clock_limit):
-                    # Yes we can. Clock speed will be as requested. Otherwise it will be too
-                    # long, by the fraction 'remainder' .
+                    # Yes we can. Clock speed will be as
+                    # requested. Otherwise the final clock cycle will
+                    # be too  long, by the fraction 'remainder'.
                     n_ticks += 1
                 duration = n_ticks/float(maxrate) # avoiding integer division
                 self.all_times.append(array(linspace(time,time + duration,n_ticks,endpoint=False),dtype=float32))
+                self.clock.append({'start': time, 'reps': n_ticks, 'step': 1/float(maxrate)}) # prevent integer division
             else:
                 self.all_times.append(time)
+                self.clock.append(time)
+        #TODO: insert wait instructions into self.clock rather than absolute times.
                 
     def expand_timeseries(self):
         for output in self.outputs:
@@ -109,7 +114,13 @@ class IODevice:
         self.expand_change_times()
         self.expand_timeseries()
         self.make_raw_output()
-        
+#        print out the clock instructions:
+#        print 'start','   step','    reps'
+#        for thing in self.clock:
+#            if isinstance(thing, dict):
+#                print '%1f'%thing['start'], '%1f'%thing['step'], '%02d'%thing['reps']
+#            else:
+#                print round(thing,2)
         
         
         
@@ -206,9 +217,12 @@ def discretise(t,y):
 def plot_all(device):
     
     colours = ['r','b','g']
+    for tick in device.flat_times:
+        axvline(tick,color='k',linestyle='-')
     for i, output in enumerate(device.outputs):
         t,y = discretise(device1.flat_times,output.raw_output)
         plot(t,y,colours[i]+'-',label=output.name)
+
     grid(True)
     xlabel('time (seconds)')
     ylabel('analogue output values')
@@ -222,15 +236,15 @@ start_time = time.time()
 
 device1 = IODevice('device 1')
 
-#output1 = Output('output 1',device1,1)
+output1 = Output('output 1',device1,1)
 output2 = Output('output 2',device1,2)
 output3 = Output('output 3',device1,3)
 
-#output1.add_instruction(0,2)
-#output1.add_instruction(1, {'function': ramp(1,2,2,3), 'end time' : 3, 'clock rate':  5})
+output1.add_instruction(0,2)
+output1.add_instruction(1, {'function': ramp(1,2,2,3), 'end time' : 3, 'clock rate':  5})
 
 output2.add_instruction(0,3)
-#output2.add_instruction(2, {'function': ramp(2,3,3,4), 'end time' : 5, 'clock rate': 10})
+output2.add_instruction(2, {'function': ramp(2,3,3,4), 'end time' : 5, 'clock rate': 10})
 output2.add_instruction(5.9,5)
 output2.add_instruction(7,4)
 output2.add_instruction(8,5)
