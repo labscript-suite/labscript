@@ -1,6 +1,7 @@
 from control import PulseBlaster, Shutter, plot_timeseries, run, stop
 import time
 import profile
+ 
 
 pulseblaster_one = PulseBlaster('pulseblaster_one')
 shutter_one = Shutter('shutter_one',pulseblaster_one,0)
