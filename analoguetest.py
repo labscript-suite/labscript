@@ -197,7 +197,10 @@ class Output:
         for i, time in enumerate(all_times):
             if iterable(time):
                 if isinstance(self.timeseries[i],dict):
-                    outarray = self.timeseries[i]['function'](time)
+                    midpoints = time + 0.5*(time[1] - time[0])
+                    next_time = all_times[i+1][0] if iterable(all_times[i+1]) else all_times[i+1]
+                    midpoints[-1] = time[-1] + 0.5*(next_time - time[-1])
+                    outarray = self.timeseries[i]['function'](midpoints)
                 else:
                     outarray = empty(len(time),dtype=float32)
                     outarray.fill(self.timeseries[i])
@@ -222,11 +225,13 @@ def discretise(t,y):
 def plot_all(device):
     
     colours = ['r','b','g']
-    for tick in device.flat_times:
-        axvline(tick,color='k',linestyle='-')
+#    for tick in device.flat_times:
+#        axvline(tick,color='k',linestyle='-')
     for i, output in enumerate(device.outputs):
         t,y = discretise(device1.flat_times,output.raw_output)
         plot(t,y,colours[i]+'-',label=output.name)
+    t = linspace(0,10,1000)
+    plot(t,sine(0,1)(t),'k')
 
     grid(True)
     xlabel('time (seconds)')
