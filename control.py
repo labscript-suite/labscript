@@ -1,13 +1,13 @@
 from pylab import *
 import time
 
-def ramp(t,initial,duration,final):
+def ramp(t,duration,initial,final):
     m = (final - initial)/float(duration) # be sure to prevent integer division!
     c = initial - m*t
     return lambda x: m*x + c
 
-def sine(t,frequency):
-    return lambda x: sin(x) + 0.5
+def sine(t,amplitude,angfreq,phase,dc_offset):
+    return lambda x: amplitude*sin(angfreq*(x-t) + phase) + dc_offset
 
 def fastflatten(inarray):
     """A faster way of flattening our arrays than pylab.flatten.
@@ -55,7 +55,7 @@ def plot_outputs(devices='all'):
     if devices == 'all':
         devices = inventory
     start_time = time.time()
-    colours = ['r','b','g']
+    colours = ['r','b','g','k']
 #    for tick in device.flat_times:
 #        axvline(tick,color='k',linestyle='-')
     for device in devices:
@@ -71,9 +71,7 @@ def plot_outputs(devices='all'):
     title('Putting analogue outputs on a common clock')
     legend(loc='lower right')
     axis([0,10,-1,5.5])
-    print time.time() - start_time
     show()
-    print time.time() - start_time  
     
     
 class IODevice:
@@ -205,8 +203,8 @@ class Output:
         if isinstance(instruction,dict):
             return instruction['description']
             #TODO Actually give instructions descriptions
-        elif allowed_states:
-            return allowed_states[instruction]
+        elif self.allowed_states:
+            return str(self.allowed_states[instruction])
         else:
             return str(instruction)
         
@@ -218,24 +216,26 @@ class Output:
             print 'Overwriting to %s.\n'%self.self.instruction_to_string(instruction)
         self.instructions[time] = instruction
         #TODO check that ramps don't collide
+        #TODO if there's an 'allowed states' dict, only allow those instructions.
         
     def perform_checks(self):
         # Check if there are no instructions. Generate a warning and insert an
         # instruction telling the output to remain at zero.
         if not self.instructions:
-            print 'WARNING:', self.name, 'has no instructions. It will be set to %s for all time.'%instructions_to_string(0)
-            self.add_instruction(0,0)    
+            print 'WARNING:', self.name, 'has no instructions. It will be set to %s for all time.'%self.instruction_to_string(0)
+            self.add_instruction(0,0)  
         # Check if there are no instructions at t=0. Generate a warning and insert an
         # instruction telling the output to start at zero.
         if 0 not in self.instructions.keys():
-            print 'WARNING:', self.name, 'has no instructions at t=0. It will initially be set to %s.'%instructions_to_string(0)
-            self.add_instruction(0,0)    
+            print 'WARNING:', self.name, 'has no instructions at t=0. It will initially be set to %s.'%self.instruction_to_string(0)
+            self.add_instruction(0,0) 
         # Check that ramps have instructions following them.
         # If they don't, insert an instruction telling them to hold their final value.
         for instruction in self.instructions.values():
             if isinstance(instruction, dict) and instruction['end time'] not in self.instructions.keys():
                 self.add_instruction(instruction['end time'], instruction['function'](instruction['end time']))
-            
+        #TODO: check that instruction aren't too close together
+         
     def make_times(self):
         self.perform_checks()
         self.times = self.instructions.keys()
@@ -265,7 +265,11 @@ class Output:
         for i, time in enumerate(all_times):
             if iterable(time):
                 if isinstance(self.timeseries[i],dict):
-                    midpoints = time + 0.5*(time[1] - time[0])
+                    try:
+                        midpoints = time + 0.5*(time[1] - time[0])
+                    except:
+                        # time array must be only one element long!
+                        midpoints = time
                     next_time = all_times[i+1][0] if iterable(all_times[i+1]) else all_times[i+1]
                     midpoints[-1] = time[-1] + 0.5*(next_time - time[-1])
                     outarray = self.timeseries[i]['function'](midpoints)
@@ -280,6 +284,7 @@ class Output:
 inventory = []
 
 if __name__ == '__main__':
+    print "THIS IS CONTROL.PY, NOT DEVICES.PY. RUN THE RIGHT SCRIPT, SILLY"
     start_time = time.time()
 
     device1 = IODevice('device_1')
@@ -296,7 +301,7 @@ if __name__ == '__main__':
     output2.add_instruction(5.9,5)
     output2.add_instruction(7,4)
     output2.add_instruction(8,5)
-    output3.add_instruction(0, {'function': sine(0,1), 'end time' : 10, 'clock rate': 3})
+    output3.add_instruction(0, {'function': sine(0,1,1,1,1), 'end time' : 10, 'clock rate': 3})
 
     device1.make_instruction_table()
     print time.time() - start_time
