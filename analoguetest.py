@@ -1,4 +1,5 @@
 from pylab import *
+import time
 
 def ramp(t,initial,duration,final):
     m = (final - initial)/float(duration) # be sure to prevent integer division!
@@ -8,11 +9,46 @@ def ramp(t,initial,duration,final):
 def sine(t,frequency):
     return lambda x: sin(x) + 0.5
 
-
-class IODevice:
+def fastflatten(inarray):
+    """A faster way of flattening our arrays than pylab.flatten.
+    pylab.flatten returns a generator which takes a lot of time and memory
+    to convert into a numpy array via array(list(generator)).  The problem
+    is that generators don't know how many values they'll return until
+    they're done. This algorithm produces a numpy array directly by
+    first calculating what the length will be. It is several orders of
+    magnitude faster. Note that we can't use numpy.ndarray.flatten here
+    since our inarray is really a list of 1D arrays of varying length
+    and/or single values, not a N-dimenional block of homogeneous data
+    like a numpy array."""
+    start_time = time.time()
+    total_points = sum([len(element) if iterable(element) else 1 for element in inarray])
+    flat = empty(total_points,dtype=float32)
+    i = 0
+    for val in inarray:
+        if iterable(val):
+            flat[i:i+len(val)] = val[:]
+            i += len(val)
+        else:
+            flat[i] = val
+            i += 1
+    # compare to pylab.flatten():
+#    print 'fastflatten(inarray):',time.time() - start_time
+#    start_time = time.time()
+#    flat = array(list(flatten(inarray)),dtype=float32)
+#    print 'array(list(numpy.flatten(inarray))):',time.time() - start_time
+    return flat
     
-    # Device's maximum clock rate. To be overridden by subclasses:
-    clock_limit = 5
+    
+class IODevice:
+    """This class represents a grouping of outputs (analogue or
+    digital) that all share a common pseudoclock. When
+    IODevice.make_instruction_table is called, instructions are collected
+    from the IODevice's attached outputs, and arrays of values are
+    generated for them to output on each clock tick, as well as
+    instructions for the pseudo clock itself."""
+
+    # Maximum clock rate of the pseudo clock. To be overridden by subclasses:
+    clock_limit = 1e9
     
     def __init__(self,name,clock=None):
         self.outputs = []
@@ -93,24 +129,11 @@ class IODevice:
         for output in self.outputs:
             output.make_outputarray(self.all_times)
             
-    def flatten(self,inarray,total_points):
-        flat = empty(total_points,dtype=float32)
-        i = 0
-        for val in inarray:
-            if iterable(val):
-                flat[i:i+len(val)] = val[:]
-                i += len(val)
-            else:
-                flat[i] = val
-                i += 1
-        return flat
-                
     def make_raw_output(self):
-        total_points = sum([len(times) if iterable(times) else 1 for times in self.all_times])
-        self.flat_times = self.flatten(self.all_times,total_points)
+        self.flat_times = fastflatten(self.all_times)
         del self.all_times
         for output in self.outputs:
-            output.raw_output = self.flatten(output.outputarray,total_points)
+            output.raw_output = fastflatten(output.outputarray)
             del output.outputarray
             
     def make_instruction_table(self):
@@ -134,6 +157,12 @@ class Output:
     # Overridden by subclasses, for example {1:'open', 0:'closed'}
     allowed_states = {}
     
+    def __init__(self,name,IO_device,outputnumber):
+        self.name = name
+        self.instructions = {}
+        IO_device.outputs.append(self)
+        
+        
     def instruction_to_string(self,instruction):
         """gets a human readable description of an instruction"""
         if isinstance(instruction,dict):
@@ -142,11 +171,6 @@ class Output:
             return allowed_states[instruction]
         else:
             return str(instruction)
-    
-    def __init__(self,name,IO_device,outputnumber):
-        self.name = name
-        self.instructions = {}
-        IO_device.outputs.append(self)
         
     def add_instruction(self,time,instruction):
         #Check that this doesn't collide with previous instructions:
@@ -160,6 +184,11 @@ class Output:
         # Check if there are no instructions. Generate a warning and insert an
         # instruction telling the output to remain at zero.
         if not self.instructions:
+            print 'WARNING:', self.name, 'has no instructions. It will be set to zero for all time.'
+            self.add_instruction(0,0)    
+        # Check if there are no instructions at t=0. Generate a warning and insert an
+        # instruction telling the output to start at zero.
+        if 0 not in self.instructions.keys():
             print 'WARNING:', self.name, 'has no instructions. It will be set to zero for all time.'
             self.add_instruction(0,0)    
         # Check that ramps have instructions following them.
