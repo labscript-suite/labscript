@@ -123,7 +123,6 @@ class IODevice:
             else:
                 self.all_times.append(time)
                 self.clock.append(time)
-        #TODO: insert wait instructions into self.clock rather than absolute times.
                 
     def expand_timeseries(self):
         for output in self.outputs:
@@ -149,9 +148,14 @@ class IODevice:
 #                print '%1f'%thing['start'], '%1f'%thing['step'], '%02d'%thing['reps']
 #            else:
 #                print round(thing,2)
-        
-        
-        
+ 
+class NIBoard:
+    pass
+       
+class PulseBlaster(IODevice):
+    def generate_code(self):
+        self.make_instruction_table()
+               
 class Output:
     description = 'generic output'
     # Overridden by subclasses, for example {1:'open', 0:'closed'}
@@ -167,6 +171,7 @@ class Output:
         """gets a human readable description of an instruction"""
         if isinstance(instruction,dict):
             return instruction['description']
+            #TODO Actually give instructions descriptions
         elif allowed_states:
             return allowed_states[instruction]
         else:
@@ -179,17 +184,18 @@ class Output:
             print 'has already been set to %s.'%self.instruction_to_string(self.instructions[t]),
             print 'Overwriting to %s.\n'%self.self.instruction_to_string(instruction)
         self.instructions[time] = instruction
+        #TODO check that ramps don't collide
         
     def perform_checks(self):
         # Check if there are no instructions. Generate a warning and insert an
         # instruction telling the output to remain at zero.
         if not self.instructions:
-            print 'WARNING:', self.name, 'has no instructions. It will be set to zero for all time.'
+            print 'WARNING:', self.name, 'has no instructions. It will be set to %s for all time.'%instructions_to_string(0)
             self.add_instruction(0,0)    
         # Check if there are no instructions at t=0. Generate a warning and insert an
         # instruction telling the output to start at zero.
         if 0 not in self.instructions.keys():
-            print 'WARNING:', self.name, 'has no instructions. It will be set to zero for all time.'
+            print 'WARNING:', self.name, 'has no instructions at t=0. It will initially be set to %s.'%instructions_to_string(0)
             self.add_instruction(0,0)    
         # Check that ramps have instructions following them.
         # If they don't, insert an instruction telling them to hold their final value.
