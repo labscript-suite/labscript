@@ -38,6 +38,43 @@ def fastflatten(inarray):
 #    print 'array(list(numpy.flatten(inarray))):',time.time() - start_time
     return flat
     
+def discretise(t,y):
+    tnew = zeros((len(t),2))
+    ynew = zeros((len(y),2))
+
+    tnew[:,0] = t[:]
+    tnew[:-1,1] = t[1:]
+    tnew= tnew.flatten()[:-1]
+
+    ynew[:,0] = y[:]
+    ynew[:,1] = y[:]
+    ynew= ynew.flatten()[:-1]
+    return tnew, ynew
+
+def plot_outputs(devices='all'):
+    if devices == 'all':
+        devices = inventory
+    start_time = time.time()
+    colours = ['r','b','g']
+#    for tick in device.flat_times:
+#        axvline(tick,color='k',linestyle='-')
+    for device in devices:
+        for i, output in enumerate(device.outputs):
+            t,y = discretise(device.flat_times,output.raw_output)
+            plot(t,y,colours[i]+'-',label=output.name)
+        t = linspace(0,10,1000)
+        #plot(t,sine(0,1)(t),'k')
+
+    grid(True)
+    xlabel('time (seconds)')
+    ylabel('analogue output values')
+    title('Putting analogue outputs on a common clock')
+    legend(loc='lower right')
+    axis([0,10,-1,5.5])
+    print time.time() - start_time
+    show()
+    print time.time() - start_time  
+    
     
 class IODevice:
     """This class represents a grouping of outputs (analogue or
@@ -50,10 +87,10 @@ class IODevice:
     # Maximum clock rate of the pseudo clock. To be overridden by subclasses:
     clock_limit = 1e9
     
-    def __init__(self,name,clock=None):
+    def __init__(self,name):
         self.outputs = []
         self.name = name
-        self.clock = clock
+        inventory.append(self)
         
     def collect_change_times(self):
         """Asks all connected outputs for a list of times that they
@@ -149,21 +186,17 @@ class IODevice:
 #            else:
 #                print round(thing,2)
  
-class NIBoard:
-    pass
-       
-class PulseBlaster(IODevice):
-    def generate_code(self):
-        self.make_instruction_table()
-               
+
 class Output:
     description = 'generic output'
     # Overridden by subclasses, for example {1:'open', 0:'closed'}
     allowed_states = {}
     
-    def __init__(self,name,IO_device,outputnumber):
+    def __init__(self,name,IO_device,connection_number):
         self.name = name
         self.instructions = {}
+        self.connected_to_device = IO_device
+        self.connection_number = connection_number
         IO_device.outputs.append(self)
         
         
@@ -244,70 +277,30 @@ class Output:
                 self.outputarray.append(self.timeseries[i])
     
 
-def discretise(t,y):
-    tnew = zeros((len(t),2))
-    ynew = zeros((len(y),2))
+inventory = []
 
-    tnew[:,0] = t[:]
-    tnew[:-1,1] = t[1:]
-    tnew= tnew.flatten()[:-1]
+if __name__ == '__main__':
+    start_time = time.time()
 
-    ynew[:,0] = y[:]
-    ynew[:,1] = y[:]
-    ynew= ynew.flatten()[:-1]
-    return tnew, ynew
+    device1 = IODevice('device_1')
 
-def plot_all(device):
-    
-    colours = ['r','b','g']
-#    for tick in device.flat_times:
-#        axvline(tick,color='k',linestyle='-')
-    for i, output in enumerate(device.outputs):
-        t,y = discretise(device1.flat_times,output.raw_output)
-        plot(t,y,colours[i]+'-',label=output.name)
-    t = linspace(0,10,1000)
-    plot(t,sine(0,1)(t),'k')
+    output1 = Output('output 1',device1,0)
+    output2 = Output('output 2',device1,1)
+    output3 = Output('output 3',device1,2)
 
-    grid(True)
-    xlabel('time (seconds)')
-    ylabel('analogue output values')
-    title('Putting analogue outputs on a common clock')
-    legend(loc='lower right')
-    axis([0,10,-1,5.5])
-    show()
-    
-import time
-start_time = time.time()
+    output1.add_instruction(0,2)
+    output1.add_instruction(1, {'function': ramp(1,2,2,3), 'end time' : 3, 'clock rate':  5})
 
-device1 = IODevice('device 1')
+    output2.add_instruction(0,3)
+    output2.add_instruction(2, {'function': ramp(2,3,3,4), 'end time' : 5, 'clock rate': 10})
+    output2.add_instruction(5.9,5)
+    output2.add_instruction(7,4)
+    output2.add_instruction(8,5)
+    output3.add_instruction(0, {'function': sine(0,1), 'end time' : 10, 'clock rate': 3})
 
-output1 = Output('output 1',device1,1)
-output2 = Output('output 2',device1,2)
-output3 = Output('output 3',device1,3)
-
-output1.add_instruction(0,2)
-output1.add_instruction(1, {'function': ramp(1,2,2,3), 'end time' : 3, 'clock rate':  5})
-
-output2.add_instruction(0,3)
-output2.add_instruction(2, {'function': ramp(2,3,3,4), 'end time' : 5, 'clock rate': 10})
-output2.add_instruction(5.9,5)
-output2.add_instruction(7,4)
-output2.add_instruction(8,5)
-output3.add_instruction(0, {'function': sine(0,1), 'end time' : 10, 'clock rate':    3})
-
-device1.make_instruction_table()
-#print time.time() - start_time
-plot_all(device1)
-
-#count how many numbers are in memory
-#count = 0
-#for obj in ['device1','output1','output2','output3']:
-#    for thing in dir(eval(obj)):
-#        if eval('type(%s.%s) == ndarray'%(obj,thing)):
-#            thingcount = eval('len(%s.%s)'%(obj,thing))
-#            count += thingcount
-#            print '%s.%s'%(obj,thing), thingcount, 'floats'
-#print count, 'total floats in memory'
+    device1.make_instruction_table()
+    print time.time() - start_time
+    plot_outputs()
 
 
 
