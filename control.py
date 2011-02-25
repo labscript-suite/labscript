@@ -187,9 +187,9 @@ class IODevice:
                     # out still, so that the total number of clock
                     # ticks matches the number of data points in the
                     # Output.raw_output arrays. We'll make this last
-                    # cycle be at half the maximum possible clock rate.
+                    # cycle be at ten times the maximum step duration.
                     else:
-                        self.clock.append({'start': time, 'reps': 1, 'step': self.clock_limit/2.0})
+                        self.clock.append({'start': time, 'reps': 1, 'step': 10.0/self.clock_limit})
                         
                         
     def expand_timeseries(self):

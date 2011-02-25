@@ -51,9 +51,10 @@ class PulseBlaster(control.IODevice):
                                  'data': j, 'delay': instruction['step']*1e9/2.0})
             j += 2
             i += instruction['reps']
-        # Gotta put a stop instruction at the end:
+        # Gotta put a stop instruction at the end. It will have a short
+        # delay time and set everything back to zero:
         self.pb_inst.append({'flags': '000000000000', 'instruction': 'STOP',
-                                 'data': 0, 'delay': self.clock_limit*2})
+                                 'data': 0, 'delay': 10.0/self.clock_limit*1e9})
         for thing in self.pb_inst:
             print thing['flags'],thing['instruction'],thing['data'], thing['delay']
         with open('pb_inst.dat','w') as outfile:
