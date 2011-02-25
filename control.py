@@ -59,6 +59,7 @@ def plot_outputs(devices='all'):
     colours = ['r','b','g','k']
 #    for tick in device.flat_times:
 #        axvline(tick,color='k',linestyle='-')
+#    figure(figsize=[4,3])
     for device in devices:
         for i, output in enumerate(device.outputs):
             t,y = discretise(device.flat_times,output.raw_output, device.stop_time)
@@ -70,7 +71,7 @@ def plot_outputs(devices='all'):
     xlabel('time (seconds)')
     ylabel('analogue output values')
     title('Putting analogue outputs on a common clock')
-    legend(loc='lower right')
+    #legend(loc='lower right')
     axis([0,max([device.stop_time for device in inventory]),-1,5.5])
     show()
     
@@ -158,21 +159,25 @@ class IODevice:
                 # below are double precision. This is important so that
                 # rounding errors in the stepsize don't become significant
                 # after many clock cycles.
-                self.clock.append({'start': time, 'reps': n_ticks, 'step': 1/float(maxrate), 'action': 'tick'})
-                # This clock instruction is saying how long to wait until the next time the clock starts ticking:
-                self.clock.append({'start': ticks[-1], 'reps': 1, 'step': self.change_times[i+1] - ticks[-1],'action':'wait'})
+                if n_ticks > 1:
+                    # If n_ticks is only one, then this step doesn't do
+                    # anything, it has reps=0. So we should only include
+                    # it if n_ticks > 1:
+                    self.clock.append({'start': time, 'reps': n_ticks-1, 'step': 1/float(maxrate)})
+                # The last clock tick has a different duration depending on the next step:
+                self.clock.append({'start': ticks[-1], 'reps': 1, 'step': self.change_times[i+1] - ticks[-1]})
             else:
                 self.all_times.append(time)
                 try: 
                     # If there was no ramping, here is a single clock tick:
-                    self.clock.append({'start': time, 'reps': 1, 'step': self.change_times[i+1] - time, 'action': 'tick'})
+                    self.clock.append({'start': time, 'reps': 1, 'step': self.change_times[i+1] - time})
                 except IndexError:
                     if i != len(self.change_times) - 1:
                         raise
                     # There is no next instruction. Hold the last clock
                     # tick until self.stop_time.
                     if self.stop_time > time:
-                        self.clock.append({'start': time, 'reps': 1, 'step': self.stop_time - time, 'action': 'tick'})
+                        self.clock.append({'start': time, 'reps': 1, 'step': self.stop_time - time})
                     # Error if self.stop_time has been set to less
                     # than the time of the last instruction:
                     elif self.stop_time < time:
@@ -184,7 +189,7 @@ class IODevice:
                     # Output.raw_output arrays. We'll make this last
                     # cycle be at half the maximum possible clock rate.
                     else:
-                        self.clock.append({'start': time, 'reps': 1, 'step': self.clock_limit/2.0, 'action': 'tick'})
+                        self.clock.append({'start': time, 'reps': 1, 'step': self.clock_limit/2.0})
                         
                         
     def expand_timeseries(self):
