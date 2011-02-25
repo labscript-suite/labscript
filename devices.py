@@ -21,8 +21,19 @@ class PulseBlaster(control.IODevice):
         for output in self.outputs:
             if output.connected_to_device is self:
                 self.direct_outputs.append(output)
-        print 'direct outputs are:', [out.name for out in self.direct_outputs]
- 
+        print 'direct outputs are:\n', '\n'.join([out.name + ' connected to output ' + str(out.connection_number) for out in self.direct_outputs])
+        print 'start','   step','    reps'
+        ticks = 0
+        for thing in self.clock:
+            if thing['action'] == 'tick':
+                ticks += thing['reps']
+            if isinstance(thing, dict):
+                print '%1f'%thing['start'], '%1f'%thing['step'], '%02d'%thing['reps'], thing['action']
+            else:
+                print round(thing,2)
+        print 'total no of clock ticks:', ticks
+        print 'total no of timepoints:', len(self.flat_times)
+
 class AnalogueOut(control.Output):
     description = 'analogue output'
     def ramp(self,t,duration,initial,final,samplerate):

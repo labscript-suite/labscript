@@ -38,17 +38,18 @@ def fastflatten(inarray):
 #    print 'array(list(numpy.flatten(inarray))):',time.time() - start_time
     return flat
     
-def discretise(t,y):
+def discretise(t,y,stop_time):
     tnew = zeros((len(t),2))
     ynew = zeros((len(y),2))
 
     tnew[:,0] = t[:]
     tnew[:-1,1] = t[1:]
-    tnew= tnew.flatten()[:-1]
+    tnew= tnew.flatten()
+    tnew[-1] = stop_time
 
     ynew[:,0] = y[:]
     ynew[:,1] = y[:]
-    ynew= ynew.flatten()[:-1]
+    ynew= ynew.flatten()[:]
     return tnew, ynew
 
 def plot_outputs(devices='all'):
@@ -60,7 +61,7 @@ def plot_outputs(devices='all'):
 #        axvline(tick,color='k',linestyle='-')
     for device in devices:
         for i, output in enumerate(device.outputs):
-            t,y = discretise(device.flat_times,output.raw_output)
+            t,y = discretise(device.flat_times,output.raw_output, device.stop_time)
             plot(t,y,colours[i]+'-',label=output.name)
         t = linspace(0,10,1000)
         #plot(t,sine(0,1)(t),'k')
@@ -70,7 +71,7 @@ def plot_outputs(devices='all'):
     ylabel('analogue output values')
     title('Putting analogue outputs on a common clock')
     legend(loc='lower right')
-    axis([0,10,-1,5.5])
+    axis([0,max([device.stop_time for device in inventory]),-1,5.5])
     show()
     
     
@@ -84,10 +85,12 @@ class IODevice:
 
     # Maximum clock rate of the pseudo clock. To be overridden by subclasses:
     clock_limit = 1e9
+    description = 'IO device'
     
-    def __init__(self,name):
+    def __init__(self,name,stop_time=20):
         self.outputs = []
         self.name = name
+        self.stop_time = stop_time
         inventory.append(self)
         
     def collect_change_times(self):
@@ -148,17 +151,42 @@ class IODevice:
                     # be too  long, by the fraction 'remainder'.
                     n_ticks += 1
                 duration = n_ticks/float(maxrate) # avoiding integer division
-                self.all_times.append(array(linspace(time,time + duration,n_ticks,endpoint=False),dtype=float32))
+                ticks = linspace(time,time + duration,n_ticks,endpoint=False)
+                self.all_times.append(array(ticks,dtype=float32))
                 # Note that even though all arrays are single precision
                 # floating point, the numbers stored to the clock list
                 # below are double precision. This is important so that
                 # rounding errors in the stepsize don't become significant
                 # after many clock cycles.
-                self.clock.append({'start': time, 'reps': n_ticks, 'step': 1/float(maxrate)}) # prevent integer division
+                self.clock.append({'start': time, 'reps': n_ticks, 'step': 1/float(maxrate), 'action': 'tick'})
+                # This clock instruction is saying how long to wait until the next time the clock starts ticking:
+                self.clock.append({'start': ticks[-1], 'reps': 1, 'step': self.change_times[i+1] - ticks[-1],'action':'wait'})
             else:
                 self.all_times.append(time)
-                self.clock.append(time)
-                
+                try: 
+                    # If there was no ramping, here is a single clock tick:
+                    self.clock.append({'start': time, 'reps': 1, 'step': self.change_times[i+1] - time, 'action': 'tick'})
+                except IndexError:
+                    if i != len(self.change_times) - 1:
+                        raise
+                    # There is no next instruction. Hold the last clock
+                    # tick until self.stop_time.
+                    if self.stop_time > time:
+                        self.clock.append({'start': time, 'reps': 1, 'step': self.stop_time - time, 'action': 'tick'})
+                    # Error if self.stop_time has been set to less
+                    # than the time of the last instruction:
+                    elif self.stop_time < time:
+                        raise ValueError('ERROR: %s %s has had its stop time set to earlier than its last instruction!'%(self.description,self.name))
+                    # If self.stop_time is the same as the time of the last
+                    # instruction, then we'll get the last instruction
+                    # out still, so that the total number of clock
+                    # ticks matches the number of data points in the
+                    # Output.raw_output arrays. We'll make this last
+                    # cycle be at half the maximum possible clock rate.
+                    else:
+                        self.clock.append({'start': time, 'reps': 1, 'step': self.clock_limit/2.0, 'action': 'tick'})
+                        
+                        
     def expand_timeseries(self):
         for output in self.outputs:
             output.make_outputarray(self.all_times)
@@ -250,8 +278,10 @@ class Output:
                     while change_time >= self.times[i]:
                         i += 1
             except IndexError:
-                # We allow the index to go one higher, since we index self.times[i-1] below.  
-                # Raise the error otherwise.
+                # We allow the index to go one higher, since we're
+                # intentionally overshooting the mark and are then
+                # interested in self.times[i-1].  Raise the error
+                # otherwise.
                 if not i == len(self.times):
                     raise
             instruction = self.instructions[self.times[i-1]]
@@ -265,11 +295,21 @@ class Output:
         for i, time in enumerate(all_times):
             if iterable(time):
                 if isinstance(self.timeseries[i],dict):
+                    # We evaluate the functions at the midpoints of the
+                    # timesteps in order to remove the zero-order hold
+                    # error introduced by sampling an analogue signal:
                     try:
                         midpoints = time + 0.5*(time[1] - time[0])
-                    except:
-                        # time array must be only one element long!
+                    except IndexError:
+                        # Time array might be only one element long, so we
+                        # can't calculate the step size this way. That's
+                        # ok, the final midpoint is determined differently
+                        # anyway:
                         midpoints = time
+                    # We need to know when the first clock tick is after
+                    # this ramp ends. It's either an array element or a
+                    # single number depending on if this ramp is followed
+                    # by another ramp or not:
                     next_time = all_times[i+1][0] if iterable(all_times[i+1]) else all_times[i+1]
                     midpoints[-1] = time[-1] + 0.5*(next_time - time[-1])
                     outarray = self.timeseries[i]['function'](midpoints)
