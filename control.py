@@ -71,7 +71,7 @@ def plot_outputs(devices='all'):
     xlabel('time (seconds)')
     ylabel('analogue output values')
     title('Putting analogue outputs on a common clock')
-    #legend(loc='lower right')
+    legend(loc='upper left')
     axis([0,max([device.stop_time for device in inventory]),-1,5.5])
     show()
     

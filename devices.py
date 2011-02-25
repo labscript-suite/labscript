@@ -1,6 +1,12 @@
 import control
 import time
 
+def write_raw_data_to_file(output):
+    raw_data = output.raw_output
+    with open(output.name, 'w') as outfile:
+        for point in raw_data:
+            outfile.write(repr(point)+'\n')
+            
 class NIBoard:
     description = 'NI board'
     clock_limit = 1e6 #TODO get a real number to put here
@@ -45,8 +51,18 @@ class PulseBlaster(control.IODevice):
                                  'data': j, 'delay': instruction['step']*1e9/2.0})
             j += 2
             i += instruction['reps']
+        # Gotta put a stop instruction at the end:
+        self.pb_inst.append({'flags': '000000000000', 'instruction': 'STOP',
+                                 'data': 0, 'delay': self.clock_limit*2})
         for thing in self.pb_inst:
             print thing['flags'],thing['instruction'],thing['data'], thing['delay']
+        with open('pb_inst.dat','w') as outfile:
+            for inst in self.pb_inst:
+                flagint = '%04d'%int(inst['flags'][::-1],2)
+                instructionint = str(self.pb_instructions[inst['instruction']])
+                dataint = '%04d'%inst['data']
+                delaydouble = repr(inst['delay']) # repr to keep high precision
+                outfile.write('\t'.join(['0']*10 + [flagint,instructionint,dataint,delaydouble,'\n']))
             
     def generate_code(self):
         self.make_instruction_table()
@@ -105,16 +121,16 @@ class Shutter(DigitalOut):
         self.go_low(t)
                                
 if __name__ == '__main__':
-    time.sleep(1)
     pulseblaster1 = PulseBlaster('PulseBlaster_1',stop_time=11)
     NI_board1 = NIBoard('NI_board_1', pulseblaster1)
+    
     analogue1 = AnalogueOut('output 1', NI_board1,0)
     analogue2 = AnalogueOut('output 2', NI_board1,1)
     analogue3 = AnalogueOut('output 3', NI_board1,2)
     
-    #shutter1 = Shutter('shutter 1', pulseblaster1,0)
-    #shutter1.close(t=0)
-    #shutter1.open(t=5.89)
+    shutter1 = Shutter('flag 1', pulseblaster1,0)
+    shutter1.close(t=0)
+    shutter1.open(t=5.89)
     analogue1.constant(t=0,value=2)
     analogue1.ramp(t=1, duration=2, initial=2, final=3, samplerate=5)
 
@@ -126,5 +142,7 @@ if __name__ == '__main__':
     analogue3.sine(t=0,duration=10,amplitude=1,angfreq=2,phase=0,dc_offset=0.5,samplerate=3)
 
     pulseblaster1.generate_code()
+    for output in [analogue1, analogue2, analogue3]:
+        write_raw_data_to_file(output)
     control.plot_outputs()
     
