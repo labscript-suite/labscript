@@ -1,11 +1,4 @@
 import control
-import time
-
-def write_raw_data_to_file(output):
-    raw_data = output.raw_output
-    with open(output.name, 'w') as outfile:
-        for point in raw_data:
-            outfile.write(repr(point)+'\n')
             
 class NIBoard:
     description = 'NI board'
@@ -20,10 +13,24 @@ class NIBoard:
 class PulseBlaster(control.IODevice):
     pb_instructions = {'STOP': 1, 'LOOP': 2, 'END_LOOP': 3}
     description = 'PulseBlaster'
-    clock_limit = 25.0e6 # TODO get a real number to put here
+    clock_limit = 25.0e6 # Slight underestimate I think.
     clock_connection = 11
     direct_outputs = []
     
+    def perform_checks(self):
+        for output in self.outputs:
+            if output.connected_to_device is self:
+                if not (isinstance(output.connection_number,int) or output.connection_number < 12):
+                    sys.stderr.write('%s is set as connected to output connection %d of %s. Output connection \
+                                      number must be a integer less than 12\n.'%(output.name, output.connection_number, self.name))
+                    sys.exit(1)
+                for other_output in self.direct_outputs:
+                    if output.connection_number == other_output.connection_number:
+                        sys.stderr.write('%s %s and %s %s are both set as connected to output %d of %s! Stopping.\n'%(output.name,
+                                         other_output.name, output.connection_number, self.name))
+                        sys.exit(1)
+                self.direct_outputs.append(output)    
+                
     def convert_to_pb_inst(self):
         self.pb_inst = []
         # index to keep track of where in output.raw_output the
@@ -54,56 +61,43 @@ class PulseBlaster(control.IODevice):
         # Gotta put a stop instruction at the end. It will have a short
         # delay time and set everything back to zero:
         self.pb_inst.append({'flags': '000000000000', 'instruction': 'STOP',
-                                 'data': 0, 'delay': 10.0/self.clock_limit*1e9})
-        for thing in self.pb_inst:
-            print thing['flags'],thing['instruction'],thing['data'], thing['delay']
-        with open('pb_inst.dat','w') as outfile:
+                                 'data': 0, 'delay': 10.0/self.clock_limit*1e9})  
+                                           
+    def write_instructions_to_files(self):
+        # The raw output of each analogue output not direcly connected
+        # to the PulseBlaster:
+        for output in self.outputs:
+            if output not in self.direct_outputs:
+                output.write_raw_output_to_file()
+        # The table of instructions for the PulseBlaster itself:
+        with open(self.name+'.dat','w') as outfile:
             for inst in self.pb_inst:
                 flagint = '%04d'%int(inst['flags'][::-1],2)
                 instructionint = str(self.pb_instructions[inst['instruction']])
                 dataint = '%04d'%inst['data']
                 delaydouble = repr(inst['delay']) # repr to keep high precision
                 outfile.write('\t'.join(['0']*10 + [flagint,instructionint,dataint,delaydouble,'\n']))
-            
+                       
     def generate_code(self):
+        self.perform_checks()
         self.make_instruction_table()
-        for output in self.outputs:
-            if output.connected_to_device is self:
-                if not (isinstance(output.connection_number,int) or output.connection_number < 12):
-                    raise ValueError('%s is set as connected to output connection %d of %s. Output connection \
-                                      number must be a integer less than 12.'%(output.name, output.connection_number, self.name))
-                for other_output in self.direct_outputs:
-                    if output.connection_number == other_output.connection_number:
-                        raise ValueError('%s %s and %s %s are both set as connected to output %d of %s!'%(output.name,
-                                         other_output.name, output.connection_number, self.name))
-                self.direct_outputs.append(output)
         self.convert_to_pb_inst()
-                
-#        print 'direct outputs are:\n', '\n'.join([out.name + ' connected to output ' + str(out.connection_number) for out in self.direct_outputs])
-#        print 'start','   step','    reps'
-#        ticks = 0
-#        for thing in self.clock:
-#            ticks += thing['reps']
-#            if isinstance(thing, dict):
-#                print '%1f'%thing['start'], '%1f'%thing['step'], '%02d'%thing['reps']
-#            else:
-#                print round(thing,2)
-#        print 'total no of clock ticks:', ticks
-#        print 'total no of timepoints:', len(self.flat_times)
+        self.write_instructions_to_files()
 
 
 class AnalogueOut(control.Output):
     description = 'analogue output'
     def ramp(self,t,duration,initial,final,samplerate):
-        self.add_instruction(t, {'function': control.ramp(t,duration,initial,final), 
+        self.add_instruction(t, {'function': control.ramp(t,duration,initial,final), 'description':'linear ramp',
                                  'end time': t + duration, 'clock rate': samplerate})
                                  
     def sine(self,t,duration,amplitude,angfreq,phase,dc_offset,samplerate):
-        self.add_instruction(t, {'function': control.sine(t,amplitude,angfreq,phase,dc_offset), 
+        self.add_instruction(t, {'function': control.sine(t,amplitude,angfreq,phase,dc_offset), 'description':'sine wave',
                                  'end time': t + duration, 'clock rate': samplerate})
                                  
     def constant(self,t,value):
         self.add_instruction(t,value)
+        
         
 class DigitalOut(control.Output):
     description = 'digital output'
@@ -113,6 +107,7 @@ class DigitalOut(control.Output):
     def go_low(self,t):
         self.add_instruction(t,0) 
 
+
 class Shutter(DigitalOut):
     description = 'shutter'
     allowed_states = {1:'open', 0:'closed'}  
@@ -120,14 +115,15 @@ class Shutter(DigitalOut):
         self.go_high(t)
     def close(self,t):
         self.go_low(t)
+         
                                
 if __name__ == '__main__':
-    pulseblaster1 = PulseBlaster('PulseBlaster_1',stop_time=11)
-    NI_board1 = NIBoard('NI_board_1', pulseblaster1)
+    pulseblaster1 = PulseBlaster('PulseBlaster',stop_time=11)
+    NI_board1 = NIBoard('NI PCI-3733', pulseblaster1)
     
-    analogue1 = AnalogueOut('output 1', NI_board1,0)
-    analogue2 = AnalogueOut('output 2', NI_board1,1)
-    analogue3 = AnalogueOut('output 3', NI_board1,2)
+    analogue1 = AnalogueOut('output 1', NI_board1,'AO0')
+    analogue2 = AnalogueOut('output 2', NI_board1,'AO1')
+    analogue3 = AnalogueOut('output 3', NI_board1,'AO2')
     
     shutter1 = Shutter('flag 1', pulseblaster1,0)
     shutter1.close(t=0)
@@ -143,7 +139,5 @@ if __name__ == '__main__':
     analogue3.sine(t=0,duration=10,amplitude=1,angfreq=2,phase=0,dc_offset=0.5,samplerate=3)
 
     pulseblaster1.generate_code()
-    for output in [analogue1, analogue2, analogue3]:
-        write_raw_data_to_file(output)
     control.plot_outputs()
     

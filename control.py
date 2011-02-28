@@ -31,11 +31,6 @@ def fastflatten(inarray):
         else:
             flat[i] = val
             i += 1
-    # compare to pylab.flatten():
-#    print 'fastflatten(inarray):',time.time() - start_time
-#    start_time = time.time()
-#    flat = array(list(flatten(inarray)),dtype=float32)
-#    print 'array(list(numpy.flatten(inarray))):',time.time() - start_time
     return flat
     
 def discretise(t,y,stop_time):
@@ -56,21 +51,15 @@ def plot_outputs(devices='all'):
     if devices == 'all':
         devices = inventory
     start_time = time.time()
-    colours = ['r','b','g','k']
-#    for tick in device.flat_times:
-#        axvline(tick,color='k',linestyle='-')
-#    figure(figsize=[4,3])
     for device in devices:
         for i, output in enumerate(device.outputs):
             t,y = discretise(device.flat_times,output.raw_output, device.stop_time)
-            plot(t,y,colours[i]+'-',label=output.name)
-        t = linspace(0,10,1000)
-        #plot(t,sine(0,1)(t),'k')
+            plot(t,y,'-',label=output.name)
 
     grid(True)
     xlabel('time (seconds)')
-    ylabel('analogue output values')
-    title('Putting analogue outputs on a common clock')
+    ylabel('output values')
+    title('Pseudoclocked outputs')
     legend(loc='upper left')
     axis([0,max([device.stop_time for device in inventory]),-1,5.5])
     show()
@@ -102,13 +91,20 @@ class IODevice:
         change. The clocking times will be filled in later in the
         expand_change_times function, and the ramp values filled in with
         expand_timeseries."""
-        # use a set to avoid duplicates:
+        # Use a set to avoid duplicates:
         self.change_times = set()
         for output in self.outputs:
             output.make_times()
             self.change_times = self.change_times.union(output.times)
         self.change_times = list(self.change_times)
         self.change_times.sort()
+        # Check that no two instructions are too close together:
+        for i, t in enumerate(self.change_times[:-1]):
+            dt = self.change_times[i+1] - t
+            if dt < 1.0/self.clock_limit:
+                sys.stderr.write('ERROR: Commands have been issued to devices attached to %s at t= %s s and %s s. '%(self.name, str(t),str(self.change_times[i+1])) +
+                                  'One or more connected devices cannot support update delays shorter than %s sec. Stopping.\n'%str(1.0/self.clock_limit))
+                sys.exit(1)
         
     def make_timeseries(self):
         """Instructs each connected output to construct a list of its
@@ -149,7 +145,7 @@ class IODevice:
                 if remainder and remainder/float(maxrate) >= 1/float(self.clock_limit):
                     # Yes we can. Clock speed will be as
                     # requested. Otherwise the final clock cycle will
-                    # be too  long, by the fraction 'remainder'.
+                    # be too long, by the fraction 'remainder'.
                     n_ticks += 1
                 duration = n_ticks/float(maxrate) # avoiding integer division
                 ticks = linspace(time,time + duration,n_ticks,endpoint=False)
@@ -181,7 +177,8 @@ class IODevice:
                     # Error if self.stop_time has been set to less
                     # than the time of the last instruction:
                     elif self.stop_time < time:
-                        raise ValueError('ERROR: %s %s has had its stop time set to earlier than its last instruction!'%(self.description,self.name))
+                        sys.stderr.write('ERROR: %s %s has had its stop time set to earlier than its last instruction!'%(self.description,self.name))
+                        sys.exit(1)
                     # If self.stop_time is the same as the time of the last
                     # instruction, then we'll get the last instruction
                     # out still, so that the total number of clock
@@ -209,13 +206,6 @@ class IODevice:
         self.expand_change_times()
         self.expand_timeseries()
         self.make_raw_output()
-#        print out the clock instructions:
-#        print 'start','   step','    reps'
-#        for thing in self.clock:
-#            if isinstance(thing, dict):
-#                print '%1f'%thing['start'], '%1f'%thing['step'], '%02d'%thing['reps']
-#            else:
-#                print round(thing,2)
  
 
 class Output:
@@ -228,6 +218,7 @@ class Output:
         self.instructions = {}
         self.connected_to_device = IO_device
         self.connection_number = connection_number
+        self.ramp_limits = []
         IO_device.outputs.append(self)
         
         
@@ -235,7 +226,6 @@ class Output:
         """gets a human readable description of an instruction"""
         if isinstance(instruction,dict):
             return instruction['description']
-            #TODO Actually give instructions descriptions
         elif self.allowed_states:
             return str(self.allowed_states[instruction])
         else:
@@ -244,30 +234,38 @@ class Output:
     def add_instruction(self,time,instruction):
         #Check that this doesn't collide with previous instructions:
         if time in self.instructions.keys():
-            print 'WARNING: State of', self.description, self.name, 'at t=%ss'%str(time),
-            print 'has already been set to %s.'%self.instruction_to_string(self.instructions[t]),
-            print 'Overwriting to %s.\n'%self.self.instruction_to_string(instruction)
+            err = ' '.join(['WARNING: State of', self.description, self.name, 'at t=%ss'%str(time),
+                 'has already been set to %s.'%self.instruction_to_string(self.instructions[time]),
+                 'Overwriting to %s.\n'%self.instruction_to_string(instruction)])
+            sys.stderr.write(err + '\n')
+        # Check that ramps don't collide
+        if isinstance(instruction,dict):
+            for start, end in self.ramp_limits:
+                if start < time < end or start < instruction['end time'] < end:
+                    err = ' '.join(['ERROR: State of', self.description, self.name, 'from t = %ss to %ss'%(str(start),str(end)),
+                        'has already been set to %s.'%self.instruction_to_string(self.instructions[start]),
+                        'Cannot set to %s from t = %ss to %ss. Stopping.'%(self.instruction_to_string(instruction),str(time),str(instruction['end time']))])
+                    sys.stderr.write(err + '\n')
+                    sys.exit(1)
+            self.ramp_limits.append((time,instruction['end time']))
         self.instructions[time] = instruction
-        #TODO check that ramps don't collide
-        #TODO if there's an 'allowed states' dict, only allow those instructions.
         
     def perform_checks(self):
         # Check if there are no instructions. Generate a warning and insert an
         # instruction telling the output to remain at zero.
         if not self.instructions:
-            print 'WARNING:', self.name, 'has no instructions. It will be set to %s for all time.'%self.instruction_to_string(0)
+            sys.stderr.write(' '.join(['WARNING:', self.name, 'has no instructions. It will be set to %s for all time.\n'%self.instruction_to_string(0)]))
             self.add_instruction(0,0)  
         # Check if there are no instructions at t=0. Generate a warning and insert an
         # instruction telling the output to start at zero.
         if 0 not in self.instructions.keys():
-            print 'WARNING:', self.name, 'has no instructions at t=0. It will initially be set to %s.'%self.instruction_to_string(0)
+            sys.stderr.write(' '.join(['WARNING:', self.name, 'has no instructions at t=0. It will initially be set to %s.\n'%self.instruction_to_string(0)]))
             self.add_instruction(0,0) 
         # Check that ramps have instructions following them.
         # If they don't, insert an instruction telling them to hold their final value.
         for instruction in self.instructions.values():
             if isinstance(instruction, dict) and instruction['end time'] not in self.instructions.keys():
                 self.add_instruction(instruction['end time'], instruction['function'](instruction['end time']))
-        #TODO: check that instruction aren't too close together
          
     def make_times(self):
         self.perform_checks()
@@ -290,9 +288,6 @@ class Output:
                 if not i == len(self.times):
                     raise
             instruction = self.instructions[self.times[i-1]]
-            if isinstance(instruction, dict) and instruction['end time'] <= change_time:
-                print 'detected that a ramp has ended!' 
-                instruction = instruction['function'](instruction['end time'])
             self.timeseries.append(instruction)     
     
     def make_outputarray(self,all_times):
@@ -325,7 +320,11 @@ class Output:
             else:
                 self.outputarray.append(self.timeseries[i])
     
-
+    def write_raw_output_to_file(self):
+        with open(self.connected_to_device.name + '-' + str(self.connection_number) + '.dat', 'w') as outfile:
+            for point in self.raw_output:
+                outfile.write(repr(point)+'\n')
+            
 inventory = []
 
 if __name__ == '__main__':
