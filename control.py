@@ -1,14 +1,6 @@
 from pylab import *
 import time
 
-def ramp(t,duration,initial,final):
-    m = (final - initial)/float(duration) # be sure to prevent integer division!
-    c = initial - m*t
-    return lambda x: m*x + c
-
-def sine(t,amplitude,angfreq,phase,dc_offset):
-    return lambda x: amplitude*sin(angfreq*(x-t) + phase) + dc_offset
-
 def fastflatten(inarray):
     """A faster way of flattening our arrays than pylab.flatten.
     pylab.flatten returns a generator which takes a lot of time and memory
