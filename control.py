@@ -1,5 +1,4 @@
 from pylab import *
-import time
 
 def fastflatten(inarray):
     """A faster way of flattening our arrays than pylab.flatten.
@@ -12,7 +11,6 @@ def fastflatten(inarray):
     since our inarray is really a list of 1D arrays of varying length
     and/or single values, not a N-dimenional block of homogeneous data
     like a numpy array."""
-    start_time = time.time()
     total_points = sum([len(element) if iterable(element) else 1 for element in inarray])
     flat = empty(total_points,dtype=float32)
     i = 0
@@ -39,10 +37,9 @@ def discretise(t,y,stop_time):
     ynew= ynew.flatten()[:]
     return tnew, ynew
 
-def plot_outputs(devices='all'):
+def plot_outputs(devices='all',display=False):
     if devices == 'all':
         devices = inventory
-    start_time = time.time()
     for device in devices:
         for i, output in enumerate(device.outputs):
             t,y = discretise(device.flat_times,output.raw_output, device.stop_time)
@@ -54,7 +51,10 @@ def plot_outputs(devices='all'):
     title('Pseudoclocked outputs')
     legend(loc='upper left')
     axis([0,max([device.stop_time for device in inventory]),-1,5.5])
-    show()
+    if display:
+        show()
+    else:
+        savefig('outputs.png')
     
     
 class IODevice:
@@ -313,35 +313,12 @@ class Output:
                 self.outputarray.append(self.timeseries[i])
     
     def write_raw_output_to_file(self):
-        with open(self.connected_to_device.name + '-' + str(self.connection_number) + '.dat', 'w') as outfile:
+        fname = self.connected_to_device.name + '-' + str(self.connection_number) + '.dat'
+        with open(fname, 'w') as outfile:
             for point in self.raw_output:
                 outfile.write(repr(point)+'\n')
+        print 'saved', fname
             
 inventory = []
-
-if __name__ == '__main__':
-    print "THIS IS CONTROL.PY, NOT DEVICES.PY. RUN THE RIGHT SCRIPT, SILLY"
-    start_time = time.time()
-
-    device1 = IODevice('device_1')
-
-    output1 = Output('output 1',device1,0)
-    output2 = Output('output 2',device1,1)
-    output3 = Output('output 3',device1,2)
-
-    output1.add_instruction(0,2)
-    output1.add_instruction(1, {'function': ramp(1,2,2,3), 'end time' : 3, 'clock rate':  5})
-
-    output2.add_instruction(0,3)
-    output2.add_instruction(2, {'function': ramp(2,3,3,4), 'end time' : 5, 'clock rate': 10})
-    output2.add_instruction(5.9,5)
-    output2.add_instruction(7,4)
-    output2.add_instruction(8,5)
-    output3.add_instruction(0, {'function': sine(0,1,1,1,1), 'end time' : 10, 'clock rate': 3})
-
-    device1.make_instruction_table()
-    print time.time() - start_time
-    plot_outputs()
-
 
 

@@ -4,7 +4,7 @@ from control import plot_outputs
 
 if __name__ == '__main__':
     pulseblaster1 = PulseBlaster('PulseBlaster',stop_time=11)
-    NI_board1 = NIBoard('NI PCI-3733', pulseblaster1)
+    NI_board1 = NIBoard('NI PCI-6733', pulseblaster1)
     
     analogue1 = AnalogueOut('output 1', NI_board1,'AO0')
     analogue2 = AnalogueOut('output 2', NI_board1,'AO1')

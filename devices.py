@@ -78,7 +78,8 @@ class PulseBlaster(control.IODevice):
                 dataint = '%04d'%inst['data']
                 delaydouble = repr(inst['delay']) # repr to keep high precision
                 outfile.write('\t'.join(['0']*10 + [flagint,instructionint,dataint,delaydouble,'\n']))
-                       
+        print 'saved', self.name+'.dat'
+             
     def generate_code(self):
         self.perform_checks()
         self.make_instruction_table()
