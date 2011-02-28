@@ -1,4 +1,5 @@
 from pylab import *
+import os,sys
 
 def fastflatten(inarray):
     """A faster way of flattening our arrays than pylab.flatten.
@@ -312,8 +313,9 @@ class Output:
             else:
                 self.outputarray.append(self.timeseries[i])
     
-    def write_raw_output_to_file(self):
+    def write_raw_output_to_file(self,outdir):
         fname = self.connected_to_device.name + '-' + str(self.connection_number) + '.dat'
+        fname = os.path.join(outdir,fname)
         with open(fname, 'w') as outfile:
             for point in self.raw_output:
                 outfile.write(repr(point)+'\n')

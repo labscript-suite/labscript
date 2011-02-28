@@ -17,7 +17,7 @@ if __name__ == '__main__':
     analogue1.ramp(t=1, duration=2, initial=2, final=3, samplerate=5)
 
     analogue2.constant(t=0,value=3)
-    analogue2.ramp(t=2, duration=3, initial=3, final=4, samplerate=10)
+    analogue2.ramp(t=2, duration=3, initial=3, final=4, samplerate=0.5e6)
     analogue2.constant(5.9,5)
     analogue2.constant(7,4)
     analogue2.constant(8,5)
@@ -25,3 +25,4 @@ if __name__ == '__main__':
 
     pulseblaster1.generate_code()
     plot_outputs()
+    import inspect

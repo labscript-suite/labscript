@@ -1,6 +1,7 @@
 import control
 import functions
-            
+import os,sys
+         
 class NIBoard:
     description = 'NI board'
     clock_limit = 1e6 #TODO get a real number to put here
@@ -47,10 +48,12 @@ class PulseBlaster(control.IODevice):
             flags[11] = 1
             flagstring = ''.join([str(flag) for flag in flags])
             if instruction['reps'] > 1048576:
-                raise Exception('Pulseblaster cannot support more than 1048576 loop iterations. ' +
+                sys.stderr.write('ERROR: Pulseblaster cannot support more than 1048576 loop iterations. ' +
                                  str(instruction['reps']) +' were requested at t = ' + str(instruction['start']) + '. '+
                                  'This can be fixed easily enough by using nested loops. If it is needed, ' +
-                                  'please file a feature request at http://redmine.physics.monash.edu.au/projects/labscript.')
+                                  'please file a feature request at' +
+                                  'http://redmine.physics.monash.edu.au/projects/labscript. Stopping.\n')
+                sys.exit(1)
             self.pb_inst.append({'flags': flagstring, 'instruction': 'LOOP',
                                  'data': instruction['reps'], 'delay': instruction['step']*1e9/2.0})
             flags[11] = 0
@@ -65,20 +68,27 @@ class PulseBlaster(control.IODevice):
                                  'data': 0, 'delay': 10.0/self.clock_limit*1e9})  
                                            
     def write_instructions_to_files(self):
+        import inspect
+        # Get the name of the user's script, this will be the name of the folder
+        # we save its output to:
+        outdir = inspect.stack()[-1][1].split(os.sep)[-1].strip('.py')
+        if not os.path.exists(outdir):
+            os.mkdir(outdir)
         # The raw output of each analogue output not direcly connected
         # to the PulseBlaster:
         for output in self.outputs:
             if output not in self.direct_outputs:
-                output.write_raw_output_to_file()
+                output.write_raw_output_to_file(outdir)
         # The table of instructions for the PulseBlaster itself:
-        with open(self.name+'.dat','w') as outfile:
+        outfname = os.path.join(outdir,self.name+'.dat')
+        with open(outfname,'w') as outfile:
             for inst in self.pb_inst:
                 flagint = '%04d'%int(inst['flags'][::-1],2)
                 instructionint = str(self.pb_instructions[inst['instruction']])
                 dataint = '%04d'%inst['data']
                 delaydouble = repr(inst['delay']) # repr to keep high precision
                 outfile.write('\t'.join(['0']*10 + [flagint,instructionint,dataint,delaydouble,'\n']))
-        print 'saved', self.name+'.dat'
+        print 'saved', outfname
              
     def generate_code(self):
         self.perform_checks()
