@@ -1,6 +1,5 @@
-from devices import PulseBlaster, NIBoard, AnalogueOut, Shutter
-from control import plot_outputs
-
+from labscript import *
+#hdf5_file = sys.argv[1]
 
 if __name__ == '__main__':
     pulseblaster1 = PulseBlaster('PulseBlaster',stop_time=11)
@@ -25,4 +24,3 @@ if __name__ == '__main__':
 
     pulseblaster1.generate_code()
     plot_outputs()
-    import inspect
