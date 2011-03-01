@@ -1,6 +1,11 @@
+import os
+import sys
+
+import h5py
 from pylab import *
-import os, sys
+
 import functions
+
 
 def fastflatten(inarray):
     """A faster way of flattening our arrays than pylab.flatten.
@@ -314,13 +319,10 @@ class Output:
             else:
                 self.outputarray.append(self.timeseries[i])
     
-    def write_raw_output_to_file(self,outdir):
-        fname = self.connected_to_device.name + '-' + str(self.connection_number) + '.dat'
-        fname = os.path.join(outdir,fname)
-        with open(fname, 'w') as outfile:
-            for point in self.raw_output:
-                outfile.write(repr(point)+'\n')
-        print 'saved', fname
+    def write_raw_output_to_file(self):
+        grp = hdf5_file[self.connected_to_device.name]
+        grp.create_dataset(str(self.connection_number),data=self.raw_output)
+        print 'saved a dataset'
         
          
 class NIBoard:
@@ -332,6 +334,7 @@ class NIBoard:
         if clockedby.clock_limit > self.clock_limit:
             clockedby.clock_limit = self.clock_limit
         self.outputs = clockedby.outputs
+        hdf5_file.create_group(self.name)
        
 class PulseBlaster(IODevice):
     pb_instructions = {'STOP': 1, 'LOOP': 2, 'END_LOOP': 3}
@@ -389,33 +392,44 @@ class PulseBlaster(IODevice):
                                  'data': 0, 'delay': 10.0/self.clock_limit*1e9})  
                                            
     def write_instructions_to_files(self):
-        import inspect
-        # Get the name of the user's script, this will be the name of the folder
-        # we save its output to:
-        outdir = inspect.stack()[-1][1].split(os.sep)[-1].strip('.py')
-        if not os.path.exists(outdir):
-            os.mkdir(outdir)
         # The raw output of each analogue output not direcly connected
         # to the PulseBlaster:
         for output in self.outputs:
             if output not in self.direct_outputs:
-                output.write_raw_output_to_file(outdir)
+                output.write_raw_output_to_file()
         # The table of instructions for the PulseBlaster itself:
-        outfname = os.path.join(outdir,self.name+'.dat')
-        with open(outfname,'w') as outfile:
-            for inst in self.pb_inst:
-                flagint = '%04d'%int(inst['flags'][::-1],2)
-                instructionint = str(self.pb_instructions[inst['instruction']])
-                dataint = '%04d'%inst['data']
-                delaydouble = repr(inst['delay']) # repr to keep high precision
-                outfile.write('\t'.join(['0']*10 + [flagint,instructionint,dataint,delaydouble,'\n']))
-        print 'saved', outfname
-             
+        pb_dtype = [('freq0',int32), ('phase0',int32), ('amp0',int32), 
+                    ('dds_en0',int32), ('phase_reset0',int32),
+                    ('freq1',int32), ('phase1',int32), ('amp1',int32),
+                    ('dds_en1',int32), ('phase_reset1',int32),
+                    ('flags',int32), ('inst',int32),
+                    ('inst_data',int32), ('length',float64)]
+                    
+        pb_inst_table = empty(len(self.pb_inst),dtype = pb_dtype)
+        for i,inst in enumerate(self.pb_inst):
+            flagint = int(inst['flags'][::-1],2)
+            instructionint = self.pb_instructions[inst['instruction']]
+            dataint = inst['data']
+            delaydouble = inst['delay']
+            pb_inst_table[i] = (0,0,0,0,0,0,0,0,0,0, flagint, 
+                                instructionint, dataint, delaydouble)
+        group = hdf5_file.create_group(self.name)
+        group.create_dataset('PULSE_PROGRAM', data = pb_inst_table)
+        print 'saved pulse program for %s.'%self.name
+        hdf5_file.flush()
+        hdf5_file.close()
+           
     def generate_code(self):
         self.perform_checks()
         self.make_instruction_table()
         self.convert_to_pb_inst()
         self.write_instructions_to_files()
+        import time
+        start_time = time.time()
+        #os.system('sync')
+        myfile = open(sys.argv[1]).read()
+        print time.time() - start_time
+        
 
 
 class AnalogueOut(Output):
@@ -449,7 +463,39 @@ class Shutter(DigitalOut):
     def close(self,t):
         self.go_low(t)
          
-                                           
+def open_hdf5_file():
+    try:
+        hdf5_filename = sys.argv[1]
+    except:
+        sys.stderr.write('ERROR: No hdf5 file provided as a command line argument. Stopping.\n')
+        sys.exit(1)
+    if not os.path.exists(hdf5_filename):
+        sys.stderr.write('ERROR: Provided hdf5 filename %s doesn\'t exist. Stopping.\n'%hdf5_filename)
+        sys.exit(1)
+    try:
+        hdf5_file = h5py.File(hdf5_filename,'a')
+    except:
+        sys.stderr.write('ERROR: Couldn\'t open %s for writing. '%hdf5_filename +
+                         'Check it is a valid hdf5 file and is not read only.\n')
+        sys.exit(1) 
+    return hdf5_file      
+        
+                                         
 inventory = []
+hdf5_file = open_hdf5_file()
+params = dict(hdf5_file['params'].attrs)
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
