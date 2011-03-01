@@ -1,5 +1,5 @@
 import os
-os.system('python make_dummyhdf5.py')
+os.system('python dummy.py')
 
 from labscript import *
 
