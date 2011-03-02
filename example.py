@@ -3,9 +3,7 @@ os.system('python dummy.py')
 
 from labscript import *
 
-print 'params are:'
-for key,val in params.items():
-    print str(key) + ': ' + str(val)
+print z, A, B, C, D
 
 pulseblaster1 = PulseBlaster('PulseBlaster',stop_time=11)
 NI_board1 = NIBoard('NI PCI-6733', pulseblaster1)

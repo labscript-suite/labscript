@@ -1,5 +1,6 @@
 import os
 import sys
+import keyword
 
 import h5py
 from pylab import *
@@ -484,6 +485,28 @@ def open_hdf5_file():
 inventory = []
 hdf5_file = open_hdf5_file()
 params = dict(hdf5_file['params'].attrs)
+    
+for name in params.keys():
+    if name in globals().keys() or name in locals().keys() or name in dir(__builtins__):
+        sys.stderr.write('ERROR whilst parsing globals from %s. \'%s\''%(sys.argv[1],name) +
+                         ' is already a name used by Python, LabScript, or Pylab.'+
+                         ' Please choose a different variable name to avoid a conflict.\n')
+        sys.exit(1)
+    if name in keyword.kwlist:
+        sys.stderr.write('ERROR whilst parsing globals from %s. \'%s\''%(sys.argv[1],name) +
+                         ' is a reserved Python keyword.' +
+                         ' Please choose a different variable name.\n')
+        sys.exit(1)
+        
+    try:
+        exec(name + ' = 0')
+    except:
+        sys.stderr.write('ERROR whilst parsing globals from %s. \'%s\''%(sys.argv[1],name) +
+                         'is not a valid python variable name.' +
+                         ' Please choose a different variable name.\n')
+        sys.exit(1)
+    exec(name + " = params['%s']"%name )
+    
 
 
 
