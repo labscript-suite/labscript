@@ -424,12 +424,10 @@ class PulseBlaster(IODevice):
         self.perform_checks()
         self.make_instruction_table()
         self.convert_to_pb_inst()
-        self.write_instructions_to_files()
         import time
         start_time = time.time()
-        #os.system('sync')
-        myfile = open(sys.argv[1]).read()
-        print time.time() - start_time
+        self.write_instructions_to_files()
+        print "write time:", time.time() - start_time
         
 
 
