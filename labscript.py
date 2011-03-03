@@ -438,10 +438,13 @@ class AnalogueOut(Output):
     def ramp(self,t,duration,initial,final,samplerate):
         self.add_instruction(t, {'function': functions.ramp(t,duration,initial,final), 'description':'linear ramp',
                                  'end time': t + duration, 'clock rate': samplerate})
+        return duration
+    
                                  
     def sine(self,t,duration,amplitude,angfreq,phase,dc_offset,samplerate):
         self.add_instruction(t, {'function': functions.sine(t,amplitude,angfreq,phase,dc_offset), 'description':'sine wave',
                                  'end time': t + duration, 'clock rate': samplerate})
+        return duration   
                                  
     def constant(self,t,value):
         self.add_instruction(t,value)
