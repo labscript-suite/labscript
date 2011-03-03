@@ -1,8 +1,16 @@
+import time
+import shutil
+start_time = time.time()
 import os
-os.system('python dummy.py')
+print "other imports", time.time() - start_time
+start_time = time.time()
+shutil.copy('dummy.fresh.h5', 'dummy.h5')
+print "copying the dummy file:", time.time() - start_time
 
+start_time = time.time()
 from labscript import *
-
+print "from labscript import *", time.time() - start_time
+start_time = time.time()
 print z, A, B, C, D
 
 pulseblaster1 = PulseBlaster('PulseBlaster',stop_time=11)
@@ -24,6 +32,8 @@ analogue2.constant(5.9,5)
 analogue2.constant(7,4)
 analogue2.constant(8,5)
 analogue3.sine(t=0,duration=10,amplitude=1,angfreq=2,phase=0,dc_offset=0.5,samplerate=0.5e6)
-
+print "actual script", time.time() - start_time
+start_time = time.time()
 pulseblaster1.generate_code()
+print "pulseblaster1.generate_code()", time.time() - start_time
 #plot_outputs()
