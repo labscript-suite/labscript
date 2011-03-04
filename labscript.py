@@ -1,7 +1,7 @@
 import os
 import sys
 import keyword
-
+print 'test'
 import h5py
 from pylab import *
 
