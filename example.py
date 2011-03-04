@@ -20,7 +20,7 @@ analogue1 = AnalogueOut('output 1', NI_board1,'AO0')
 analogue2 = AnalogueOut('output 2', NI_board1,'AO1')
 analogue3 = AnalogueOut('output 3', NI_board1,'AO2')
 
-shutter1 = Shutter('flag 1', pulseblaster1,0)
+shutter1 = Shutter('shutter 1', NI_board1,'D01')
 shutter1.close(t=0)
 shutter1.open(t=5.89)
 analogue1.constant(t=0,value=2)
@@ -34,6 +34,6 @@ analogue2.constant(8,5)
 analogue3.sine(t=0,duration=10,amplitude=1,angfreq=2,phase=0,dc_offset=0.5,samplerate=0.5e6)
 print "actual script", time.time() - start_time
 start_time = time.time()
-pulseblaster1.generate_code()
+generate_code()
 print "pulseblaster1.generate_code()", time.time() - start_time
 #plot_outputs()
