@@ -7,7 +7,6 @@ from pylab import *
 
 import functions
 
-
 def fastflatten(inarray):
     """A faster way of flattening our arrays than pylab.flatten.
     pylab.flatten returns a generator which takes a lot of time and memory
@@ -45,45 +44,68 @@ def discretise(t,y,stop_time):
     ynew= ynew.flatten()[:]
     return tnew, ynew
 
-def plot_outputs(devices='all',display=False):
-    if devices == 'all':
-        devices = inventory
-    for device in devices:
-        for i, output in enumerate(device.outputs):
-            t,y = discretise(device.flat_times,output.raw_output, device.stop_time)
-            plot(t,y,'-',label=output.name)
+def plot_outputs(display=False):
+    for device in inventory:
+        if device.parent_device is None:
+            for i, output in enumerate(device.get_all_outputs()):
+                if isinstance(output,Output):
+                    t,y = discretise(device.times,output.raw_output, device.stop_time)
+                    plot(t,y,'-',label=output.name)
 
     grid(True)
     xlabel('time (seconds)')
     ylabel('output values')
     title('Pseudoclocked outputs')
     legend(loc='upper left')
-    axis([0,max([device.stop_time for device in inventory]),-1,5.5])
+    axis([0,max([device.stop_time if isinstance(device, PulseBlaster) else 0 for device in inventory]),-1,5.5])
     if display:
         show()
     else:
         savefig('outputs.png')
-    
-    
-class IODevice:
-    """This class represents a grouping of outputs (analogue or
-    digital) that all share a common pseudoclock. When
-    IODevice.make_instruction_table is called, instructions are collected
-    from the IODevice's attached outputs, and arrays of values are
-    generated for them to output on each clock tick, as well as
-    instructions for the pseudo clock itself."""
-
-    # Maximum clock rate of the pseudo clock. To be overridden by subclasses:
-    clock_limit = 1e9
-    description = 'IO device'
-    
-    def __init__(self,name,stop_time=20):
-        self.outputs = []
-        self.name = name
-        self.stop_time = stop_time
-        inventory.append(self)
         
-    def collect_change_times(self):
+class Device(object):
+    description = 'Generic Device'
+    allowed_children = None
+    def __init__(self,name,parent_device,connection):
+        if self.allowed_children is None:
+            allowed_children = [Device]
+        self.name = name
+        self.parent_device = parent_device
+        self.connection = connection
+        self.child_devices = []
+        inventory.append(self)
+        if parent_device:
+            parent_device.add_device(self)
+        
+    def add_device(self,device):
+        if any([isinstance(device,DeviceClass) for DeviceClass in self.allowed_children]):
+            self.child_devices.append(device)
+        else:
+            sys.stdout.write('ERROR: %s %s cannot have devices of type %s'%(self.description,self.name,device.description))
+            sys.exit(0)
+            
+    def get_all_outputs(self):
+        all_outputs = []
+        for device in self.child_devices:
+            if isinstance(device,Output):
+                all_outputs.append(device)
+            else:
+                all_outputs.extend(device.get_all_outputs())
+        return all_outputs
+
+    def generate_code(self):
+        for device in self.child_devices:
+            device.generate_code()
+  
+
+class PseudoClock(Device):
+    description = 'Generic Pseudoclock'
+    allowed_children = [Device]
+    def __init__(self,name,stop_time = 20):
+        self.stop_time = stop_time
+        Device.__init__(self,name,parent_device=None,connection=None)
+    
+    def collect_change_times(self, outputs):
         """Asks all connected outputs for a list of times that they
         change state. Takes the union of all of these times. Note
         that at this point, a change from holding-a-constant-value
@@ -91,47 +113,36 @@ class IODevice:
         change. The clocking times will be filled in later in the
         expand_change_times function, and the ramp values filled in with
         expand_timeseries."""
-        # Use a set to avoid duplicates:
-        self.change_times = set()
-        for output in self.outputs:
-            output.make_times()
-            self.change_times = self.change_times.union(output.times)
-        self.change_times = list(self.change_times)
-        self.change_times.sort()
+        change_times = []
+        for output in outputs:
+            change_times.extend(output.get_change_times())
+        # Change to a set and back to get rid of duplicates:
+        change_times = list(set(change_times))
+        change_times.sort()
         # Check that no two instructions are too close together:
-        for i, t in enumerate(self.change_times[:-1]):
-            dt = self.change_times[i+1] - t
+        for i, t in enumerate(change_times[:-1]):
+            dt = change_times[i+1] - t
             if dt < 1.0/self.clock_limit:
                 sys.stderr.write('ERROR: Commands have been issued to devices attached to %s at t= %s s and %s s. '%(self.name, str(t),str(self.change_times[i+1])) +
                                   'One or more connected devices cannot support update delays shorter than %s sec. Stopping.\n'%str(1.0/self.clock_limit))
                 sys.exit(1)
-        
-    def make_timeseries(self):
-        """Instructs each connected output to construct a list of its
-        states at each time in self.change_times, that is at any point in
-        time that one or more connected outputs change state. By state,
-        I don't mean the value of the output at that moment, rather
-        I mean what instruction it has. This might be a single value,
-        or it might be a reference to a function for a ramp etc."""
-        for output in self.outputs:
-            output.make_timeseries(self.change_times)
-        
-    def expand_change_times(self):
-        """For each time interval delimited by self.change_times,
-        constructs an array of times at which the clock for this device
-        needs to tick. If the interval has all outputs having constant
-        values, then only the start time is stored.  If one or more
-        outputs are ramping, then the clock ticks at the maximum clock
-        rate requested by any of the outputs. Also produces a higher
-        level description of the clocking; self.clock. This list contains
-        the information that facilitates programming a pseudo clock
-        using loops."""
-        self.all_times = []
-        self.clock = []
-        for i, time in enumerate(self.change_times):
+        return change_times
+    
+    def expand_change_times(self, change_times, outputs):
+        """For each time interval delimited by change_times, constructs
+        an array of times at which the clock for this device needs to
+        tick. If the interval has all outputs having constant values,
+        then only the start time is stored.  If one or more outputs are
+        ramping, then the clock ticks at the maximum clock rate requested
+        by any of the outputs. Also produces a higher level description
+        of the clocking; self.clock. This list contains the information
+        that facilitates programming a pseudo clock using loops."""
+        all_times = []
+        clock = []
+        for i, time in enumerate(change_times):
             # what's the fastest clock rate?
             maxrate = 0
-            for output in self.outputs:
+            for output in outputs:
                 # Check if output is sweeping and has highest clock rate
                 # so far. If so, store its clock rate to max_rate:
                 if isinstance(output.timeseries[i],dict) and output.timeseries[i]['clock rate'] > maxrate:
@@ -139,7 +150,7 @@ class IODevice:
                     maxrate = output.timeseries[i]['clock rate']
             if maxrate:
                 # If there was ramping at this timestep, how many clock ticks fit before the next instruction?
-                n_ticks, remainder = divmod((self.change_times[i+1] - time)*maxrate,1)
+                n_ticks, remainder = divmod((change_times[i+1] - time)*maxrate,1)
                 n_ticks = int(n_ticks)
                 # Can we squeeze the final clock cycle in at the end?
                 if remainder and remainder/float(maxrate) >= 1/float(self.clock_limit):
@@ -149,7 +160,7 @@ class IODevice:
                     n_ticks += 1
                 duration = n_ticks/float(maxrate) # avoiding integer division
                 ticks = linspace(time,time + duration,n_ticks,endpoint=False)
-                self.all_times.append(array(ticks,dtype=float32))
+                all_times.append(array(ticks,dtype=float32))
                 # Note that even though all arrays are single precision
                 # floating point, the numbers stored to the clock list
                 # below are double precision. This is important so that
@@ -159,21 +170,21 @@ class IODevice:
                     # If n_ticks is only one, then this step doesn't do
                     # anything, it has reps=0. So we should only include
                     # it if n_ticks > 1:
-                    self.clock.append({'start': time, 'reps': n_ticks-1, 'step': 1/float(maxrate)})
+                    clock.append({'start': time, 'reps': n_ticks-1, 'step': 1/float(maxrate)})
                 # The last clock tick has a different duration depending on the next step:
-                self.clock.append({'start': ticks[-1], 'reps': 1, 'step': self.change_times[i+1] - ticks[-1]})
+                clock.append({'start': ticks[-1], 'reps': 1, 'step': change_times[i+1] - ticks[-1]})
             else:
-                self.all_times.append(time)
+                all_times.append(time)
                 try: 
                     # If there was no ramping, here is a single clock tick:
-                    self.clock.append({'start': time, 'reps': 1, 'step': self.change_times[i+1] - time})
+                    clock.append({'start': time, 'reps': 1, 'step': change_times[i+1] - time})
                 except IndexError:
-                    if i != len(self.change_times) - 1:
+                    if i != len(change_times) - 1:
                         raise
                     # There is no next instruction. Hold the last clock
                     # tick until self.stop_time.
                     if self.stop_time > time:
-                        self.clock.append({'start': time, 'reps': 1, 'step': self.stop_time - time})
+                        clock.append({'start': time, 'reps': 1, 'step': self.stop_time - time})
                     # Error if self.stop_time has been set to less
                     # than the time of the last instruction:
                     elif self.stop_time < time:
@@ -186,42 +197,116 @@ class IODevice:
                     # Output.raw_output arrays. We'll make this last
                     # cycle be at ten times the maximum step duration.
                     else:
-                        self.clock.append({'start': time, 'reps': 1, 'step': 10.0/self.clock_limit})
+                        clock.append({'start': time, 'reps': 1, 'step': 10.0/self.clock_limit})
+        return all_times, clock
                         
-                        
-    def expand_timeseries(self):
-        for output in self.outputs:
-            output.make_outputarray(self.all_times)
+    def generate_clock(self):
+        outputs = self.get_all_outputs()
+        change_times = self.collect_change_times(outputs)
+        for output in outputs:
+            output.make_timeseries(change_times)
+        all_times, clock = self.expand_change_times(change_times, outputs)
+        for output in outputs:
+            output.expand_timeseries(all_times)
+        self.clock = clock
+        self.times = fastflatten(all_times)
+        
+    def generate_code(self):
+        self.generate_clock()
+        Device.generate_code(self)
             
-    def make_raw_output(self):
-        self.flat_times = fastflatten(self.all_times)
-        del self.all_times
-        for output in self.outputs:
-            output.raw_output = fastflatten(output.outputarray)
-            del output.outputarray
-            
-    def make_instruction_table(self):
-        self.collect_change_times()
-        self.make_timeseries()
-        self.expand_change_times()
-        self.expand_timeseries()
-        self.make_raw_output()
- 
 
-class Output:
-    description = 'generic output'
-    # Overridden by subclasses, for example {1:'open', 0:'closed'}
-    allowed_states = {}
+class PulseBlaster(PseudoClock):
+    pb_instructions = {'STOP': 1, 'LOOP': 2, 'END_LOOP': 3}
+    description = 'PulseBlaster'
+    clock_limit = 25.0e6 # Slight underestimate I think.
+    clock_connection = 11
     
-    def __init__(self,name,IO_device,connection_number):
-        self.name = name
+    def get_direct_outputs(self):
+        """Finds out which outputs are directly attached to the PulseBlaster"""
+        direct_outputs = []
+        for output in self.get_all_outputs():
+            if output.parent_device is self:
+                if not (isinstance(output.connection,int) and output.connection < 12):
+                    sys.stderr.write('%s is set as connected to output connection %d of %s. Output connection \
+                                      number must be a integer less than 12\n.'%(output.name, output.connection, self.name))
+                    sys.exit(1)
+                for other_output in direct_outputs:
+                    if output.connection == other_output.connection:
+                        sys.stderr.write('%s %s and %s %s are both set as connected to output %d of %s! Stopping.\n'%(output.name,
+                                         other_output.name, output.connection, self.name))
+                        sys.exit(1)
+                direct_outputs.append(output)
+        return direct_outputs
+    
+    def convert_to_pb_inst(self, direct_outputs):
+        pb_inst = []
+        # index to keep track of where in output.raw_output the
+        # pulseblaster flags are coming from
+        i = 0
+        # index to record what line number of the pulseblaster hardware
+        # instructions we're up to:
+        j = 0
+        for instruction in self.clock:
+            flags = [0]*12
+            for output in direct_outputs:
+                flags[output.connection] = int(output.raw_output[i])
+            flags[11] = 1
+            flagstring = ''.join([str(flag) for flag in flags])
+            if instruction['reps'] > 1048576:
+                sys.stderr.write('ERROR: Pulseblaster cannot support more than 1048576 loop iterations. ' +
+                                 str(instruction['reps']) +' were requested at t = ' + str(instruction['start']) + '. '+
+                                 'This can be fixed easily enough by using nested loops. If it is needed, ' +
+                                  'please file a feature request at' +
+                                  'http://redmine.physics.monash.edu.au/projects/labscript. Stopping.\n')
+                sys.exit(1)
+            pb_inst.append({'flags': flagstring, 'instruction': 'LOOP',
+                                 'data': instruction['reps'], 'delay': instruction['step']*1e9/2.0})
+            flags[11] = 0
+            flagstring = ''.join([str(flag) for flag in flags])
+            pb_inst.append({'flags': flagstring, 'instruction': 'END_LOOP',
+                                 'data': j, 'delay': instruction['step']*1e9/2.0})
+            j += 2
+            i += instruction['reps']
+        # Gotta put a stop instruction at the end. It will have a short
+        # delay time and set everything back to zero:
+        pb_inst.append({'flags': '000000000000', 'instruction': 'STOP',
+                        'data': 0, 'delay': 10.0/self.clock_limit*1e9})  
+        # OK now we squeeze the instructions into a numpy array ready for writing to hdf5:
+        pb_dtype = [('freq0',int32), ('phase0',int32), ('amp0',int32), 
+                    ('dds_en0',int32), ('phase_reset0',int32),
+                    ('freq1',int32), ('phase1',int32), ('amp1',int32),
+                    ('dds_en1',int32), ('phase_reset1',int32),
+                    ('flags',int32), ('inst',int32),
+                    ('inst_data',int32), ('length',float64)]
+        pb_inst_table = empty(len(pb_inst),dtype = pb_dtype)
+        for i,inst in enumerate(pb_inst):
+            flagint = int(inst['flags'][::-1],2)
+            instructionint = self.pb_instructions[inst['instruction']]
+            dataint = inst['data']
+            delaydouble = inst['delay']
+            pb_inst_table[i] = (0,0,0,0,0,0,0,0,0,0, flagint, 
+                                instructionint, dataint, delaydouble)
+                              
+        # okey now write it to the file:   
+        group = hdf5_file.create_group(self.name)
+        group.create_dataset('PULSE_PROGRAM', data = pb_inst_table)         
+                              
+    def generate_code(self):
+        PseudoClock.generate_code(self)
+        direct_outputs = self.get_direct_outputs()
+        self.convert_to_pb_inst(direct_outputs)
+
+
+            
+class Output(Device):
+    description = 'generic output'
+    allowed_states = {}
+    def __init__(self,name,parent_device,connection):
         self.instructions = {}
-        self.connected_to_device = IO_device
-        self.connection_number = connection_number
-        self.ramp_limits = []
-        IO_device.outputs.append(self)
-        
-        
+        self.ramp_limits = [] # For checking ramps don't overlap
+        Device.__init__(self,name,parent_device,connection)      
+
     def instruction_to_string(self,instruction):
         """gets a human readable description of an instruction"""
         if isinstance(instruction,dict):
@@ -230,7 +315,7 @@ class Output:
             return str(self.allowed_states[instruction])
         else:
             return str(instruction)
-        
+
     def add_instruction(self,time,instruction):
         #Check that this doesn't collide with previous instructions:
         if time in self.instructions.keys():
@@ -250,7 +335,12 @@ class Output:
             self.ramp_limits.append((time,instruction['end time']))
         self.instructions[time] = instruction
         
-    def perform_checks(self):
+    def get_change_times(self):
+        """If this function is being called, it means that the parent
+        Pseudoclock has requested a list of times that this output changes
+        state. First we'll need to perform some checks to make sure that
+        the instructions the user has entered make sense. Then the list
+        of times is returned."""
         # Check if there are no instructions. Generate a warning and insert an
         # instruction telling the output to remain at zero.
         if not self.instructions:
@@ -266,13 +356,19 @@ class Output:
         for instruction in self.instructions.values():
             if isinstance(instruction, dict) and instruction['end time'] not in self.instructions.keys():
                 self.add_instruction(instruction['end time'], instruction['function'](instruction['end time']))
-         
-    def make_times(self):
-        self.perform_checks()
-        self.times = self.instructions.keys()
-        self.times.sort()
-            
+        times = self.instructions.keys()
+        self.times = times
+        return times
+        
     def make_timeseries(self,change_times):
+        """If this is being called, then it means the parent Pseudoclock
+        has asked for a list of this output's states at each time in
+        change_times. (Which are the times that one or more connected
+        outputs in the same pseudoclock change state). By state, I don't
+        mean the value of the output at that moment, rather I mean what
+        instruction it has. This might be a single value, or it might
+        be a reference to a function for a ramp etc. This list of states
+        is stored in self.timeseries rather than being returned."""
         self.timeseries = []
         i = 0
         for change_time in change_times:
@@ -289,9 +385,15 @@ class Output:
                     raise
             instruction = self.instructions[self.times[i-1]]
             self.timeseries.append(instruction)     
-    
-    def make_outputarray(self,all_times):
-        self.outputarray = []
+        
+    def expand_timeseries(self,all_times):
+        """This function evaluates the ramp functions in self.timeseries
+        at the time points in all_times, and creates an array of output
+        values at those times.  These are the values that this output
+        should update to on each clock tick, and are the raw values that
+        should be used to program the output device.  They are stored
+        in self.raw_output."""
+        outputarray = []
         for i, time in enumerate(all_times):
             if iterable(time):
                 if isinstance(self.timeseries[i],dict):
@@ -316,120 +418,11 @@ class Output:
                 else:
                     outarray = empty(len(time),dtype=float32)
                     outarray.fill(self.timeseries[i])
-                self.outputarray.append(outarray)
+                outputarray.append(outarray)
             else:
-                self.outputarray.append(self.timeseries[i])
-    
-    def write_raw_output_to_file(self):
-        grp = hdf5_file[self.connected_to_device.name]
-        grp.create_dataset(str(self.connection_number),data=self.raw_output)
-        print 'saved a dataset'
+                outputarray.append(self.timeseries[i])
+        self.raw_output = fastflatten(outputarray)
         
-         
-class NIBoard:
-    description = 'NI board'
-    clock_limit = 1e6 #TODO get a real number to put here
-    def __init__(self, name, clockedby):
-        self.name = name
-        # Make sure the clock knows is limited by this device's max clock rate:
-        if clockedby.clock_limit > self.clock_limit:
-            clockedby.clock_limit = self.clock_limit
-        self.outputs = clockedby.outputs
-        hdf5_file.create_group(self.name)
-       
-class PulseBlaster(IODevice):
-    pb_instructions = {'STOP': 1, 'LOOP': 2, 'END_LOOP': 3}
-    description = 'PulseBlaster'
-    clock_limit = 25.0e6 # Slight underestimate I think.
-    clock_connection = 11
-    direct_outputs = []
-    
-    def perform_checks(self):
-        for output in self.outputs:
-            if output.connected_to_device is self:
-                if not (isinstance(output.connection_number,int) or output.connection_number < 12):
-                    sys.stderr.write('%s is set as connected to output connection %d of %s. Output connection \
-                                      number must be a integer less than 12\n.'%(output.name, output.connection_number, self.name))
-                    sys.exit(1)
-                for other_output in self.direct_outputs:
-                    if output.connection_number == other_output.connection_number:
-                        sys.stderr.write('%s %s and %s %s are both set as connected to output %d of %s! Stopping.\n'%(output.name,
-                                         other_output.name, output.connection_number, self.name))
-                        sys.exit(1)
-                self.direct_outputs.append(output)    
-                
-    def convert_to_pb_inst(self):
-        self.pb_inst = []
-        # index to keep track of where in output.raw_output the
-        # pulseblaster flags are coming from
-        i = 0
-        # index to record what line number of the pulseblaster hardware
-        # instructions we're up to:
-        j = 0
-        for instruction in self.clock:
-            flags = [0]*12
-            for output in self.direct_outputs:
-                flags[output.connection_number] = int(output.raw_output[i])
-            flags[11] = 1
-            flagstring = ''.join([str(flag) for flag in flags])
-            if instruction['reps'] > 1048576:
-                sys.stderr.write('ERROR: Pulseblaster cannot support more than 1048576 loop iterations. ' +
-                                 str(instruction['reps']) +' were requested at t = ' + str(instruction['start']) + '. '+
-                                 'This can be fixed easily enough by using nested loops. If it is needed, ' +
-                                  'please file a feature request at' +
-                                  'http://redmine.physics.monash.edu.au/projects/labscript. Stopping.\n')
-                sys.exit(1)
-            self.pb_inst.append({'flags': flagstring, 'instruction': 'LOOP',
-                                 'data': instruction['reps'], 'delay': instruction['step']*1e9/2.0})
-            flags[11] = 0
-            flagstring = ''.join([str(flag) for flag in flags])
-            self.pb_inst.append({'flags': flagstring, 'instruction': 'END_LOOP',
-                                 'data': j, 'delay': instruction['step']*1e9/2.0})
-            j += 2
-            i += instruction['reps']
-        # Gotta put a stop instruction at the end. It will have a short
-        # delay time and set everything back to zero:
-        self.pb_inst.append({'flags': '000000000000', 'instruction': 'STOP',
-                                 'data': 0, 'delay': 10.0/self.clock_limit*1e9})  
-                                           
-    def write_instructions_to_files(self):
-        # The raw output of each analogue output not direcly connected
-        # to the PulseBlaster:
-        for output in self.outputs:
-            if output not in self.direct_outputs:
-                output.write_raw_output_to_file()
-        # The table of instructions for the PulseBlaster itself:
-        pb_dtype = [('freq0',int32), ('phase0',int32), ('amp0',int32), 
-                    ('dds_en0',int32), ('phase_reset0',int32),
-                    ('freq1',int32), ('phase1',int32), ('amp1',int32),
-                    ('dds_en1',int32), ('phase_reset1',int32),
-                    ('flags',int32), ('inst',int32),
-                    ('inst_data',int32), ('length',float64)]
-                    
-        pb_inst_table = empty(len(self.pb_inst),dtype = pb_dtype)
-        for i,inst in enumerate(self.pb_inst):
-            flagint = int(inst['flags'][::-1],2)
-            instructionint = self.pb_instructions[inst['instruction']]
-            dataint = inst['data']
-            delaydouble = inst['delay']
-            pb_inst_table[i] = (0,0,0,0,0,0,0,0,0,0, flagint, 
-                                instructionint, dataint, delaydouble)
-        group = hdf5_file.create_group(self.name)
-        group.create_dataset('PULSE_PROGRAM', data = pb_inst_table)
-        print 'saved pulse program for %s.'%self.name
-        hdf5_file.flush()
-        hdf5_file.close()
-           
-    def generate_code(self):
-        self.perform_checks()
-        self.make_instruction_table()
-        self.convert_to_pb_inst()
-        import time
-        start_time = time.time()
-        self.write_instructions_to_files()
-        print "write time:", time.time() - start_time
-        
-
 
 class AnalogueOut(Output):
     description = 'analogue output'
@@ -456,6 +449,28 @@ class DigitalOut(Output):
     def go_low(self,t):
         self.add_instruction(t,0) 
 
+class NIBoard(Device):
+    allowed_children = [AnalogueOut, DigitalOut]
+    def __init__(self, name, parent_device):
+        Device.__init__(self, name, parent_device, connection=None)
+    def generate_code(self):
+        outputs = {}
+        for output in self.child_devices:
+            outputs[output.connection] = output
+        connections = outputs.keys()
+        connections.sort()
+        NI_dtype = []
+        for connection in connections:
+            dtype = float32 if isinstance(outputs[connection],AnalogueOut) else bool
+            NI_dtype.append((connection,dtype))
+        out_table = empty(len(self.parent_device.times),dtype=NI_dtype)
+        for connection in connections:
+            out_table[connection] = outputs[connection].raw_output
+        grp = hdf5_file.create_group(self.name)
+        grp.create_dataset('OUTPUT_VALUES',data=out_table)
+
+
+
 
 class Shutter(DigitalOut):
     description = 'shutter'
@@ -463,25 +478,15 @@ class Shutter(DigitalOut):
     def open(self,t):
         self.go_high(t)
     def close(self,t):
-        self.go_low(t)
-
-
-class NovaTechDDS(Output): #make an intermediate device class?
-    descpription = 'NovaTech DDS9m'
-    def __init__(self):
-        pass
-    
-def DDSOut(Output):
-    description='generic DDS device'
-    def __init__(self,name,IO_device,connection_number):
-        self.name = name
-        self.instructions = {}
-        self.connected_to_device = IO_device
-        self.connection_number = connection_number
-        self.ramp_limits = []
-        IO_device.outputs.append(self)
-    
-             
+        self.go_low(t)  
+  
+        
+def generate_code():
+    for device in inventory:
+        if not device.parent_device:
+            device.generate_code()
+    hdf5_file.close()
+ 
 def open_hdf5_file():
     try:
         hdf5_filename = sys.argv[1]
@@ -528,16 +533,4 @@ for name in params.keys():
     
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+       
