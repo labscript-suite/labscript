@@ -4,7 +4,7 @@ start_time = time.time()
 import os
 print "other imports", time.time() - start_time
 start_time = time.time()
-shutil.copy('dummy.fresh.h5', 'dummy.h5')
+shutil.copy('dummy_template.h5', 'dummy.h5')
 print "copying the dummy file:", time.time() - start_time
 
 start_time = time.time()

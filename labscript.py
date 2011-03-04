@@ -464,7 +464,24 @@ class Shutter(DigitalOut):
         self.go_high(t)
     def close(self,t):
         self.go_low(t)
-         
+
+
+class NovaTechDDS(Output): #make an intermediate device class?
+    descpription = 'NovaTech DDS9m'
+    def __init__(self):
+        pass
+    
+def DDSOut(Output):
+    description='generic DDS device'
+    def __init__(self,name,IO_device,connection_number):
+        self.name = name
+        self.instructions = {}
+        self.connected_to_device = IO_device
+        self.connection_number = connection_number
+        self.ramp_limits = []
+        IO_device.outputs.append(self)
+    
+             
 def open_hdf5_file():
     try:
         hdf5_filename = sys.argv[1]
@@ -501,6 +518,7 @@ for name in params.keys():
         
     try:
         exec(name + ' = 0')
+        assert '.' not in name
     except:
         sys.stderr.write('ERROR whilst parsing globals from %s. \'%s\''%(sys.argv[1],name) +
                          'is not a valid python variable name.' +
