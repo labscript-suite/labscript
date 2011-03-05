@@ -458,11 +458,29 @@ class NIBoard(Device):
     def __init__(self, name, parent_device):
         Device.__init__(self, name, parent_device, connection=None)
         
-    def convert_to_uint16(self,inarray):
+    def convert_to_uint16(self,output):
         """converts floats between -10 and 10 to unsigned 16 bit integers
         between zero and 65535"""
-        outarr = array((inarray+10)*3276.75,dtype=uint16)
-        return outarr
+        # This function is currenly responsible for about a 50% increase
+        # in run time, but i'm not sure whether it can be optimised much
+        # without sacrificing correctness.  The any(output.raw_output >
+        # 10) checks etc are what are slow, but without bounds checking
+        # the type casting to uint16 wraps around without detecting
+        # overflow. Writing uint16s results in less time to write to
+        # disk though, and so the net effect is not much. However if
+        # we use an OS with proper caching, such as Win 7, then write
+        # times don't concern us much. If we pass float32's, then LabVIEW
+        # presumably does its own bounds checking before giving the data
+        # to its cards. If it doesn't then we'll have to do this anyway,
+        # grumble grumble, to make sure the experiment doesn't silently
+        # fail when the user enters too high a voltage...
+        if any(output.raw_output > 10 )  or any(output.raw_output < -10 ):
+            sys.stderr.write('ERROR: %s %s '%(output.description, output.name) +
+                              'can only have values between -10 and 10 Volts, ' + 
+                              'the limit imposed by %s. Stopping.\n'%self.name)
+            sys.exit(1)
+        # adding 0.5 then typecasting is faster than rounding to integers first:
+        output.raw_output = array(3276.75*output.raw_output+32768,dtype=uint16)
     
     def generate_code(self):
         outputs = {}
@@ -476,13 +494,8 @@ class NIBoard(Device):
             NI_dtype.append((connection,dtype))
         out_table = empty(len(self.parent_device.times),dtype=NI_dtype)
         for output in [out for out in outputs.values() if isinstance(out,AnalogueOut)]:
-            #The max, min functions below are slow. Optimise here if necessary later on.
-            if output.raw_output.max() > 10 or output.raw_output.min() < -10:
-                sys.stderr.write('ERROR: %s %s '%(output.description, output.name) +
-                                  'can only have values between -10 and 10 Volts, ' + 
-                                  'the limit imposed by %s. Stopping.\n'%self.name)
-                sys.exit(1)
-            output.raw_output = self.convert_to_uint16(output.raw_output)
+            if 'uint16' in sys.argv:
+                self.convert_to_uint16(output)
         for connection in connections:
             out_table[connection] = outputs[connection].raw_output
         grp = hdf5_file.create_group(self.name)

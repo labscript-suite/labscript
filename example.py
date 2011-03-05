@@ -33,10 +33,14 @@ analogue2.ramp(t=2, duration=3, initial=3, final=4, samplerate=0.5e6)
 analogue2.constant(5.9,5)
 analogue2.constant(7,4)
 analogue2.constant(8,5)
-analogue3.sine(t=0,duration=10,amplitude=20,angfreq=2,phase=0,dc_offset=0.5,samplerate=0.5e6)
+analogue3.sine(t=0,duration=10,amplitude=10,angfreq=2,phase=0,dc_offset=0.0,samplerate=0.5e6)
 print "actual script", time.time() - start_time
 start_time = time.time()
 generate_code()
 print "pulseblaster1.generate_code()", time.time() - start_time
-#plot_outputs(display=True)
+plot_outputs(display=True)
+start_time = time.time()
+os.system('sync') # linux only to measure hard drive write time, which is otherwise deferred.
+print "os.system(sync)", time.time() - start_time
 print "total time:", time.time() - very_start_time
+
