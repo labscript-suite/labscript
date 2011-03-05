@@ -290,7 +290,7 @@ class PulseBlaster(PseudoClock):
                               
         # okey now write it to the file:   
         group = hdf5_file.create_group(self.name)
-        group.create_dataset('PULSE_PROGRAM', data = pb_inst_table)         
+        group.create_dataset('PULSE_PROGRAM', compression=compression,data = pb_inst_table)         
                               
     def generate_code(self):
         PseudoClock.generate_code(self)
@@ -490,19 +490,19 @@ class NIBoard(Device):
         connections.sort()
         NI_dtype = []
         for connection in connections:
-            if 'uint16' in sys.argv:
+            if '-uint16' in sys.argv:
                 dtype = uint16 if isinstance(outputs[connection],AnalogueOut) else bool
             else:
                 dtype = float32 if isinstance(outputs[connection],AnalogueOut) else bool
             NI_dtype.append((connection,dtype))
         out_table = empty(len(self.parent_device.times),dtype=NI_dtype)
         for output in [out for out in outputs.values() if isinstance(out,AnalogueOut)]:
-            if 'uint16' in sys.argv:
+            if '-uint16' in sys.argv:
                 self.convert_to_uint16(output)
         for connection in connections:
             out_table[connection] = outputs[connection].raw_output
         grp = hdf5_file.create_group(self.name)
-        grp.create_dataset('OUTPUT_VALUES',data=out_table)
+        grp.create_dataset('OUTPUT_VALUES',compression=compression,data=out_table)
 
 
 class Shutter(DigitalOut):
@@ -526,7 +526,7 @@ def generate_code():
  
 def open_hdf5_file():
     try:
-        hdf5_filename = sys.argv[1]
+        hdf5_filename = sys.argv[-1]
     except:
         sys.stderr.write('ERROR: No hdf5 file provided as a command line argument. Stopping.\n')
         sys.exit(1)
@@ -545,7 +545,11 @@ def open_hdf5_file():
 inventory = []
 hdf5_file = open_hdf5_file()
 params = dict(hdf5_file['params'].attrs)
-    
+if '-compress' in sys.argv:
+    compression = 'gzip'
+else:
+    compression = None
+        
 for name in params.keys():
     if name in globals().keys() or name in locals().keys() or name in dir(__builtins__):
         sys.stderr.write('ERROR whilst parsing globals from %s. \'%s\''%(sys.argv[1],name) +

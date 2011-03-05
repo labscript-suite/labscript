@@ -38,6 +38,6 @@ start_time = time.time()
 os.system('sync') # linux only to measure hard drive write time, which is otherwise deferred.
 print "os.system('sync'):       \t", round(time.time() - start_time,2),'sec'
 print "total time:              \t", round(time.time() - very_start_time,2),'sec'
-print 'hdf5 file size:          \t', round(os.path.getsize('dummy.h5')/1e6,1), 'MB'
+print 'hdf5 file size:          \t', round(os.path.getsize('dummy.h5')/(1024.0**2),1), 'MB'
 print
 print
