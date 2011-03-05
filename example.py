@@ -1,18 +1,13 @@
 import time
 import shutil
-start_time = time.time()
 very_start_time = time.time()
 import os
-print "other imports", time.time() - start_time
-start_time = time.time()
 shutil.copy('dummy_template.h5', 'dummy.h5')
-print "copying the dummy file:", time.time() - start_time
 
 start_time = time.time()
 from labscript import *
-print "from labscript import *", time.time() - start_time
+labscriptimport =  time.time() - start_time
 start_time = time.time()
-print z, A, B, C, D
 
 pulseblaster1 = PulseBlaster('PulseBlaster',stop_time=11)
 NI_board1 = NIBoard('NI PCI-6733', pulseblaster1)
@@ -34,13 +29,15 @@ analogue2.constant(5.9,5)
 analogue2.constant(7,4)
 analogue2.constant(8,5)
 analogue3.sine(t=0,duration=10,amplitude=10,angfreq=2,phase=0,dc_offset=0.0,samplerate=0.5e6)
-print "actual script", time.time() - start_time
 start_time = time.time()
 generate_code()
-print "pulseblaster1.generate_code()", time.time() - start_time
-plot_outputs(display=True)
+print "from labscript import *: \t",round(labscriptimport,2),'sec'
+print "generate_code():         \t", round(time.time() - start_time,2),'sec'
+#plot_outputs()
 start_time = time.time()
 os.system('sync') # linux only to measure hard drive write time, which is otherwise deferred.
-print "os.system(sync)", time.time() - start_time
-print "total time:", time.time() - very_start_time
-
+print "os.system('sync'):       \t", round(time.time() - start_time,2),'sec'
+print "total time:              \t", round(time.time() - very_start_time,2),'sec'
+print 'hdf5 file size:          \t', round(os.path.getsize('dummy.h5')/1e6,1), 'MB'
+print
+print
