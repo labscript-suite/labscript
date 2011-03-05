@@ -5,5 +5,5 @@ def ramp(t,duration,initial,final):
     c = initial - m*t
     return lambda x: m*x + c
 
-def sine(t,amplitude,angfreq,phase,dc_offset):
+def sine(t,duration,amplitude,angfreq,phase,dc_offset):
     return lambda x: amplitude*sin(angfreq*(x-t) + phase) + dc_offset

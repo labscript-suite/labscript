@@ -7,7 +7,7 @@ from pylab import *
 
 import functions
 
-def fastflatten(inarray):
+def fastflatten(inarray, dtype):
     """A faster way of flattening our arrays than pylab.flatten.
     pylab.flatten returns a generator which takes a lot of time and memory
     to convert into a numpy array via array(list(generator)).  The problem
@@ -19,7 +19,7 @@ def fastflatten(inarray):
     and/or single values, not a N-dimenional block of homogeneous data
     like a numpy array."""
     total_points = sum([len(element) if iterable(element) else 1 for element in inarray])
-    flat = empty(total_points,dtype=float32)
+    flat = empty(total_points,dtype=dtype)
     i = 0
     for val in inarray:
         if iterable(val):
@@ -57,7 +57,7 @@ def plot_outputs(display=False):
     ylabel('output values')
     title('Pseudoclocked outputs')
     legend(loc='upper left')
-    axis([0,max([device.stop_time if isinstance(device, PulseBlaster) else 0 for device in inventory]),-1,5.5])
+    #axis([0,max([device.stop_time if isinstance(device, PulseBlaster) else 0 for device in inventory]),-1,5.5])
     if display:
         show()
     else:
@@ -81,7 +81,7 @@ class Device(object):
         if any([isinstance(device,DeviceClass) for DeviceClass in self.allowed_children]):
             self.child_devices.append(device)
         else:
-            sys.stdout.write('ERROR: %s %s cannot have devices of type %s'%(self.description,self.name,device.description))
+            sys.stdout.write('ERROR: devices of type %s cannot be attached to devices of type %s. \n'%(device.description,self.description))
             sys.exit(0)
             
     def get_all_outputs(self):
@@ -209,7 +209,7 @@ class PseudoClock(Device):
         for output in outputs:
             output.expand_timeseries(all_times)
         self.clock = clock
-        self.times = fastflatten(all_times)
+        self.times = fastflatten(all_times,float32)
         
     def generate_code(self):
         self.generate_clock()
@@ -302,6 +302,7 @@ class PulseBlaster(PseudoClock):
 class Output(Device):
     description = 'generic output'
     allowed_states = {}
+    dtype = float32
     def __init__(self,name,parent_device,connection):
         self.instructions = {}
         self.ramp_limits = [] # For checking ramps don't overlap
@@ -421,7 +422,8 @@ class Output(Device):
                 outputarray.append(outarray)
             else:
                 outputarray.append(self.timeseries[i])
-        self.raw_output = fastflatten(outputarray)
+        del self.timeseries # don't need this any more.
+        self.raw_output = fastflatten(outputarray, self.dtype)
         
 
 class AnalogueOut(Output):
@@ -433,7 +435,7 @@ class AnalogueOut(Output):
     
                                  
     def sine(self,t,duration,amplitude,angfreq,phase,dc_offset,samplerate):
-        self.add_instruction(t, {'function': functions.sine(t,amplitude,angfreq,phase,dc_offset), 'description':'sine wave',
+        self.add_instruction(t, {'function': functions.sine(t,duration,amplitude,angfreq,phase,dc_offset), 'description':'sine wave',
                                  'end time': t + duration, 'clock rate': samplerate})
         return duration   
                                  
@@ -443,16 +445,25 @@ class AnalogueOut(Output):
         
 class DigitalOut(Output):
     description = 'digital output'
-    allowed_states = {1:'high', 0:'low'}
+    allowed_states = {True:'high', False:'low'}
+    dtype = bool
     def go_high(self,t):
-        self.add_instruction(t,1)
+        self.add_instruction(t,True)
     def go_low(self,t):
-        self.add_instruction(t,0) 
+        self.add_instruction(t,False) 
+
 
 class NIBoard(Device):
     allowed_children = [AnalogueOut, DigitalOut]
     def __init__(self, name, parent_device):
         Device.__init__(self, name, parent_device, connection=None)
+        
+    def convert_to_uint16(self,inarray):
+        """converts floats between -10 and 10 to unsigned 16 bit integers
+        between zero and 65535"""
+        outarr = array((inarray+10)*3276.75,dtype=uint16)
+        return outarr
+    
     def generate_code(self):
         outputs = {}
         for output in self.child_devices:
@@ -461,20 +472,26 @@ class NIBoard(Device):
         connections.sort()
         NI_dtype = []
         for connection in connections:
-            dtype = float32 if isinstance(outputs[connection],AnalogueOut) else bool
+            dtype = uint16 if isinstance(outputs[connection],AnalogueOut) else bool
             NI_dtype.append((connection,dtype))
         out_table = empty(len(self.parent_device.times),dtype=NI_dtype)
+        for output in [out for out in outputs.values() if isinstance(out,AnalogueOut)]:
+            #The max, min functions below are slow. Optimise here if necessary later on.
+            if output.raw_output.max() > 10 or output.raw_output.min() < -10:
+                sys.stderr.write('ERROR: %s %s '%(output.description, output.name) +
+                                  'can only have values between -10 and 10 Volts, ' + 
+                                  'the limit imposed by %s. Stopping.\n'%self.name)
+                sys.exit(1)
+            output.raw_output = self.convert_to_uint16(output.raw_output)
         for connection in connections:
             out_table[connection] = outputs[connection].raw_output
         grp = hdf5_file.create_group(self.name)
         grp.create_dataset('OUTPUT_VALUES',data=out_table)
 
 
-
-
 class Shutter(DigitalOut):
     description = 'shutter'
-    allowed_states = {1:'open', 0:'closed'}  
+    allowed_states = {True:'open', False:'closed'}  
     def open(self,t):
         self.go_high(t)
     def close(self,t):
@@ -485,6 +502,10 @@ def generate_code():
     for device in inventory:
         if not device.parent_device:
             device.generate_code()
+            print
+            for output in device.get_all_outputs():
+                print output.name, '\t', len(output.raw_output), 'x', output.raw_output.dtype
+            print
     hdf5_file.close()
  
 def open_hdf5_file():
