@@ -9,8 +9,11 @@ import functions
 
 def bitfield(arrays):
     """converts a list of eight arrays of ones and zeros into a single
-    array of bytes"""
-    y = array(arrays[0],dtype=uint8)
+    array of 8 bit ints"""
+    if arrays[0] is 0:
+        y = zeros(max([len(arr) if iterable(arr) else 1 for arr in arrays]),dtype=uint8)
+    else:
+        y = array(arrays[0],dtype=uint8)
     for i in range(1,8):
         y |= arrays[i]<<i
     return y
@@ -109,8 +112,7 @@ class Device(object):
 class PseudoClock(Device):
     description = 'Generic Pseudoclock'
     allowed_children = [Device]
-    def __init__(self,name,stop_time = 20):
-        self.stop_time = stop_time
+    def __init__(self,name):
         Device.__init__(self,name,parent_device=None,connection=None)
     
     def collect_change_times(self, outputs):
@@ -296,7 +298,7 @@ class PulseBlaster(PseudoClock):
             pb_inst_table[i] = (0,0,0,0,0,0,0,0,0,0, flagint, 
                                 instructionint, dataint, delaydouble)
                               
-        # okey now write it to the file:   
+        # Okey now write it to the file:   
         group = hdf5_file.create_group(self.name)
         group.create_dataset('PULSE_PROGRAM', compression=compression,data = pb_inst_table)         
                               
@@ -328,6 +330,7 @@ class Output(Device):
     def add_instruction(self,time,instruction):
         #Check that this doesn't collide with previous instructions:
         if time in self.instructions.keys():
+            print 'ERROR....'
             err = ' '.join(['WARNING: State of', self.description, self.name, 'at t=%ss'%str(time),
                  'has already been set to %s.'%self.instruction_to_string(self.instructions[time]),
                  'Overwriting to %s.\n'%self.instruction_to_string(instruction)])
@@ -543,7 +546,32 @@ class Shutter(DigitalOut):
     def close(self,t):
         self.go_low(t)  
   
+class DDS(Device):
+    description = 'DDS output'
+    allowed_children = [AnalogueOut] # Adds its own children when initialised
+    def __init__(self,name,parent_device,connection):
+        Device.__init__(self,name,parent_device,connection)
+        self.frequency = AnalogueOut(self.name+' (freq)',self,None)
+        self.amplitude = AnalogueOut(self.name+' (amp)',self,None)
+        self.phase = AnalogueOut(self.name+' (phase)',self,None)
+    def setamp(self,t,value):
+        self.amplitude.constant(t,value)
+    def setfreq(self,t,value):
+        self.frequency.constant(t,value)
+    def setphase(self,t,value):
+        self.phase.constant(t,value)
         
+class NovaTech(Device):
+    description = 'Novatech DDS'
+    allowed_children = [DDS]
+    def __init__(self,name,parent_device):
+        Device.__init__(self,name,parent_device,None)
+
+def stop(t):
+    for device in inventory:
+        if not device.parent_device:  
+            device.stop_time = t
+            
 def generate_code():
     for device in inventory:
         if not device.parent_device:
