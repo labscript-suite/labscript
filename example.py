@@ -18,6 +18,7 @@ analogue2 = AnalogueOut('output 2', NI_board1,'AO1')
 analogue3 = AnalogueOut('output 3', NI_board1,'AO2')
 
 shutter1 = Shutter('shutter 1', NI_board1, 'D01')
+
 shutter1.close(t=0)
 shutter1.open(t=5.89)
 analogue1.constant(t=0,value=2)

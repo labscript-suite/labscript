@@ -446,7 +446,7 @@ class AnalogueOut(Output):
 class DigitalOut(Output):
     description = 'digital output'
     allowed_states = {True:'high', False:'low'}
-    dtype = bool
+    dtype = uint8#bool
     def go_high(self,t):
         self.add_instruction(t,True)
     def go_low(self,t):
