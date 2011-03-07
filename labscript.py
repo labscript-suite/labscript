@@ -491,9 +491,9 @@ class NIBoard(Device):
         NI_dtype = []
         for connection in connections:
             if '-uint16' in sys.argv:
-                dtype = uint16 if isinstance(outputs[connection],AnalogueOut) else bool
+                dtype = uint16 if isinstance(outputs[connection],AnalogueOut) else uint8
             else:
-                dtype = float32 if isinstance(outputs[connection],AnalogueOut) else bool
+                dtype = float32 if isinstance(outputs[connection],AnalogueOut) else uint8
             NI_dtype.append((connection,dtype))
         out_table = empty(len(self.parent_device.times),dtype=NI_dtype)
         for output in [out for out in outputs.values() if isinstance(out,AnalogueOut)]:
