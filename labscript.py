@@ -446,7 +446,7 @@ class AnalogueOut(Output):
 class DigitalOut(Output):
     description = 'digital output'
     allowed_states = {True:'high', False:'low'}
-    dtype = uint8#bool
+    dtype = bool
     def go_high(self,t):
         self.add_instruction(t,True)
     def go_low(self,t):
@@ -455,9 +455,29 @@ class DigitalOut(Output):
 
 class NIBoard(Device):
     allowed_children = [AnalogueOut, DigitalOut]
+    n_analogues = 4
+    n_digiports = 2 # number of 'ports', 8 digital outputs per port.
     def __init__(self, name, parent_device):
         Device.__init__(self, name, parent_device, connection=None)
+    
+    def add_output(self,output):
+        # TODO: check there are no duplicates, check that connection
+        # string is formatted correctly.
+        Device.add_output(self,output)
         
+    def convert_bools_to_bytes(self,digitals):
+        ports = {}
+        for i in range(self.n_digiports):
+            ports['p%d'%i] = zeros((8,len(self.parent_device.times)),dtype=uint8)
+        for output in digitals:
+            port, line = output.connection.strip('p').split('.')
+            port, line  = int(port),int(line)
+            ports['p%d'%port][line,:] = output.raw_output*2**line
+        for key, port in ports.items():
+            ports[key] = sum(port,axis=0)
+        return ports
+            
+            
     def convert_to_uint16(self,output):
         """converts floats between -10 and 10 to unsigned 16 bit integers
         between zero and 65535"""
@@ -483,24 +503,25 @@ class NIBoard(Device):
         output.raw_output = array(3276.75*output.raw_output+32768,dtype=uint16)
     
     def generate_code(self):
-        outputs = {}
+        analogues = {}
+        digitals = {}
         for output in self.child_devices:
-            outputs[output.connection] = output
-        connections = outputs.keys()
-        connections.sort()
-        NI_dtype = []
-        for connection in connections:
-            if '-uint16' in sys.argv:
-                dtype = uint16 if isinstance(outputs[connection],AnalogueOut) else uint8
+            if isinstance(output,AnalogueOut):
+                analogues[output.connection] = output
             else:
-                dtype = float32 if isinstance(outputs[connection],AnalogueOut) else uint8
-            NI_dtype.append((connection,dtype))
-        out_table = empty(len(self.parent_device.times),dtype=NI_dtype)
-        for output in [out for out in outputs.values() if isinstance(out,AnalogueOut)]:
+                digitals[output.connection] = output
+        digiports = self.convert_bools_to_bytes(digitals.values())
+        analogue_dtype = uint16 if '-uint16' in sys.argv else float32
+        dtypes = [('ao%d'%i,analogue_dtype) for i in range(self.n_analogues)] + \
+                 [('p%d'%i,uint8) for i in range(self.n_digiports)]
+        out_table = zeros(len(self.parent_device.times),dtype=dtypes)
+        for output in analogues.values():
             if '-uint16' in sys.argv:
                 self.convert_to_uint16(output)
-        for connection in connections:
-            out_table[connection] = outputs[connection].raw_output
+        for connection, analogueout in analogues.items():
+            out_table[connection] = analogueout.raw_output
+        for portno, data in digiports.items():
+            out_table[portno] = data
         grp = hdf5_file.create_group(self.name)
         grp.create_dataset('OUTPUT_VALUES',compression=compression,data=out_table)
 
