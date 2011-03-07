@@ -7,6 +7,14 @@ from pylab import *
 
 import functions
 
+def bitfield(arrays):
+    """converts a list of eight arrays of ones and zeros into a single
+    array of bytes"""
+    y = array(arrays[0],dtype=uint8)
+    for i in range(1,8):
+        y |= arrays[i]<<i
+    return y
+
 def fastflatten(inarray, dtype):
     """A faster way of flattening our arrays than pylab.flatten.
     pylab.flatten returns a generator which takes a lot of time and memory
@@ -58,7 +66,7 @@ def plot_outputs(display=False):
     title('Pseudoclocked outputs')
     legend(loc='upper left')
     #axis([0,max([device.stop_time if isinstance(device, PulseBlaster) else 0 for device in inventory]),-1,5.5])
-    if display:
+    if '-show' in sys.argv:
         show()
     else:
         savefig('outputs.png')
@@ -445,12 +453,12 @@ class AnalogueOut(Output):
         
 class DigitalOut(Output):
     description = 'digital output'
-    allowed_states = {True:'high', False:'low'}
-    dtype = bool
+    allowed_states = {1:'high', 0:'low'}
+    dtype = uint8
     def go_high(self,t):
-        self.add_instruction(t,True)
+        self.add_instruction(t,1)
     def go_low(self,t):
-        self.add_instruction(t,False) 
+        self.add_instruction(t,0) 
 
 
 class NIBoard(Device):
@@ -467,26 +475,27 @@ class NIBoard(Device):
         
     def convert_bools_to_bytes(self,digitals):
         ports = {}
+        bitfields = {}
         for i in range(self.n_digiports):
-            ports['p%d'%i] = zeros((8,len(self.parent_device.times)),dtype=uint8)
+            ports['p%d'%i] = [0]*8
         for output in digitals:
             port, line = output.connection.strip('p').split('.')
             port, line  = int(port),int(line)
-            ports['p%d'%port][line,:] = output.raw_output*2**line
-        for key, port in ports.items():
-            ports[key] = sum(port,axis=0)
-        return ports
+            ports['p%d'%port][line] = output.raw_output
+        for port, data in ports.items():
+            bitfields[port] = bitfield(data)
+        return bitfields
             
             
-    def convert_to_uint16(self,output):
-        """converts floats between -10 and 10 to unsigned 16 bit integers
-        between zero and 65535"""
+    def convert_to_int16(self,output):
+        """converts floats between -10 and 10 to signed 16 bit integers
+        between -32768 and 32767"""
         # This function is currenly responsible for about a 50% increase
         # in run time, but i'm not sure whether it can be optimised much
         # without sacrificing correctness.  The any(output.raw_output >
         # 10) checks etc are what are slow, but without bounds checking
-        # the type casting to uint16 wraps around without detecting
-        # overflow. Writing uint16s results in less time to write to
+        # the type casting to int16 wraps around without detecting
+        # overflow. Writing int16s results in less time to write to
         # disk though, and so the net effect is not much. However if
         # we use an OS with proper caching, such as Win 7, then write
         # times don't concern us much. If we pass float32's, then LabVIEW
@@ -500,7 +509,7 @@ class NIBoard(Device):
                               'the limit imposed by %s. Stopping.\n'%self.name)
             sys.exit(1)
         # adding 0.5 then typecasting is faster than rounding to integers first:
-        output.raw_output = array(3276.75*output.raw_output+32768,dtype=uint16)
+        output.raw_output = array(3276.7*output.raw_output,dtype=int16)
     
     def generate_code(self):
         analogues = {}
@@ -511,13 +520,13 @@ class NIBoard(Device):
             else:
                 digitals[output.connection] = output
         digiports = self.convert_bools_to_bytes(digitals.values())
-        analogue_dtype = uint16 if '-uint16' in sys.argv else float32
+        analogue_dtype = int16 if '-int16' in sys.argv else float32
         dtypes = [('ao%d'%i,analogue_dtype) for i in range(self.n_analogues)] + \
                  [('p%d'%i,uint8) for i in range(self.n_digiports)]
         out_table = zeros(len(self.parent_device.times),dtype=dtypes)
         for output in analogues.values():
-            if '-uint16' in sys.argv:
-                self.convert_to_uint16(output)
+            if '-int16' in sys.argv:
+                self.convert_to_int16(output)
         for connection, analogueout in analogues.items():
             out_table[connection] = analogueout.raw_output
         for portno, data in digiports.items():
@@ -528,7 +537,7 @@ class NIBoard(Device):
 
 class Shutter(DigitalOut):
     description = 'shutter'
-    allowed_states = {True:'open', False:'closed'}  
+    allowed_states = {1:'open', 0:'closed'}  
     def open(self,t):
         self.go_high(t)
     def close(self,t):
