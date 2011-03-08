@@ -12,7 +12,7 @@ start_time = time.time()
 
 pulseblaster1 = PulseBlaster('PulseBlaster')
 NI_board1 = NIBoard('NI PCI-6733', pulseblaster1)
-novatech1 = NovaTech('Novatech DDS', pulseblaster1)
+novatech1 = NovaTechDDS9M('Novatech DDS', pulseblaster1)
 
 analogue1 = AnalogueOut('output 1', NI_board1,'ao0')
 analogue2 = AnalogueOut('output 2', NI_board1,'ao1')
@@ -29,12 +29,12 @@ shutter1.close(t)
 shutter2.close(t)
 analogue1.constant(t,2)
 analogue2.constant(t,3)
-analogue3.sine(t,duration=10,amplitude=10,angfreq=2,phase=0,dc_offset=0.0,samplerate=0.5e6)
+analogue3.sine(t,duration=10,amplitude=10,angfreq=2,phase=0,dc_offset=0.0,samplerate=3e3)
 t = 1
 shutter2.open(t)
-analogue1.ramp(t, duration=2, initial=2, final=3, samplerate=0.5e6)
+analogue1.ramp(t, duration=2, initial=2, final=3, samplerate=3e3)
 
-analogue2.ramp(t=2, duration=3, initial=3, final=4, samplerate=0.5e6)
+analogue2.ramp(t=2, duration=3, initial=3, final=4, samplerate=3e3)
 shutter1.open(t=5.89)
 analogue2.constant(t=5.9,value=5)
 analogue2.constant(t=7,value=4)
@@ -53,4 +53,4 @@ print "total time:              \t", round(time.time() - very_start_time,2),'sec
 print 'hdf5 file size:          \t', round(os.path.getsize('dummy.h5')/(1024.0**2),1), 'MB'
 print
 print
-#plot_outputs()
+plot_outputs()

@@ -60,7 +60,7 @@ def plot_outputs(display=False):
         if device.parent_device is None:
             for i, output in enumerate(device.get_all_outputs()):
                 if isinstance(output,Output):
-                    t,y = discretise(device.times,output.raw_output, device.stop_time)
+                    t,y = discretise(device.times,output.raw_output/float32(output.scale_factor), device.stop_time)
                     plot(t,y,'-',label=output.name)
 
     grid(True)
@@ -158,6 +158,11 @@ class PseudoClock(Device):
                 if isinstance(output.timeseries[i],dict) and output.timeseries[i]['clock rate'] > maxrate:
                     # It does have the highest clock rate? Then store that rate to max_rate:
                     maxrate = output.timeseries[i]['clock rate']
+            if maxrate > self.clock_limit:
+                sys.stderr.write('ERROR: at t = %s sec, a clock rate of %s Hz was requested. '%(str(time),str(maxrate)) + 
+                                 'One or more devices connected to %s cannot support clock rates higher than %sHz. Stopping.\n'%(str(self.name),str(self.clock_limit)))
+                sys.exit(1)
+                
             if maxrate:
                 # If there was ramping at this timestep, how many clock ticks fit before the next instruction?
                 n_ticks, remainder = divmod((change_times[i+1] - time)*maxrate,1)
@@ -198,7 +203,7 @@ class PseudoClock(Device):
                     # Error if self.stop_time has been set to less
                     # than the time of the last instruction:
                     elif self.stop_time < time:
-                        sys.stderr.write('ERROR: %s %s has had its stop time set to earlier than its last instruction!'%(self.description,self.name))
+                        sys.stderr.write('ERROR: %s %s has more instructions after the experiment\'s stop time. Stopping.\n'%(self.description,self.name))
                         sys.exit(1)
                     # If self.stop_time is the same as the time of the last
                     # instruction, then we'll get the last instruction
@@ -243,7 +248,7 @@ class PulseBlaster(PseudoClock):
                     sys.exit(1)
                 for other_output in direct_outputs:
                     if output.connection == other_output.connection:
-                        sys.stderr.write('%s %s and %s %s are both set as connected to output %d of %s! Stopping.\n'%(output.name,
+                        sys.stderr.write('%s %s and %s %s are both set as connected to output %d of %s. Stopping.\n'%(output.name,
                                          other_output.name, output.connection, self.name))
                         sys.exit(1)
                 direct_outputs.append(output)
@@ -313,6 +318,7 @@ class Output(Device):
     description = 'generic output'
     allowed_states = {}
     dtype = float32
+    scale_factor = 1
     def __init__(self,name,parent_device,connection):
         self.instructions = {}
         self.ramp_limits = [] # For checking ramps don't overlap
@@ -330,7 +336,6 @@ class Output(Device):
     def add_instruction(self,time,instruction):
         #Check that this doesn't collide with previous instructions:
         if time in self.instructions.keys():
-            print 'ERROR....'
             err = ' '.join(['WARNING: State of', self.description, self.name, 'at t=%ss'%str(time),
                  'has already been set to %s.'%self.instruction_to_string(self.instructions[time]),
                  'Overwriting to %s.\n'%self.instruction_to_string(instruction)])
@@ -468,9 +473,17 @@ class NIBoard(Device):
     allowed_children = [AnalogueOut, DigitalOut]
     n_analogues = 4
     n_digiports = 2 # number of 'ports', 8 digital outputs per port.
+    clock_limit = 500e3 # underestimate I think.
+    
+    if '-int16' in sys.argv:
+        analogue_scale_factor = 3276.7
+    else:
+        analogue_scale_factor = 1.0
+        
     def __init__(self, name, parent_device):
         Device.__init__(self, name, parent_device, connection=None)
-    
+        self.parent_device.clock_limit = min([self.parent_device.clock_limit,self.clock_limit])
+        
     def add_output(self,output):
         # TODO: check there are no duplicates, check that connection
         # string is formatted correctly.
@@ -492,7 +505,7 @@ class NIBoard(Device):
             
     def convert_to_int16(self,output):
         """converts floats between -10 and 10 to signed 16 bit integers
-        between -32768 and 32767"""
+        between -32767 and 32767 inclusive (excluding -32768 for symmetry)"""
         # This function is currenly responsible for about a 50% increase
         # in run time, but i'm not sure whether it can be optimised much
         # without sacrificing correctness.  The any(output.raw_output >
@@ -511,8 +524,9 @@ class NIBoard(Device):
                               'can only have values between -10 and 10 Volts, ' + 
                               'the limit imposed by %s. Stopping.\n'%self.name)
             sys.exit(1)
-        # adding 0.5 then typecasting is faster than rounding to integers first:
-        output.raw_output = array(3276.7*output.raw_output,dtype=int16)
+        # have to round first else we just get the floor function on absolute values:
+        output.raw_output = array((3276.7*output.raw_output).round(),dtype=int16)
+        output.scale_factor = 3276.7
     
     def generate_code(self):
         analogues = {}
@@ -535,6 +549,7 @@ class NIBoard(Device):
         for portno, data in digiports.items():
             out_table[portno] = data
         grp = hdf5_file.create_group(self.name)
+        grp.attrs['analogue scale factor'] = self.analogue_scale_factor
         grp.create_dataset('OUTPUT_VALUES',compression=compression,data=out_table)
 
 
@@ -561,12 +576,73 @@ class DDS(Device):
     def setphase(self,t,value):
         self.phase.constant(t,value)
         
-class NovaTech(Device):
+class NovaTechDDS9M(Device):
     description = 'Novatech DDS'
     allowed_children = [DDS]
+    clock_limit = 500e3 # TODO: find out what the actual max clock rate is.
+    
     def __init__(self,name,parent_device):
         Device.__init__(self,name,parent_device,None)
-
+        self.parent_device.clock_limit = min([self.parent_device.clock_limit,self.clock_limit])
+        
+    def quantise_freq(self,output):
+        # Ensure that frequencies are within bounds:
+        if any(output.raw_output > 171e6 )  or any(output.raw_output < 0.1 ):
+            sys.stderr.write('ERROR: %s %s '%(output.description, output.name) +
+                              'can only have values between 0.1Hz and 171MHz, ' + 
+                              'the limit imposed by %s. Stopping.\n'%self.name)
+            sys.exit(1)
+        # It's faster to add 0.5 then typecast than to round to integers first:
+        output.raw_output = array((1e7*output.raw_output)+0.5,dtype=uint32)
+        output.scale_factor = 1e7
+        
+    def quantise_phase(self,output):
+        # ensure that phase wraps around:
+        output.raw_output %= 360
+        # It's faster to add 0.5 then typecast than to round to integers first:
+        output.raw_output = array((45.511111111111113*output.raw_output)+0.5,dtype=uint16)
+        output.scale_factor = 45.511111111111113
+        
+    def quantise_amp(self,output):
+        # ensure that amplitudes are within bounds:
+        if any(output.raw_output > 1 )  or any(output.raw_output < 0):
+            sys.stderr.write('ERROR: %s %s '%(output.description, output.name) +
+                              'can only have values between 0 and 1 (Volts peak to peak approx), ' + 
+                              'the limit imposed by %s. Stopping.\n'%self.name)
+        # It's faster to add 0.5 then typecast than to round to integers first:
+        output.raw_output = array((1023*output.raw_output)+0.5,dtype=uint16)
+        output.scale_factor = 1023
+        
+    def generate_code(self):
+        DDSs = {}
+        for output in self.child_devices:
+        # Check that the instructions will fit into RAM:
+            if len(output.frequency.raw_output) > 32768:
+                sys.stderr.write('ERROR: %s can only support 32768 instructions. '%self.name +
+                                 'Please decrease the sample rates of devices on the same clock, ' + 
+                                 'or connect %s to a different pseudoclock. Stopping.\n'%self.name)
+                sys.exit(1)
+            # TODO: check that there are only two and that their connection no.s are right.
+            DDSs[output.connection] = output
+        for dds in DDSs.values():
+            self.quantise_freq(dds.frequency)
+            self.quantise_phase(dds.phase)
+            self.quantise_amp(dds.amplitude)
+            
+        dtypes = [('freq%d'%i,uint32) for i in range(2)] + \
+                 [('phase%d'%i,uint16) for i in range(2)] + \
+                 [('amp%d'%i,uint16) for i in range(2)]
+        out_table = zeros(len(self.parent_device.times),dtype=dtypes)
+        for connection, dds in DDSs.items():
+            out_table['freq%d'%connection] = dds.frequency.raw_output
+            out_table['amp%d'%connection] = dds.amplitude.raw_output
+            out_table['phase%d'%connection] = dds.phase.raw_output
+        grp = hdf5_file.create_group(self.name)
+        grp.attrs['frequency scale factor'] = 1e7
+        grp.attrs['amplitude scale factor'] = 1023
+        grp.attrs['phase scale factor'] = 45.511111111111113
+        grp.create_dataset('TABLE_DATA',compression=compression,data=out_table) 
+        
 def stop(t):
     for device in inventory:
         if not device.parent_device:  
@@ -577,6 +653,7 @@ def generate_code():
         if not device.parent_device:
             device.generate_code()
             print
+            print device.name, '\t', len(device.times), 'x', device.times.dtype 
             for output in device.get_all_outputs():
                 print output.name, '\t', len(output.raw_output), 'x', output.raw_output.dtype
             print
