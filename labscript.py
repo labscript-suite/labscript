@@ -475,11 +475,6 @@ class NIBoard(Device):
     n_digiports = 2 # number of 'ports', 8 digital outputs per port.
     clock_limit = 500e3 # underestimate I think.
     
-    if '-int16' in sys.argv:
-        analogue_scale_factor = 3276.7
-    else:
-        analogue_scale_factor = 1.0
-        
     def __init__(self, name, parent_device):
         Device.__init__(self, name, parent_device, connection=None)
         self.parent_device.clock_limit = min([self.parent_device.clock_limit,self.clock_limit])
@@ -537,19 +532,16 @@ class NIBoard(Device):
             else:
                 digitals[output.connection] = output
         digiports = self.convert_bools_to_bytes(digitals.values())
-        analogue_dtype = int16 if '-int16' in sys.argv else float32
-        dtypes = [('ao%d'%i,analogue_dtype) for i in range(self.n_analogues)] + \
+        dtypes = [('ao%d'%i,int16) for i in range(self.n_analogues)] + \
                  [('p%d'%i,uint8) for i in range(self.n_digiports)]
         out_table = zeros(len(self.parent_device.times),dtype=dtypes)
-        for output in analogues.values():
-            if '-int16' in sys.argv:
-                self.convert_to_int16(output)
         for connection, analogueout in analogues.items():
+            self.convert_to_int16(analogueout)
             out_table[connection] = analogueout.raw_output
         for portno, data in digiports.items():
             out_table[portno] = data
         grp = hdf5_file.create_group(self.name)
-        grp.attrs['analogue scale factor'] = self.analogue_scale_factor
+        grp.attrs['analogue scale factor'] = 3276.7
         grp.create_dataset('OUTPUT_VALUES',compression=compression,data=out_table)
 
 

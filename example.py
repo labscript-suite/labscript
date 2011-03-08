@@ -53,4 +53,4 @@ print "total time:              \t", round(time.time() - very_start_time,2),'sec
 print 'hdf5 file size:          \t', round(os.path.getsize('dummy.h5')/(1024.0**2),1), 'MB'
 print
 print
-plot_outputs()
+#plot_outputs()
