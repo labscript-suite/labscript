@@ -1,4 +1,4 @@
-#from spinapi import *
+from spinapi import *
 import sys
 import h5py
 
