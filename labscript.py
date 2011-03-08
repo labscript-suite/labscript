@@ -601,6 +601,7 @@ class NovaTechDDS9M(Device):
             sys.stderr.write('ERROR: %s %s '%(output.description, output.name) +
                               'can only have values between 0 and 1 (Volts peak to peak approx), ' + 
                               'the limit imposed by %s. Stopping.\n'%self.name)
+            sys.exit(1)
         # It's faster to add 0.5 then typecast than to round to integers first:
         output.raw_output = array((1023*output.raw_output)+0.5,dtype=uint16)
         output.scale_factor = 1023
@@ -653,6 +654,7 @@ def generate_code():
  
 def open_hdf5_file():
     try:
+        assert len(sys.argv) > 1
         hdf5_filename = sys.argv[-1]
     except:
         sys.stderr.write('ERROR: No hdf5 file provided as a command line argument. Stopping.\n')
