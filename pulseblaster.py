@@ -1,3 +1,5 @@
+import time
+start_time = time.time()    
 from spinapi import *
 import sys
 import h5py
@@ -5,7 +7,7 @@ import h5py
 if not len(sys.argv) > 1:
     sys.stderr.write('ERROR: No hdf5 file provided as a command line argument. Stopping.\n')
     sys.exit(1)
-    
+
 with h5py.File(sys.argv[-1],'r') as hdf5_file:
     try:
         pb_init()
@@ -19,3 +21,5 @@ with h5py.File(sys.argv[-1],'r') as hdf5_file:
     except:
         pb_close()
         raise
+    
+print 'Programming PulseBlaster:',round(time.time() - start_time,2),'sec'
