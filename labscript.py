@@ -234,7 +234,7 @@ class PseudoClock(Device):
 class PulseBlaster(PseudoClock):
     pb_instructions = {'STOP': 1, 'LOOP': 2, 'END_LOOP': 3}
     description = 'PulseBlaster'
-    clock_limit = 25.0e6 # Slight underestimate I think.
+    clock_limit = 8.3e6 # Slight underestimate I think.
     clock_connection = 11
     
     def get_direct_outputs(self):
@@ -610,8 +610,8 @@ class NovaTechDDS9M(Device):
         DDSs = {}
         for output in self.child_devices:
         # Check that the instructions will fit into RAM:
-            if len(output.frequency.raw_output) > 32768:
-                sys.stderr.write('ERROR: %s can only support 32768 instructions. '%self.name +
+            if len(output.frequency.raw_output) > 16383:
+                sys.stderr.write('ERROR: %s can only support 16383 instructions. '%self.name +
                                  'Please decrease the sample rates of devices on the same clock, ' + 
                                  'or connect %s to a different pseudoclock. Stopping.\n'%self.name)
                 sys.exit(1)
@@ -626,6 +626,9 @@ class NovaTechDDS9M(Device):
                  [('phase%d'%i,uint16) for i in range(2)] + \
                  [('amp%d'%i,uint16) for i in range(2)]
         out_table = zeros(len(self.parent_device.times),dtype=dtypes)
+        out_table['freq0'].fill(1)
+        out_table['freq1'].fill(1)
+        
         for connection, dds in DDSs.items():
             out_table['freq%d'%connection] = dds.frequency.raw_output
             out_table['amp%d'%connection] = dds.amplitude.raw_output
