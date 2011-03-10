@@ -5,15 +5,16 @@ import serial
 import socket
 host='130.194.171.157'
 port=10001
-com = 3
+com = 0
 timeout = 2
+wait_time = 0.05
 class SocketWithSerialMethods(object):
     def __init__(self):
         self.s = socket.create_connection((host,port), timeout=timeout)
     def write(self,text):
         self.s.send(text)
-    def readline(self):
-        return self.s.recv(512)
+    def readline(self, num=512):
+        return self.s.recv(num)
     def close(self):
         self.s.close()
         
@@ -32,6 +33,8 @@ else:
             connected = True
         except:
             i += 1
+            if i == 5:
+                break
             continue
     if i == 5:
         sys.stderr.write('Couldn\'t connect to Novatech DDS on %s:%s. Stopping.\n'%(host,str(port)))
@@ -52,7 +55,7 @@ novatech.write('e d\n')
 response = novatech.readline().strip()
 print 'e d', response
 if not response == 'OK':
-    sys.syderr.write('NovaTech DDS not responding to commands. Stopping.\n')
+    sys.stderr.write('NovaTech DDS not responding to commands. Stopping.\n')
     sys.exit(1)
 
 def send_an_instruction(i, freq0,freq1,phase0,phase1,amp0,amp1,dwell):
@@ -60,6 +63,7 @@ def send_an_instruction(i, freq0,freq1,phase0,phase1,amp0,amp1,dwell):
     print i, novatech.readline().strip()
     novatech.write('t1 %04x %08x,%04x,%04x,%s\n'%(i,freq1,phase1,amp1,dwell))
     print i, novatech.readline().strip()
+
 
 def verify_an_instruction(i, freq0,freq1,phase0,phase1,amp0,amp1,dwell) :
     novatech.write('d0 %04x\n'%i)
@@ -83,6 +87,10 @@ with h5py.File(sys.argv[-1],'r') as hdf5_file:
         send_an_instruction(i, freq0,freq1,phase0,phase1,amp0,amp1,'ff')
     i, (freq0,freq1,phase0,phase1,amp0,amp1) = len(instructions) - 1, instructions[-1]
     send_an_instruction(i, freq0,freq1,phase0,phase1,amp0,amp1,'00')
+    try:
+        print 'results:', novatech.readline(4096*2)
+    except:
+        pass
     for i, (freq0,freq1,phase0,phase1,amp0,amp1) in enumerate(instructions[:len(instructions)-1]):
         verify_an_instruction(i, freq0,freq1,phase0,phase1,amp0,amp1,'ff')  
     i, (freq0,freq1,phase0,phase1,amp0,amp1) = len(instructions) - 1, instructions[-1]
