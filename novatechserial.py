@@ -1,5 +1,4 @@
-import time
-start_time = time.time()    
+import time   
 import sys
 import h5py
 import serial
@@ -7,19 +6,36 @@ import socket
 host='130.194.171.157'
 port=10001
 com = 3
-
+timeout = 2
 class SocketWithSerialMethods(object):
-    def __init__(self,(host,port),timeout):
-        self.sock = socket.create_connection((host,port), timeout=1)
+    def __init__(self):
+        self.s = socket.create_connection((host,port), timeout=timeout)
     def write(self,text):
-        self.sock.send(text)
+        self.s.send(text)
     def readline(self):
-        return self.sock.recv(512)
+        return self.s.recv(512)
+    def close(self):
+        self.s.close()
         
 if '-serial' in sys.argv:
-    novatech = serial.Serial(com, baudrate = 115200, timeout=1)
+    try:
+        novatech = serial.Serial(com, baudrate = 115200, timeout=timeout)
+    except:
+        sys.stderr.write('couldn\'t connect to Novatech DDS on COM %s. Stopping.\n'%str(com+1))
+        sys.exit(0)
 else:
-    novatech = SocketWithSerialMethods((host,port), timeout=2)
+    i = 0
+    connected = False
+    while not connected:
+        try:
+            novatech = SocketWithSerialMethods()
+            connected = True
+        except:
+            i += 1
+            continue
+    if i == 5:
+        sys.stderr.write('Couldn\'t connect to Novatech DDS on %s:%s. Stopping.\n'%(host,str(port)))
+        sys.exit(0)
     responding = False
     while not responding:
         novatech.write('e d\n')
@@ -31,7 +47,7 @@ else:
         if response == 'OK':
             responding = True
 
-            
+start_time = time.time()            
 novatech.write('e d\n')
 response = novatech.readline().strip()
 print 'e d', response
@@ -72,3 +88,4 @@ with h5py.File(sys.argv[-1],'r') as hdf5_file:
     i, (freq0,freq1,phase0,phase1,amp0,amp1) = len(instructions) - 1, instructions[-1]
     verify_an_instruction(i, freq0,freq1,phase0,phase1,amp0,amp1,'00')
 print 'programming Novatech DDS:',round(time.time() - start_time,2),'sec'
+novatech.close()

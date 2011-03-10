@@ -2,7 +2,7 @@ import time
 import shutil
 very_start_time = time.time()
 import os
-#shutil.copy('dummy_template.h5', 'dummy.h5')
+shutil.copy('dummy_template.h5', 'dummy.h5')
 
 ############################################################################################
 start_time = time.time()
