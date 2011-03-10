@@ -2,7 +2,7 @@ import time
 import shutil
 very_start_time = time.time()
 import os
-shutil.copy('dummy_template.h5', 'dummy.h5')
+#shutil.copy('dummy_template.h5', 'dummy.h5')
 
 ############################################################################################
 start_time = time.time()
@@ -23,12 +23,12 @@ dds1 = DDS('DDS 1', novatech1,0)
 dds2 = DDS('DDS 2', novatech1,1)
 
 t = 0
-dds1.setamp(t,1)
-dds1.setfreq(t,10)
-dds1.setphase(t,359)
-dds2.setamp(t,1)
-dds2.setfreq(t,10)
-dds2.setphase(t,359)
+dds1.setamp(t,0.5)
+dds1.setfreq(t,5)
+dds1.setphase(t,0)
+dds2.setamp(t,0.5)
+dds2.setfreq(t,5)
+dds2.setphase(t,0)
 
 shutter1.close(t)
 shutter2.close(t)
