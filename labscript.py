@@ -60,7 +60,7 @@ def plot_outputs(display=False):
         if device.parent_device is None:
             for i, output in enumerate(device.get_all_outputs()):
                 if isinstance(output,Output):
-                    if output.clock_speed == 'slow':
+                    if output.clock_type == 'slow':
                         times = device.change_times
                     else:
                         times = device.times
@@ -251,7 +251,7 @@ class PulseBlaster(PseudoClock):
     description = 'PulseBlaster'
     clock_limit = 8.3e6 # Slight underestimate I think.
     clock_connection = 11
-    clock_speed = 'fast'
+    clock_type = 'fast'
     
     def get_direct_outputs(self):
         """Finds out which outputs are directly attached to the PulseBlaster"""
@@ -348,7 +348,7 @@ class Output(Device):
     def __init__(self,name,parent_device,connection):
         self.instructions = {}
         self.ramp_limits = [] # For checking ramps don't overlap
-        self.clock_speed = parent_device.clock_speed
+        self.clock_type = parent_device.clock_type
         Device.__init__(self,name,parent_device,connection)      
 
     def instruction_to_string(self,instruction):
@@ -370,7 +370,7 @@ class Output(Device):
         # Check that ramps don't collide
         if isinstance(instruction,dict):
             # No ramps allowed if this output is on a slow clock:
-            if self.clock_speed == 'slow':
+            if self.clock_type == 'slow':
                 sys.stderr.write('ERROR: %s %s is on a slow clock.'%(self.description, self.name) + 
                                  'It cannot have a function ramp as an instruction. Stopping.\n')
                 sys.exit(1)
@@ -444,7 +444,7 @@ class Output(Device):
         in self.raw_output."""
         # If this output is on the slow clock, then its timeseries should
         # not be expanded. It's already as expanded as it'll get.
-        if self.clock_speed == 'slow':
+        if self.clock_type == 'slow':
             self.raw_output = fastflatten(self.timeseries,self.dtype)
             return
         outputarray = []
@@ -512,9 +512,9 @@ class NIBoard(Device):
     n_digiports = 2 # number of 'ports', 8 digital outputs per port.
     clock_limit = 500e3 # underestimate I think.
     
-    def __init__(self, name, parent_device,clock_speed):
+    def __init__(self, name, parent_device,clock_type):
         Device.__init__(self, name, parent_device, connection=None)
-        self.clock_speed = clock_speed
+        self.clock_type = clock_type
         self.parent_device.clock_limit = min([self.parent_device.clock_limit,self.clock_limit])
         
     def add_output(self,output):
@@ -595,7 +595,7 @@ class DDS(Device):
     description = 'DDS output'
     allowed_children = [AnalogueOut] # Adds its own children when initialised
     def __init__(self,name,parent_device,connection):
-        self.clock_speed = parent_device.clock_speed
+        self.clock_type = parent_device.clock_type
         Device.__init__(self,name,parent_device,connection)
         self.frequency = AnalogueOut(self.name+' (freq)',self,None)
         self.amplitude = AnalogueOut(self.name+' (amp)',self,None)
@@ -612,9 +612,9 @@ class NovaTechDDS9M(Device):
     allowed_children = [DDS]
     clock_limit = 500e3 # TODO: find out what the actual max clock rate is.
     
-    def __init__(self,name,parent_device,clock_speed):
+    def __init__(self,name,parent_device,clock_type):
         Device.__init__(self,name,parent_device,None)
-        self.clock_speed = clock_speed
+        self.clock_type = clock_type
         self.parent_device.clock_limit = min([self.parent_device.clock_limit,self.clock_limit])
         
     def quantise_freq(self,output):
@@ -665,7 +665,7 @@ class NovaTechDDS9M(Device):
         dtypes = [('freq%d'%i,uint32) for i in range(2)] + \
                  [('phase%d'%i,uint16) for i in range(2)] + \
                  [('amp%d'%i,uint16) for i in range(2)]
-        if self.clock_speed == 'slow':
+        if self.clock_type == 'slow':
             times = self.parent_device.change_times
         else:
             times = self.parent_device.times
@@ -693,9 +693,11 @@ def generate_code():
         if not device.parent_device:
             device.generate_code()
             print
-            print device.name, '\t', len(device.times), 'x', device.times.dtype 
+            print device.name + ':'
+            print 'Fast clock'.ljust(15) + str(len(device.times)).rjust(15) + ' x ', str(device.times.dtype).ljust(15)
+            print 'Slow clock'.ljust(15) + str(len(device.change_times)).rjust(15) + ' x ', str(device.change_times.dtype).ljust(15)
             for output in device.get_all_outputs():
-                print output.name, '\t', len(output.raw_output), 'x', output.raw_output.dtype
+                print output.name.ljust(15) + str(len(output.raw_output)).rjust(15) + ' x ', str(output.raw_output.dtype).ljust(15)
             print
     hdf5_file.close()
  
