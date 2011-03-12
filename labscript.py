@@ -60,15 +60,18 @@ def plot_outputs(display=False):
         if device.parent_device is None:
             for i, output in enumerate(device.get_all_outputs()):
                 if isinstance(output,Output):
-                    t,y = discretise(device.times,output.raw_output/float32(output.scale_factor), device.stop_time)
-                    plot(t,y,'-',label=output.name)
+                    if output.clock_speed == 'slow':
+                        times = device.change_times
+                    else:
+                        times = device.times
+                    t,y = discretise(times,output.raw_output/float32(output.scale_factor), device.stop_time)
+                    plot(t,y,'o-',label=output.name)
 
     grid(True)
     xlabel('time (seconds)')
     ylabel('output values')
     title('Pseudoclocked outputs')
     legend(loc='upper left')
-    #axis([0,max([device.stop_time if isinstance(device, PulseBlaster) else 0 for device in inventory]),-1,5.5])
     if '-show' in sys.argv:
         show()
     else:
@@ -184,15 +187,26 @@ class PseudoClock(Device):
                 if n_ticks > 1:
                     # If n_ticks is only one, then this step doesn't do
                     # anything, it has reps=0. So we should only include
-                    # it if n_ticks > 1:
-                    clock.append({'start': time, 'reps': n_ticks-1, 'step': 1/float(maxrate)})
-                # The last clock tick has a different duration depending on the next step:
-                clock.append({'start': ticks[-1], 'reps': 1, 'step': change_times[i+1] - ticks[-1]})
+                    # it if n_ticks > 1.
+                    if n_ticks > 2:
+                        #If there is more than one clock tick here,
+                        #then we split the ramp into an initial clock
+                        #tick, during which the slow clock ticks, and
+                        #the rest of the ramping time, during which the
+                        #slow clock does not tick.
+                        clock.append({'start': time, 'reps': 1, 'step': 1/float(maxrate),'slow_clock_tick':True})
+                        clock.append({'start': time + 1/float(maxrate), 'reps': n_ticks-2, 'step': 1/float(maxrate),'slow_clock_tick':False})
+                    else:
+                        clock.append({'start': time, 'reps': n_ticks-1, 'step': 1/float(maxrate),'slow_clock_tick':True})
+                # The last clock tick has a different duration depending
+                # on the next step. The slow clock must tick here if it
+                # hasn't ticked already, that is if n_ticks = 1.
+                clock.append({'start': ticks[-1], 'reps': 1, 'step': change_times[i+1] - ticks[-1],'slow_clock_tick': True if n_ticks == 1 else False})
             else:
                 all_times.append(time)
                 try: 
                     # If there was no ramping, here is a single clock tick:
-                    clock.append({'start': time, 'reps': 1, 'step': change_times[i+1] - time})
+                    clock.append({'start': time, 'reps': 1, 'step': change_times[i+1] - time,'slow_clock_tick':True})
                 except IndexError:
                     if i != len(change_times) - 1:
                         raise
@@ -212,7 +226,7 @@ class PseudoClock(Device):
                     # Output.raw_output arrays. We'll make this last
                     # cycle be at ten times the maximum step duration.
                     else:
-                        clock.append({'start': time, 'reps': 1, 'step': 10.0/self.clock_limit})
+                        clock.append({'start': time, 'reps': 1, 'step': 10.0/self.clock_limit,'slow_clock_tick':True})
         return all_times, clock
                         
     def generate_clock(self):
@@ -224,6 +238,7 @@ class PseudoClock(Device):
         for output in outputs:
             output.expand_timeseries(all_times)
         self.clock = clock
+        self.change_times = fastflatten(change_times, float32)
         self.times = fastflatten(all_times,float32)
         
     def generate_code(self):
@@ -232,10 +247,11 @@ class PseudoClock(Device):
             
 
 class PulseBlaster(PseudoClock):
-    pb_instructions = {'STOP': 1, 'LOOP': 2, 'END_LOOP': 3}
+    pb_instructions = {'CONTINUE':0,'STOP': 1, 'LOOP': 2, 'END_LOOP': 3}
     description = 'PulseBlaster'
     clock_limit = 8.3e6 # Slight underestimate I think.
     clock_connection = 11
+    clock_speed = 'fast'
     
     def get_direct_outputs(self):
         """Finds out which outputs are directly attached to the PulseBlaster"""
@@ -262,11 +278,16 @@ class PulseBlaster(PseudoClock):
         # index to record what line number of the pulseblaster hardware
         # instructions we're up to:
         j = 0
+        # An initial instruction with the fast clock at zero and the slow clock at one:
+        pb_inst.append({'flags': '000000000010', 'instruction': 'CONTINUE',
+                        'data': 0, 'delay': 10.0/self.clock_limit*1e9})  
+        j += 1
         for instruction in self.clock:
             flags = [0]*12
             for output in direct_outputs:
                 flags[output.connection] = int(output.raw_output[i])
             flags[11] = 1
+            flags[10] = 0 if instruction['slow_clock_tick'] else 1
             flagstring = ''.join([str(flag) for flag in flags])
             if instruction['reps'] > 1048576:
                 sys.stderr.write('ERROR: Pulseblaster cannot support more than 1048576 loop iterations. ' +
@@ -278,6 +299,7 @@ class PulseBlaster(PseudoClock):
             pb_inst.append({'flags': flagstring, 'instruction': 'LOOP',
                                  'data': instruction['reps'], 'delay': instruction['step']*1e9/2.0})
             flags[11] = 0
+            flags[10] = 1
             flagstring = ''.join([str(flag) for flag in flags])
             pb_inst.append({'flags': flagstring, 'instruction': 'END_LOOP',
                                  'data': j, 'delay': instruction['step']*1e9/2.0})
@@ -306,6 +328,10 @@ class PulseBlaster(PseudoClock):
         # Okey now write it to the file:   
         group = hdf5_file.create_group(self.name)
         group.create_dataset('PULSE_PROGRAM', compression=compression,data = pb_inst_table)         
+#        for thing in pb_inst:
+#            for key,val in thing.items():
+#                print str(val).center(15),
+#            print
                               
     def generate_code(self):
         PseudoClock.generate_code(self)
@@ -322,6 +348,7 @@ class Output(Device):
     def __init__(self,name,parent_device,connection):
         self.instructions = {}
         self.ramp_limits = [] # For checking ramps don't overlap
+        self.clock_speed = parent_device.clock_speed
         Device.__init__(self,name,parent_device,connection)      
 
     def instruction_to_string(self,instruction):
@@ -342,6 +369,11 @@ class Output(Device):
             sys.stderr.write(err + '\n')
         # Check that ramps don't collide
         if isinstance(instruction,dict):
+            # No ramps allowed if this output is on a slow clock:
+            if self.clock_speed == 'slow':
+                sys.stderr.write('ERROR: %s %s is on a slow clock.'%(self.description, self.name) + 
+                                 'It cannot have a function ramp as an instruction. Stopping.\n')
+                sys.exit(1)
             for start, end in self.ramp_limits:
                 if start < time < end or start < instruction['end time'] < end:
                     err = ' '.join(['ERROR: State of', self.description, self.name, 'from t = %ss to %ss'%(str(start),str(end)),
@@ -410,6 +442,11 @@ class Output(Device):
         should update to on each clock tick, and are the raw values that
         should be used to program the output device.  They are stored
         in self.raw_output."""
+        # If this output is on the slow clock, then its timeseries should
+        # not be expanded. It's already as expanded as it'll get.
+        if self.clock_speed == 'slow':
+            self.raw_output = fastflatten(self.timeseries,self.dtype)
+            return
         outputarray = []
         for i, time in enumerate(all_times):
             if iterable(time):
@@ -475,8 +512,9 @@ class NIBoard(Device):
     n_digiports = 2 # number of 'ports', 8 digital outputs per port.
     clock_limit = 500e3 # underestimate I think.
     
-    def __init__(self, name, parent_device):
+    def __init__(self, name, parent_device,clock_speed):
         Device.__init__(self, name, parent_device, connection=None)
+        self.clock_speed = clock_speed
         self.parent_device.clock_limit = min([self.parent_device.clock_limit,self.clock_limit])
         
     def add_output(self,output):
@@ -557,6 +595,7 @@ class DDS(Device):
     description = 'DDS output'
     allowed_children = [AnalogueOut] # Adds its own children when initialised
     def __init__(self,name,parent_device,connection):
+        self.clock_speed = parent_device.clock_speed
         Device.__init__(self,name,parent_device,connection)
         self.frequency = AnalogueOut(self.name+' (freq)',self,None)
         self.amplitude = AnalogueOut(self.name+' (amp)',self,None)
@@ -573,8 +612,9 @@ class NovaTechDDS9M(Device):
     allowed_children = [DDS]
     clock_limit = 500e3 # TODO: find out what the actual max clock rate is.
     
-    def __init__(self,name,parent_device):
+    def __init__(self,name,parent_device,clock_speed):
         Device.__init__(self,name,parent_device,None)
+        self.clock_speed = clock_speed
         self.parent_device.clock_limit = min([self.parent_device.clock_limit,self.clock_limit])
         
     def quantise_freq(self,output):
@@ -625,7 +665,11 @@ class NovaTechDDS9M(Device):
         dtypes = [('freq%d'%i,uint32) for i in range(2)] + \
                  [('phase%d'%i,uint16) for i in range(2)] + \
                  [('amp%d'%i,uint16) for i in range(2)]
-        out_table = zeros(len(self.parent_device.times),dtype=dtypes)
+        if self.clock_speed == 'slow':
+            times = self.parent_device.change_times
+        else:
+            times = self.parent_device.times
+        out_table = zeros(len(times),dtype=dtypes)
         out_table['freq0'].fill(1)
         out_table['freq1'].fill(1)
         

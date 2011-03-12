@@ -2,7 +2,7 @@ import time
 import shutil
 very_start_time = time.time()
 import os
-shutil.copy('dummy_template.h5', 'dummy2.h5')
+shutil.copy('dummy_template.h5', 'dummy.h5')
 
 ############################################################################################
 start_time = time.time()
@@ -11,8 +11,8 @@ labscriptimport =  time.time() - start_time
 start_time = time.time()
 
 pulseblaster1 = PulseBlaster('PulseBlaster')
-NI_board1 = NIBoard('NI PCI-6733', pulseblaster1)
-novatech1 = NovaTechDDS9M('Novatech DDS', pulseblaster1)
+NI_board1 = NIBoard('NI PCI-6733', pulseblaster1,'fast')
+novatech1 = NovaTechDDS9M('Novatech DDS', pulseblaster1,'slow')
 
 analogue1 = AnalogueOut('output 1', NI_board1,'ao0')
 analogue2 = AnalogueOut('output 2', NI_board1,'ao1')
@@ -23,12 +23,12 @@ dds1 = DDS('DDS 1', novatech1,0)
 dds2 = DDS('DDS 2', novatech1,1)
 
 t = 0
-dds1.setamp(t,1)
-dds1.setfreq(t,1)
-dds1.setphase(t,1)
-dds2.setamp(t,0.1)
-dds2.setfreq(t,1)
-dds2.setphase(t,1)
+dds1.setamp(t,0.5)
+dds1.setfreq(t,0.6)
+dds1.setphase(t,0.7)
+dds2.setamp(t,0.8)
+dds2.setfreq(t,0.9)
+dds2.setphase(t,1.0)
 
 shutter1.close(t)
 shutter2.close(t)
@@ -58,4 +58,4 @@ print "total time:              \t", round(time.time() - very_start_time,2),'sec
 print 'hdf5 file size:          \t', round(os.path.getsize('dummy.h5')/(1024.0**2),1), 'MB'
 print
 print
-#plot_outputs()
+plot_outputs()
