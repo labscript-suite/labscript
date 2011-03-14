@@ -328,6 +328,8 @@ class PulseBlaster(PseudoClock):
         # Okey now write it to the file:   
         group = hdf5_file.create_group(self.name)
         group.create_dataset('PULSE_PROGRAM', compression=compression,data = pb_inst_table)         
+        group.create_dataset('FAST_CLOCK', compression=compression,data = self.times)         
+        group.create_dataset('SLOW_CLOCK', compression=compression,data = self.change_times)         
 #        for thing in pb_inst:
 #            for key,val in thing.items():
 #                print str(val).center(15),
