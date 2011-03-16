@@ -7,13 +7,13 @@ from pylab import *
 
 import functions
 
-def bitfield(arrays):
-    """converts a list of eight arrays of ones and zeros into a single
-    array of 8 bit ints"""
+def bitfield(arrays,dtype):
+    """converts a list of arrays of ones and zeros into a single
+    array of unsigned ints of the given datatype."""
     if arrays[0] is 0:
         y = zeros(max([len(arr) if iterable(arr) else 1 for arr in arrays]),dtype=uint8)
     else:
-        y = array(arrays[0],dtype=uint8)
+        y = array(arrays[0],dtype=dtype)
     for i in range(1,8):
         y |= arrays[i]<<i
     return y
@@ -80,10 +80,10 @@ def plot_outputs(display=False):
 class Device(object):
     description = 'Generic Device'
     allowed_children = None
-    def __init__(self,name,parent_device,connection):
+    def __init__(self,number,parent_device,connection):
         if self.allowed_children is None:
             allowed_children = [Device]
-        self.name = name
+        self.name = self.description + '_' + str(number)
         self.parent_device = parent_device
         self.connection = connection
         self.child_devices = []
@@ -248,9 +248,10 @@ class PseudoClock(Device):
 
 class PulseBlaster(PseudoClock):
     pb_instructions = {'CONTINUE':0,'STOP': 1, 'LOOP': 2, 'END_LOOP': 3}
-    description = 'PulseBlaster'
+    description = 'PB-DDSII-300'
     clock_limit = 8.3e6 # Slight underestimate I think.
-    clock_connection = 11
+    fast_clock_flag = 11
+    slow_clock_flag = 10
     clock_type = 'fast'
     
     def get_direct_outputs(self):
@@ -261,6 +262,10 @@ class PulseBlaster(PseudoClock):
                 if not (isinstance(output.connection,int) and output.connection < 12):
                     sys.stderr.write('%s is set as connected to output connection %d of %s. Output connection \
                                       number must be a integer less than 12\n.'%(output.name, output.connection, self.name))
+                    sys.exit(1)
+                if output.connection == self.slow_clock_flag or output.connection == self.fast_clock_flag:
+                    sys.stderr.write('%s is set as connected to flag %d of %s.'%(output.name, output.connection, self.name) +
+                                     'This is one of the PulseBlaster\'s clock connections. Stopping.\n')
                     sys.exit(1)
                 for other_output in direct_outputs:
                     if output.connection == other_output.connection:
@@ -286,8 +291,8 @@ class PulseBlaster(PseudoClock):
             flags = [0]*12
             for output in direct_outputs:
                 flags[output.connection] = int(output.raw_output[i])
-            flags[11] = 1
-            flags[10] = 0 if instruction['slow_clock_tick'] else 1
+            flags[self.fast_clock_flag] = 1
+            flags[self.slow_clock_flag] = 0 if instruction['slow_clock_tick'] else 1
             flagstring = ''.join([str(flag) for flag in flags])
             if instruction['reps'] > 1048576:
                 sys.stderr.write('ERROR: Pulseblaster cannot support more than 1048576 loop iterations. ' +
@@ -298,8 +303,8 @@ class PulseBlaster(PseudoClock):
                 sys.exit(1)
             pb_inst.append({'flags': flagstring, 'instruction': 'LOOP',
                                  'data': instruction['reps'], 'delay': instruction['step']*1e9/2.0})
-            flags[11] = 0
-            flags[10] = 1
+            flags[self.fast_clock_flag] = 0
+            flags[self.slow_clock_flag] = 1
             flagstring = ''.join([str(flag) for flag in flags])
             pb_inst.append({'flags': flagstring, 'instruction': 'END_LOOP',
                                  'data': j, 'delay': instruction['step']*1e9/2.0})
@@ -351,7 +356,8 @@ class Output(Device):
         self.instructions = {}
         self.ramp_limits = [] # For checking ramps don't overlap
         self.clock_type = parent_device.clock_type
-        Device.__init__(self,name,parent_device,connection)      
+        Device.__init__(self,name,parent_device,connection)   
+        self.name = name   
 
     def instruction_to_string(self,instruction):
         """gets a human readable description of an instruction"""
@@ -511,11 +517,12 @@ class DigitalOut(Output):
 class NIBoard(Device):
     allowed_children = [AnalogueOut, DigitalOut]
     n_analogues = 4
-    n_digiports = 2 # number of 'ports', 8 digital outputs per port.
+    n_digitals = 32
+    digital_dtype = uint32
     clock_limit = 500e3 # underestimate I think.
-    
-    def __init__(self, name, parent_device,clock_type):
-        Device.__init__(self, name, parent_device, connection=None)
+    description = 'generic_NI_Board'
+    def __init__(self, number, parent_device,clock_type):
+        Device.__init__(self, number, parent_device, connection=None)
         self.clock_type = clock_type
         self.parent_device.clock_limit = min([self.parent_device.clock_limit,self.clock_limit])
         
@@ -525,17 +532,18 @@ class NIBoard(Device):
         Device.add_output(self,output)
         
     def convert_bools_to_bytes(self,digitals):
-        ports = {}
-        bitfields = {}
-        for i in range(self.n_digiports):
-            ports['p%d'%i] = [0]*8
+        """converts digital outputs to an array of bitfields stored
+        as self.digital_dtype"""
+        outputarray = [0]*self.n_digitals
         for output in digitals:
-            port, line = output.connection.strip('p').split('.')
+            port, line = output.connection.replace('port','').replace('line','').split('/')
             port, line  = int(port),int(line)
-            ports['p%d'%port][line] = output.raw_output
-        for port, data in ports.items():
-            bitfields[port] = bitfield(data)
-        return bitfields
+            if port > 0:
+                sys.stderr.write('ERROR: Ports > 0 on NI Boards not implemented. Please use port 0, or file a feature request at redmine.physics.monash.edu.au/labscript. Stopping.\n')
+                sys.exit(1)
+            outputarray[line] = output.raw_output
+        bits = bitfield(outputarray,dtype=self.digital_dtype)
+        return bits
             
             
     def convert_to_int16(self,output):
@@ -571,20 +579,36 @@ class NIBoard(Device):
                 analogues[output.connection] = output
             else:
                 digitals[output.connection] = output
-        digiports = self.convert_bools_to_bytes(digitals.values())
-        dtypes = [('ao%d'%i,int16) for i in range(self.n_analogues)] + \
-                 [('p%d'%i,uint8) for i in range(self.n_digiports)]
-        out_table = zeros(len(self.parent_device.times),dtype=dtypes)
-        for connection, analogueout in analogues.items():
-            self.convert_to_int16(analogueout)
-            out_table[connection] = analogueout.raw_output
-        for portno, data in digiports.items():
-            out_table[portno] = data
+        analogue_out_table = empty((len(self.parent_device.times),len(analogues)), dtype=uint16)
+        analogue_connections = analogues.keys()
+        analogue_connections.sort()
+        analogue_attrs = []
+        for i, connection in enumerate(analogue_connections):
+            self.convert_to_int16(analogues[connection])
+            analogue_out_table[:,i] = analogues[connection].raw_output
+            analogue_attrs.append(self.name+'/'+connection)
+            
+        digital_out_table = self.convert_bools_to_bytes(digitals.values())
+        
         grp = hdf5_file.create_group(self.name)
-        grp.attrs['analogue scale factor'] = 3276.7
-        grp.create_dataset('OUTPUT_VALUES',compression=compression,data=out_table)
+        analogue_dataset = grp.create_dataset('ANALOGUE_OUTS',compression=compression,data=analogue_out_table)
+        digital_dataset = grp.create_dataset('DIGITAL_OUTS',compression=compression,data=digital_out_table)
+        analogue_dataset.attrs['analogue_outs'] = ', '.join(analogue_attrs)
+        analogue_dataset.attrs['scale_factor'] = 3276.7
+        digital_dataset.attrs['digital_outs'] = '/'.join((self.name,'port0','line0:%d'%(self.n_digitals-1)))
 
-
+class NI_PCI_6733(NIBoard):
+    description = 'NI-PCI-6733'
+    n_analogues = 8
+    n_digitals = 8
+    digital_dtype = uint8
+    
+class NI_PCIe_6363(NIBoard):
+    description = 'NI-PCIe-6363'
+    n_analogues = 4
+    n_digitals = 32
+    digital_dtype = uint32
+    
 class Shutter(DigitalOut):
     description = 'shutter'
     allowed_states = {1:'open', 0:'closed'}  
@@ -594,11 +618,12 @@ class Shutter(DigitalOut):
         self.go_low(t)  
   
 class DDS(Device):
-    description = 'DDS output'
+    description = 'DDS'
     allowed_children = [AnalogueOut] # Adds its own children when initialised
     def __init__(self,name,parent_device,connection):
         self.clock_type = parent_device.clock_type
         Device.__init__(self,name,parent_device,connection)
+        self.name = name
         self.frequency = AnalogueOut(self.name+' (freq)',self,None)
         self.amplitude = AnalogueOut(self.name+' (amp)',self,None)
         self.phase = AnalogueOut(self.name+' (phase)',self,None)
@@ -610,7 +635,7 @@ class DDS(Device):
         self.phase.constant(t,value)
         
 class NovaTechDDS9M(Device):
-    description = 'Novatech DDS'
+    description = 'NT-DDS9M'
     allowed_children = [DDS]
     clock_limit = 500e3 # TODO: find out what the actual max clock rate is.
     
@@ -680,9 +705,9 @@ class NovaTechDDS9M(Device):
             out_table['amp%d'%connection] = dds.amplitude.raw_output
             out_table['phase%d'%connection] = dds.phase.raw_output
         grp = hdf5_file.create_group(self.name)
-        grp.attrs['frequency scale factor'] = 1e7
-        grp.attrs['amplitude scale factor'] = 1023
-        grp.attrs['phase scale factor'] = 45.511111111111113
+        grp.attrs['frequency_scale_factor'] = 1e7
+        grp.attrs['amplitude_scale_factor'] = 1023
+        grp.attrs['phase_scale_factor'] = 45.511111111111113
         grp.create_dataset('TABLE_DATA',compression=compression,data=out_table) 
         
 def stop(t):
@@ -751,7 +776,7 @@ for name in params.keys():
                          ' Please choose a different variable name.\n')
         sys.exit(1)
     exec(name + " = params['%s']"%name )
-    
+del name
 
 
        

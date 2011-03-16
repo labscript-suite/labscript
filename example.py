@@ -10,14 +10,14 @@ from labscript import *
 labscriptimport =  time.time() - start_time
 start_time = time.time()
 
-pulseblaster1 = PulseBlaster('PulseBlaster')
-NI_board1 = NIBoard('NI PCI-6733', pulseblaster1,'fast')
-novatech1 = NovaTechDDS9M('Novatech DDS', pulseblaster1,'slow')
+pulseblaster1 = PulseBlaster(1)
+NI_board1 = NI_PCIe_6363(1, pulseblaster1,'fast')
+novatech1 = NovaTechDDS9M(1, pulseblaster1,'slow')
 
 analogue1 = AnalogueOut('output 1', NI_board1,'ao0')
 analogue2 = AnalogueOut('output 2', NI_board1,'ao1')
 analogue3 = AnalogueOut('output 3', NI_board1,'ao2')
-shutter1 = Shutter('shutter 1', NI_board1, 'p0.0')
+shutter1 = Shutter('shutter 1', NI_board1, 'port0/line0')
 shutter2 = Shutter('shutter 2', pulseblaster1, 0)
 dds1 = DDS('DDS 1', novatech1,0)
 dds2 = DDS('DDS 2', novatech1,1)
