@@ -461,7 +461,7 @@ class Output(Device):
                 if isinstance(self.timeseries[i],dict):
                     # We evaluate the functions at the midpoints of the
                     # timesteps in order to remove the zero-order hold
-                    # error introduced by sampling an analogue signal:
+                    # error introduced by sampling an analog signal:
                     try:
                         midpoints = time + 0.5*(time[1] - time[0])
                     except IndexError:
@@ -487,8 +487,8 @@ class Output(Device):
         self.raw_output = fastflatten(outputarray, self.dtype)
         
 
-class AnalogueOut(Output):
-    description = 'analogue output'
+class AnalogOut(Output):
+    description = 'analog output'
     def ramp(self,t,duration,initial,final,samplerate):
         self.add_instruction(t, {'function': functions.ramp(t,duration,initial,final), 'description':'linear ramp',
                                  'end time': t + duration, 'clock rate': samplerate})
@@ -515,8 +515,8 @@ class DigitalOut(Output):
 
 
 class NIBoard(Device):
-    allowed_children = [AnalogueOut, DigitalOut]
-    n_analogues = 4
+    allowed_children = [AnalogOut, DigitalOut]
+    n_analogs = 4
     n_digitals = 32
     digital_dtype = uint32
     clock_limit = 500e3 # underestimate I think.
@@ -572,40 +572,40 @@ class NIBoard(Device):
         output.scale_factor = 3276.7
     
     def generate_code(self):
-        analogues = {}
+        analogs = {}
         digitals = {}
         for output in self.child_devices:
-            if isinstance(output,AnalogueOut):
-                analogues[output.connection] = output
+            if isinstance(output,AnalogOut):
+                analogs[output.connection] = output
             else:
                 digitals[output.connection] = output
-        analogue_out_table = empty((len(self.parent_device.times),len(analogues)), dtype=uint16)
-        analogue_connections = analogues.keys()
-        analogue_connections.sort()
-        analogue_attrs = []
-        for i, connection in enumerate(analogue_connections):
-            self.convert_to_int16(analogues[connection])
-            analogue_out_table[:,i] = analogues[connection].raw_output
-            analogue_attrs.append(self.name+'/'+connection)
+        analog_out_table = empty((len(self.parent_device.times),len(analogs)), dtype=uint16)
+        analog_connections = analogs.keys()
+        analog_connections.sort()
+        analog_attrs = []
+        for i, connection in enumerate(analog_connections):
+            self.convert_to_int16(analogs[connection])
+            analog_out_table[:,i] = analogs[connection].raw_output
+            analog_attrs.append(self.name+'/'+connection)
             
         digital_out_table = self.convert_bools_to_bytes(digitals.values())
         
         grp = hdf5_file.create_group(self.name)
-        analogue_dataset = grp.create_dataset('ANALOGUE_OUTS',compression=compression,data=analogue_out_table)
+        analog_dataset = grp.create_dataset('ANALOG_OUTS',compression=compression,data=analog_out_table)
         digital_dataset = grp.create_dataset('DIGITAL_OUTS',compression=compression,data=digital_out_table)
-        analogue_dataset.attrs['analogue_outs'] = ', '.join(analogue_attrs)
-        analogue_dataset.attrs['scale_factor'] = 3276.7
-        digital_dataset.attrs['digital_outs'] = '/'.join((self.name,'port0','line0:%d'%(self.n_digitals-1)))
+        grp.attrs['analog_channels'] = ', '.join(analog_attrs)
+        grp.attrs['scale_factor'] = 3276.7
+        grp.attrs['digital_lines'] = '/'.join((self.name,'port0','line0:%d'%(self.n_digitals-1)))
 
 class NI_PCI_6733(NIBoard):
     description = 'NI-PCI-6733'
-    n_analogues = 8
+    n_analogs = 8
     n_digitals = 8
     digital_dtype = uint8
     
 class NI_PCIe_6363(NIBoard):
     description = 'NI-PCIe-6363'
-    n_analogues = 4
+    n_analogs = 4
     n_digitals = 32
     digital_dtype = uint32
     
@@ -619,14 +619,14 @@ class Shutter(DigitalOut):
   
 class DDS(Device):
     description = 'DDS'
-    allowed_children = [AnalogueOut] # Adds its own children when initialised
+    allowed_children = [AnalogOut] # Adds its own children when initialised
     def __init__(self,name,parent_device,connection):
         self.clock_type = parent_device.clock_type
         Device.__init__(self,name,parent_device,connection)
         self.name = name
-        self.frequency = AnalogueOut(self.name+' (freq)',self,None)
-        self.amplitude = AnalogueOut(self.name+' (amp)',self,None)
-        self.phase = AnalogueOut(self.name+' (phase)',self,None)
+        self.frequency = AnalogOut(self.name+' (freq)',self,None)
+        self.amplitude = AnalogOut(self.name+' (amp)',self,None)
+        self.phase = AnalogOut(self.name+' (phase)',self,None)
     def setamp(self,t,value):
         self.amplitude.constant(t,value)
     def setfreq(self,t,value):
