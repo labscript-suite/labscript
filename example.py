@@ -18,10 +18,12 @@ analog0 = AnalogOut('output 1', NI_board1,'ao0')
 analog1 = AnalogOut('output 2', NI_board1,'ao1')
 analog2 = AnalogOut('output 3', NI_board1,'ao2')
 shutter1 = Shutter('shutter 1', NI_board1, 'port0/line0')
-shutter2 = Shutter('shutter 2', pulseblaster1, 0)
+shutter2 = Shutter('shutter 2', pulseblaster1, 2)
 dds1 = DDS('DDS 1', novatech1,0)
 dds2 = DDS('DDS 2', novatech1,1)
 
+scale = 1.0
+rate = 1e4
 t = 0
 dds1.setamp(t,0.5)
 dds1.setfreq(t,0.6)
@@ -33,20 +35,20 @@ dds2.setphase(t,1.0)
 shutter1.close(t)
 shutter2.close(t)
 analog0.constant(t,2)
-analog1.constant(t,3)
-analog2.sine(t,duration=10,amplitude=10,angfreq=2,phase=0,dc_offset=0.0,samplerate=1.5e5)
-t = 1
+analog2.constant(t,3)
+analog1.sine(t,duration=10*scale,amplitude=5,angfreq=2*pi,phase=0,dc_offset=0.0,samplerate=rate)
+t = 1*scale
 shutter2.open(t)
-analog0.ramp(t, duration=2, initial=2, final=3, samplerate=1.5e5)
+analog0.ramp(t, duration=2*scale, initial=2, final=3, samplerate=rate)
 
-analog1.ramp(t=2, duration=3, initial=3, final=4, samplerate=1.5e5)
-shutter1.open(t=5.89)
-analog1.constant(t=5.9,value=5)
-analog1.constant(t=7,value=4)
-analog1.constant(t=8,value=5)
+analog2.ramp(t=2*scale, duration=3*scale, initial=3, final=4, samplerate=rate)
+shutter1.open(t=5.89*scale)
+analog2.constant(t=5.9*scale,value=5)
+analog2.constant(t=7*scale,value=4)
+analog2.constant(t=8*scale,value=5)
 
 start_time = time.time()
-stop(t=10)
+stop(t=10*scale)
 generate_code()
 #############################################################################################
 print "from labscript import *: \t",round(labscriptimport,2),'sec'
