@@ -213,7 +213,7 @@ class PseudoClock(Device):
                     # There is no next instruction. Hold the last clock
                     # tick until self.stop_time.
                     if self.stop_time > time:
-                        clock.append({'start': time, 'reps': 1, 'step': self.stop_time - time})
+                        clock.append({'start': time, 'reps': 1, 'step': self.stop_time - time,'slow_clock_tick':True})
                     # Error if self.stop_time has been set to less
                     # than the time of the last instruction:
                     elif self.stop_time < time:
