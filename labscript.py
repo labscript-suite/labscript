@@ -414,6 +414,7 @@ class Output(Device):
             if isinstance(instruction, dict) and instruction['end time'] not in self.instructions.keys():
                 self.add_instruction(instruction['end time'], instruction['function'](instruction['end time']))
         times = self.instructions.keys()
+        times.sort()
         self.times = times
         return times
         
