@@ -311,8 +311,8 @@ class PulseBlaster(PseudoClock):
             j += 2
             i += instruction['reps']
         # Gotta put a stop instruction at the end. It will have a short
-        # delay time and set everything back to zero:
-        pb_inst.append({'flags': '000000000000', 'instruction': 'STOP',
+        # delay time and the same flag outputs as the previous instruction:
+        pb_inst.append({'flags': flagstring, 'instruction': 'STOP',
                         'data': 0, 'delay': 10.0/self.clock_limit*1e9})  
         # OK now we squeeze the instructions into a numpy array ready for writing to hdf5:
         pb_dtype = [('freq0',int32), ('phase0',int32), ('amp0',int32), 
