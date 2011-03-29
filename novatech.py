@@ -47,7 +47,7 @@ if not len(sys.argv) > 2:
 if sys.argv[1].startswith('-serial'):
     method = 'serial'
     try:
-        com = int(sys.argv[1].lower.replace('-serial=com','')) - 1
+        com = int(sys.argv[1].lower().replace('-serial=com','')) - 1
     except:
         print usage
         raise
