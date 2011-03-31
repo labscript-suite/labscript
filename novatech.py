@@ -140,11 +140,13 @@ with h5py.File(sys.argv[-1],'r') as hdf5_file:
     if '-program' in sys.argv:
         for i, (freq0,freq1,phase0,phase1,amp0,amp1) in enumerate(instructions):
             send_an_instruction(i, freq0,freq1,phase0,phase1,amp0,amp1,'00' if i == len(instructions)-1 else 'ff')
-        print 'programming Novatech DDS:',round(time.time() - start_time,2),'sec'
+        print 'programming Novatech DDS:', round(time.time() - start_time,2),'sec'
     if '-verify' in sys.argv:
+        start_time = time.time()
         for i, (freq0,freq1,phase0,phase1,amp0,amp1) in enumerate(instructions):
             if not verify_an_instruction(i, freq0,freq1,phase0,phase1,amp0,amp1,'00' if i == len(instructions)-1 else 'ff'):
                 success = False
+        print 'Verifying instructions of Novatech DDS:', round(time.time() - start_time,2),'sec'
 if success == False:
     sys.stderr.write('ERROR: One or more instructions were not verified to have been programmed correctly. Stopping.\n')
     novatech.close()
