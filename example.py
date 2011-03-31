@@ -25,7 +25,7 @@ dds2 = DDS('DDS 2', novatech1,1)
 scale = 1.0
 rate = 1e4
 t = 0
-dds1.setamp(t,0.5)
+dds1.setamp(0,0.5)
 dds1.setfreq(t,0.6)
 dds1.setphase(t,0.7)
 dds2.setamp(t,0.8)

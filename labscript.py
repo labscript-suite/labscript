@@ -369,6 +369,12 @@ class Output(Device):
             return str(instruction)
 
     def add_instruction(self,time,instruction):
+        #Check that time is not negative:
+        if time < 0:
+            err = ' '.join(['ERROR:', self.description, self.name, 'has an instruction at t=%ss.'%str(time),
+                 'Labscript cannot handle instructions earlier than the experiment start time (t=0). Stopping.\n'])
+            sys.stderr.write(err + '\n')
+            sys.exit(1)
         #Check that this doesn't collide with previous instructions:
         if time in self.instructions.keys():
             err = ' '.join(['WARNING: State of', self.description, self.name, 'at t=%ss'%str(time),
