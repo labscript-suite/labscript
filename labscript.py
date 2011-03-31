@@ -55,7 +55,7 @@ def discretise(t,y,stop_time):
     ynew= ynew.flatten()[:]
     return tnew, ynew
 
-def plot_outputs(display=False):
+def plot_outputs():
     for device in inventory:
         if device.parent_device is None:
             for i, output in enumerate(device.get_all_outputs()):
@@ -65,7 +65,7 @@ def plot_outputs(display=False):
                     else:
                         times = device.times
                     t,y = discretise(times,output.raw_output/float32(output.scale_factor), device.stop_time)
-                    plot(t,y,'o-',label=output.name)
+                    plot(t,y,'-',label=output.name)
 
     grid(True)
     xlabel('time (seconds)')
@@ -252,7 +252,7 @@ class PulseBlaster(PseudoClock):
     clock_limit = 8.3e6 # Slight underestimate I think.
     fast_clock_flag = 0
     slow_clock_flag = 1
-    clock_type = 'fast'
+    clock_type = 'slow'
     
     def get_direct_outputs(self):
         """Finds out which outputs are directly attached to the PulseBlaster"""
@@ -284,10 +284,13 @@ class PulseBlaster(PseudoClock):
         # instructions we're up to:
         j = 0
         # An initial instruction with the fast clock at zero and the slow clock at one:
-        pb_inst.append({'flags': '000000000010', 'instruction': 'CONTINUE',
+        flags = [0]*12
+        flags[self.fast_clock_flag] = 0
+        flags[self.slow_clock_flag] = 1 
+        pb_inst.append({'flags': ''.join([str(flag) for flag in flags]), 'instruction': 'CONTINUE',
                         'data': 0, 'delay': 10.0/self.clock_limit*1e9})  
         j += 1
-        for instruction in self.clock:
+        for k, instruction in enumerate(self.clock):
             flags = [0]*12
             for output in direct_outputs:
                 flags[output.connection] = int(output.raw_output[i])
@@ -309,7 +312,11 @@ class PulseBlaster(PseudoClock):
             pb_inst.append({'flags': flagstring, 'instruction': 'END_LOOP',
                                  'data': j, 'delay': instruction['step']*1e9/2.0})
             j += 2
-            i += instruction['reps']
+            try:
+                if self.clock[k+1]['slow_clock_tick']:
+                    i += 1
+            except IndexError:
+                pass
         # Gotta put a stop instruction at the end. It will have a short
         # delay time and the same flag outputs as the previous instruction:
         pb_inst.append({'flags': flagstring, 'instruction': 'STOP',
@@ -619,10 +626,23 @@ class NI_PCIe_6363(NIBoard):
 class Shutter(DigitalOut):
     description = 'shutter'
     allowed_states = {1:'open', 0:'closed'}  
+    def __init__(self,name,parent_device,connection,delay=(0,0)):
+        DigitalOut.__init__(self,name,parent_device,connection)
+        if delay=='calibrated':
+            attrs = calibrations['/shutters/'+self.name].attrs
+            self.open_delay, self.close_delay = attrs['open_delay'], attrs['close_delay']
+        else:
+            self.open_delay, self.close_delay = delay
+        
+    # If a shutter is asked to do something at t=0, it cannot start moving
+    # earlier than that.  So initial shutter states will have imprecise
+    # timing. Not throwing a warning here because if I did, every run
+    # would throw a warning for every shutter. The documentation will
+    # have to make a point of this.
     def open(self,t):
-        self.go_high(t)
+        self.go_high(t-self.open_delay if t >= self.open_delay else 0)
     def close(self,t):
-        self.go_low(t)  
+        self.go_low(t-self.close_delay if t >= self.close_delay else 0)  
   
 class DDS(Device):
     description = 'DDS'
@@ -785,5 +805,5 @@ for name in params.keys():
     exec(name + " = params['%s']"%name )
 del name
 
-
+calibrations = h5py.File('calibrations.h5')
        
