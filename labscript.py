@@ -528,16 +528,35 @@ class DigitalOut(Output):
         self.add_instruction(t,0) 
 
 
+class AnalogIn(Device):
+    description = 'Analog Input'
+    def __init__(self,name,parent_device,connection,scale_factor=1.0,units='Volts'):
+         self.acquisitions = []
+         self.scale_factor = scale_factor
+         self.units=units
+         self.name = name
+         Device.__init__(self,name,parent_device,connection)
+   
+    def acquire(self,label,start_time,end_time,scale_factor=None,units=None):
+        if scale_factor is None:
+            scale_factor = self.scale_factor
+        if units is None:
+            units = self.units
+        self.acquisitions.append({'start_time': start_time, 'end_time': end_time,
+                                 'label': label, 'scale_factor':scale_factor,'units':units})
+        
+        
 class NIBoard(Device):
-    allowed_children = [AnalogOut, DigitalOut]
+    allowed_children = [AnalogOut, DigitalOut, AnalogIn]
     n_analogs = 4
     n_digitals = 32
     digital_dtype = uint32
     clock_limit = 500e3 # underestimate I think.
     description = 'generic_NI_Board'
-    def __init__(self, number, parent_device,clock_type):
+    def __init__(self, number, parent_device,clock_type,acquisition_rate):
         Device.__init__(self, number, parent_device, connection=None)
         self.clock_type = clock_type
+        self.acquisition_rate = acquisition_rate
         self.parent_device.clock_limit = min([self.parent_device.clock_limit,self.clock_limit])
         
     def add_output(self,output):
@@ -588,29 +607,56 @@ class NIBoard(Device):
     def generate_code(self):
         analogs = {}
         digitals = {}
-        for output in self.child_devices:
-            if isinstance(output,AnalogOut):
-                analogs[output.connection] = output
+        inputs = {}
+        for device in self.child_devices:
+            if isinstance(device,AnalogOut):
+                analogs[device.connection] = device
+            elif isinstance(device,DigitalOut):
+                digitals[device.connection] = device
+            elif isinstance(device,AnalogIn):
+                inputs[device.connection] = device
             else:
-                digitals[output.connection] = output
+                raise Exception('Got unexpected device.')
         analog_out_table = empty((len(self.parent_device.times),len(analogs)), dtype=uint16)
         analog_connections = analogs.keys()
         analog_connections.sort()
-        analog_attrs = []
+        analog_out_attrs = []
         for i, connection in enumerate(analog_connections):
             self.convert_to_int16(analogs[connection])
             analog_out_table[:,i] = analogs[connection].raw_output
-            analog_attrs.append(self.name+'/'+connection)
-            
+            analog_out_attrs.append(self.name+'/'+connection)
+        input_connections = inputs.keys()
+        input_connections.sort()
+        input_attrs = []
+        acquisitions = []
+        for connection in input_connections:
+            input_attrs.append(self.name+'/'+connection)
+            for acq in inputs[connection].acquisitions:
+                acquisitions.append((connection,acq['label'],acq['start_time'],acq['end_time'],acq['scale_factor'],acq['units']))
+        # The 'a256' dtype below limits the string fields to 256
+        # characters. Can't imagine this would be an issue, but to not
+        # specify the string length (using dtype=str) causes the strings
+        # to all come out empty.
+        acquisitions_table_dtypes = [('connection','a256'), ('label','a256'), ('start',float),
+                                     ('stop',float), ('scale factor',float), ('units','a256')]
+        acquisition_table= empty(len(acquisitions), dtype=acquisitions_table_dtypes)
+        for i, acq in enumerate(acquisitions):
+            acquisition_table[i] = acq
+        
+        print acquisitions
+
         digital_out_table = self.convert_bools_to_bytes(digitals.values())
         
         grp = hdf5_file.create_group(self.name)
         analog_dataset = grp.create_dataset('ANALOG_OUTS',compression=compression,data=analog_out_table)
         digital_dataset = grp.create_dataset('DIGITAL_OUTS',compression=compression,data=digital_out_table)
-        grp.attrs['analog_channels'] = ', '.join(analog_attrs)
-        grp.attrs['scale_factor'] = 3276.7
+        input_dataset = grp.create_dataset('ACQUISITIONS',compression=compression,data=acquisition_table)
+        grp.attrs['analog_out_channels'] = ', '.join(analog_out_attrs)
+        grp.attrs['analog_in_channels'] = ', '.join(input_attrs)
+        grp.attrs['analog_scale_factor'] = 3276.7
         grp.attrs['digital_lines'] = '/'.join((self.name,'port0','line0:%d'%(self.n_digitals-1)))
-
+        grp.attrs['acquisition_rate'] = self.acquisition_rate
+        
 class NI_PCI_6733(NIBoard):
     description = 'NI-PCI-6733'
     n_analogs = 8
@@ -736,7 +782,7 @@ class NovaTechDDS9M(Device):
         grp.attrs['amplitude_scale_factor'] = 1023
         grp.attrs['phase_scale_factor'] = 45.511111111111113
         grp.create_dataset('TABLE_DATA',compression=compression,data=out_table) 
-        
+
 def stop(t):
     for device in inventory:
         if not device.parent_device:  

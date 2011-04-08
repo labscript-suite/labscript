@@ -11,12 +11,14 @@ labscriptimport =  time.time() - start_time
 start_time = time.time()
 
 pulseblaster1 = PulseBlaster(1)
-NI_board1 = NI_PCIe_6363(1, pulseblaster1,'fast')
+NI_board1 = NI_PCIe_6363(1, pulseblaster1,'fast',acquisition_rate=1e3)
 novatech1 = NovaTechDDS9M(1, pulseblaster1,'slow')
 
 analog0 = AnalogOut('output 1', NI_board1,'ao0')
 analog1 = AnalogOut('output 2', NI_board1,'ao1')
 analog2 = AnalogOut('output 3', NI_board1,'ao2')
+input1 = AnalogIn('input 1', NI_board1,'ai0')
+
 shutter1 = Shutter('shutter 1', NI_board1, 'port0/line0', delay='calibrated')
 shutter2 = Shutter('shutter 2', pulseblaster1, 2, delay='calibrated')
 dds1 = DDS('DDS 1', novatech1,0)
@@ -25,6 +27,11 @@ dds2 = DDS('DDS 2', novatech1,1)
 scale = 1.0
 rate = 1e4
 t = 0
+
+input1.acquire('measurement1',0,1)
+input1.acquire('measurement2',3,5)
+input1.acquire('measurement3',7,9)
+
 dds1.setamp(t,0.5)
 dds1.setfreq(t,0.6)
 dds1.setphase(t,0.7)
