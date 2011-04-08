@@ -642,8 +642,6 @@ class NIBoard(Device):
         acquisition_table= empty(len(acquisitions), dtype=acquisitions_table_dtypes)
         for i, acq in enumerate(acquisitions):
             acquisition_table[i] = acq
-        
-        print acquisitions
 
         digital_out_table = self.convert_bools_to_bytes(digitals.values())
         
@@ -799,6 +797,8 @@ def generate_code():
             for output in device.get_all_outputs():
                 print output.name.ljust(15) + str(len(output.raw_output)).rjust(15) + ' x ', str(output.raw_output.dtype).ljust(15)
             print
+    labscriptfile = os.path.join(sys.path[0],sys.argv[0])
+    hdf5_file.create_dataset('SCRIPT',compression=compression,data=open(labscriptfile).read())
     hdf5_file.close()
  
 def open_hdf5_file():
