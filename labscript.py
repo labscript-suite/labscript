@@ -60,7 +60,7 @@ def plot_outputs():
         if device.parent_device is None:
             for i, output in enumerate(device.get_all_outputs()):
                 if isinstance(output,Output):
-                    if output.clock_type == 'slow':
+                    if output.clock_type == 'slow clock':
                         times = device.change_times
                     else:
                         times = device.times
@@ -106,6 +106,13 @@ class Device(object):
             else:
                 all_outputs.extend(device.get_all_outputs())
         return all_outputs
+    
+    def get_all_children(self):
+        all_children = []
+        for device in self.child_devices:
+              all_children.append(device)
+              all_children.extend(device.get_all_children())
+        return all_children
 
     def generate_code(self):
         for device in self.child_devices:
@@ -252,18 +259,26 @@ class PulseBlaster(PseudoClock):
     clock_limit = 8.3e6 # Slight underestimate I think.
     fast_clock_flag = 0
     slow_clock_flag = 1
-    clock_type = 'slow'
+    clock_type = 'slow clock'
     
     def get_direct_outputs(self):
         """Finds out which outputs are directly attached to the PulseBlaster"""
         direct_outputs = []
         for output in self.get_all_outputs():
             if output.parent_device is self:
-                if not (isinstance(output.connection,int) and output.connection < 12):
+                try:
+                    prefix, connection = output.connection.split()
+                    assert prefix == 'flag'
+                    connection = int(connection)
+                except:
+                    sys.stderr.write('%s %s has invalid connection string: \'%s\'. '%(output.description,output.name,str(output.connection)) + 
+                                     'Format must be \'flag n\' with n an integer less than 12. Stopping.\n')
+                    sys.exit(1)
+                if not connection < 12:
                     sys.stderr.write('%s is set as connected to output connection %d of %s. Output connection \
                                       number must be a integer less than 12\n.'%(output.name, output.connection, self.name))
                     sys.exit(1)
-                if output.connection == self.slow_clock_flag or output.connection == self.fast_clock_flag:
+                if connection == self.slow_clock_flag or output.connection == self.fast_clock_flag:
                     sys.stderr.write('%s is set as connected to flag %d of %s.'%(output.name, output.connection, self.name) +
                                      'This is one of the PulseBlaster\'s clock connections. Stopping.\n')
                     sys.exit(1)
@@ -293,7 +308,8 @@ class PulseBlaster(PseudoClock):
         for k, instruction in enumerate(self.clock):
             flags = [0]*12
             for output in direct_outputs:
-                flags[output.connection] = int(output.raw_output[i])
+                flagindex = int(output.connection.split()[1])
+                flags[flagindex] = int(output.raw_output[i])
             flags[self.fast_clock_flag] = 1
             flags[self.slow_clock_flag] = 0 if instruction['slow_clock_tick'] else 1
             flagstring = ''.join([str(flag) for flag in flags])
@@ -338,7 +354,7 @@ class PulseBlaster(PseudoClock):
                                 instructionint, dataint, delaydouble)
                               
         # Okey now write it to the file:   
-        group = hdf5_file.create_group(self.name)
+        group = hdf5_file.create_group('/devices/'+self.name)
         group.create_dataset('PULSE_PROGRAM', compression=compression,data = pb_inst_table)         
         group.create_dataset('FAST_CLOCK', compression=compression,data = self.times)         
         group.create_dataset('SLOW_CLOCK', compression=compression,data = self.change_times)         
@@ -391,7 +407,7 @@ class Output(Device):
         # Check that ramps don't collide
         if isinstance(instruction,dict):
             # No ramps allowed if this output is on a slow clock:
-            if self.clock_type == 'slow':
+            if self.clock_type == 'slow clock':
                 sys.stderr.write('ERROR: %s %s is on a slow clock.'%(self.description, self.name) + 
                                  'It cannot have a function ramp as an instruction. Stopping.\n')
                 sys.exit(1)
@@ -466,7 +482,7 @@ class Output(Device):
         in self.raw_output."""
         # If this output is on the slow clock, then its timeseries should
         # not be expanded. It's already as expanded as it'll get.
-        if self.clock_type == 'slow':
+        if self.clock_type == 'slow clock':
             self.raw_output = fastflatten(self.timeseries,self.dtype)
             return
         outputarray = []
@@ -507,7 +523,6 @@ class AnalogOut(Output):
         self.add_instruction(t, {'function': functions.ramp(t,duration,initial,final), 'description':'linear ramp',
                                  'end time': t + duration, 'clock rate': samplerate})
         return duration
-    
                                  
     def sine(self,t,duration,amplitude,angfreq,phase,dc_offset,samplerate):
         self.add_instruction(t, {'function': functions.sine(t,duration,amplitude,angfreq,phase,dc_offset), 'description':'sine wave',
@@ -534,8 +549,8 @@ class AnalogIn(Device):
          self.acquisitions = []
          self.scale_factor = scale_factor
          self.units=units
-         self.name = name
          Device.__init__(self,name,parent_device,connection)
+         self.name = name
    
     def acquire(self,label,start_time,end_time,scale_factor=None,units=None):
         if scale_factor is None:
@@ -545,8 +560,18 @@ class AnalogIn(Device):
         self.acquisitions.append({'start_time': start_time, 'end_time': end_time,
                                  'label': label, 'scale_factor':scale_factor,'units':units})
         
+  
+class IntermediateDevice(Device):
+    def __init__(self, number, parent_device,clock_type):
+        if not clock_type in ['fast clock', 'slow clock']:
+            sys.stderr.write('Clock type for %s %s can only be \'slow clock\' or \'fast clock\'. Stopping\n'%(self.name,self.description))
+            sys.exit(1)
+        Device.__init__(self, number, parent_device, clock_type)
+        self.clock_type = clock_type
+        self.parent_device.clock_limit = min([self.parent_device.clock_limit,self.clock_limit])
         
-class NIBoard(Device):
+        
+class NIBoard(IntermediateDevice):
     allowed_children = [AnalogOut, DigitalOut, AnalogIn]
     n_analogs = 4
     n_digitals = 32
@@ -554,10 +579,8 @@ class NIBoard(Device):
     clock_limit = 500e3 # underestimate I think.
     description = 'generic_NI_Board'
     def __init__(self, number, parent_device,clock_type,acquisition_rate):
-        Device.__init__(self, number, parent_device, connection=None)
-        self.clock_type = clock_type
+        IntermediateDevice.__init__(self, number, parent_device,clock_type)
         self.acquisition_rate = acquisition_rate
-        self.parent_device.clock_limit = min([self.parent_device.clock_limit,self.clock_limit])
         
     def add_output(self,output):
         # TODO: check there are no duplicates, check that connection
@@ -645,7 +668,7 @@ class NIBoard(Device):
 
         digital_out_table = self.convert_bools_to_bytes(digitals.values())
         
-        grp = hdf5_file.create_group(self.name)
+        grp = hdf5_file.create_group('/devices/'+self.name)
         analog_dataset = grp.create_dataset('ANALOG_OUTS',compression=compression,data=analog_out_table)
         digital_dataset = grp.create_dataset('DIGITAL_OUTS',compression=compression,data=digital_out_table)
         input_dataset = grp.create_dataset('ACQUISITIONS',compression=compression,data=acquisition_table)
@@ -705,16 +728,11 @@ class DDS(Device):
     def setphase(self,t,value):
         self.phase.constant(t,value)
         
-class NovaTechDDS9M(Device):
+class NovaTechDDS9M(IntermediateDevice):
     description = 'NT-DDS9M'
     allowed_children = [DDS]
     clock_limit = 500e3 # TODO: find out what the actual max clock rate is.
     
-    def __init__(self,name,parent_device,clock_type):
-        Device.__init__(self,name,parent_device,None)
-        self.clock_type = clock_type
-        self.parent_device.clock_limit = min([self.parent_device.clock_limit,self.clock_limit])
-        
     def quantise_freq(self,output):
         # Ensure that frequencies are within bounds:
         if any(output.raw_output > 171e6 )  or any(output.raw_output < 0.1 ):
@@ -754,7 +772,14 @@ class NovaTechDDS9M(Device):
                                  'or connect %s to a different pseudoclock. Stopping.\n'%self.name)
                 sys.exit(1)
             # TODO: check that there are only two and that their connection no.s are right.
-            DDSs[output.connection] = output
+            try:
+                prefix, channel = output.connection.split()
+                channel = int(channel)
+            except:
+                sys.stderr.write('%s %s has invalid connection string: \'%s\'. '%(output.description,output.name,str(output.connection)) + 
+                                     'Format must be \'channel n\' with n either 0 or 1. Stopping.\n')
+                sys.exit(1)
+            DDSs[channel] = output
         for dds in DDSs.values():
             self.quantise_freq(dds.frequency)
             self.quantise_phase(dds.phase)
@@ -763,7 +788,7 @@ class NovaTechDDS9M(Device):
         dtypes = [('freq%d'%i,uint32) for i in range(2)] + \
                  [('phase%d'%i,uint16) for i in range(2)] + \
                  [('amp%d'%i,uint16) for i in range(2)]
-        if self.clock_type == 'slow':
+        if self.clock_type == 'slow clock':
             times = self.parent_device.change_times
         else:
             times = self.parent_device.times
@@ -775,17 +800,33 @@ class NovaTechDDS9M(Device):
             out_table['freq%d'%connection] = dds.frequency.raw_output
             out_table['amp%d'%connection] = dds.amplitude.raw_output
             out_table['phase%d'%connection] = dds.phase.raw_output
-        grp = hdf5_file.create_group(self.name)
+        grp = hdf5_file.create_group('/devices/'+self.name)
         grp.attrs['frequency_scale_factor'] = 1e7
         grp.attrs['amplitude_scale_factor'] = 1023
         grp.attrs['phase_scale_factor'] = 45.511111111111113
         grp.create_dataset('TABLE_DATA',compression=compression,data=out_table) 
 
-def stop(t):
+def generate_connection_table():
+    all_devices = []
+    connection_table = []
     for device in inventory:
-        if not device.parent_device:  
-            device.stop_time = t
-            
+        all_devices.extend(device.get_all_children())
+        # The three child 'devices' of a DDS aren't really devices, ignore them.
+        if not isinstance(device.parent_device,DDS):
+            connection_table.append((device.name, device.__class__.__name__,
+                                     device.parent_device.name if device.parent_device else '',
+                                     str(device.connection if device.parent_device else '')))
+    connection_table.sort()
+    connection_table_dtypes = [('name','a256'), ('class','a256'), ('parent','a256'), ('connected to','a256')]
+    connection_table_array = empty(len(connection_table),dtype=connection_table_dtypes)
+    for i, row in enumerate(connection_table):
+        connection_table_array[i] = row
+    hdf5_file.create_dataset('connection table',compression=compression,data=connection_table_array)
+    print 'Name'.rjust(15), 'Class'.rjust(15), 'Parent'.rjust(15), 'connected to'.rjust(15)
+    print '----'.rjust(15), '-----'.rjust(15), '------'.rjust(15), '------------'.rjust(15)
+    for row in connection_table:
+        print row[0].rjust(15), row[1].rjust(15), row[2].rjust(15), row[3].rjust(15)
+                
 def generate_code():
     for device in inventory:
         if not device.parent_device:
@@ -797,10 +838,18 @@ def generate_code():
             for output in device.get_all_outputs():
                 print output.name.ljust(15) + str(len(output.raw_output)).rjust(15) + ' x ', str(output.raw_output.dtype).ljust(15)
             print
+
+def stop(t):
+    for device in inventory:
+        if not device.parent_device:  
+            device.stop_time = t
+    generate_code()
+    generate_connection_table()
     labscriptfile = os.path.join(sys.path[0],sys.argv[0])
-    hdf5_file.create_dataset('SCRIPT',compression=compression,data=open(labscriptfile).read())
+    hdf5_file.create_dataset('script',compression=compression,data=open(labscriptfile).read())
     hdf5_file.close()
- 
+    sys.exit(0)
+    
 def open_hdf5_file():
     try:
         assert len(sys.argv) > 1

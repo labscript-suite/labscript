@@ -1,18 +1,11 @@
-import time
 import shutil
-very_start_time = time.time()
-import os
 shutil.copy('dummy_template.h5', 'dummy.h5')
 
-############################################################################################
-start_time = time.time()
 from labscript import *
-labscriptimport =  time.time() - start_time
-start_time = time.time()
 
 pulseblaster1 = PulseBlaster(1)
-NI_board1 = NI_PCIe_6363(1, pulseblaster1,'fast',acquisition_rate=1e3)
-novatech1 = NovaTechDDS9M(1, pulseblaster1,'slow')
+NI_board1 = NI_PCIe_6363(1, pulseblaster1,'fast clock',acquisition_rate=1e3)
+novatech1 = NovaTechDDS9M(1, pulseblaster1,'slow clock')
 
 analog0 = AnalogOut('output 1', NI_board1,'ao0')
 analog1 = AnalogOut('output 2', NI_board1,'ao1')
@@ -20,17 +13,17 @@ analog2 = AnalogOut('output 3', NI_board1,'ao2')
 input1 = AnalogIn('input 1', NI_board1,'ai0')
 
 shutter1 = Shutter('shutter 1', NI_board1, 'port0/line0', delay='calibrated')
-shutter2 = Shutter('shutter 2', pulseblaster1, 2, delay='calibrated')
-dds1 = DDS('DDS 1', novatech1,0)
-dds2 = DDS('DDS 2', novatech1,1)
+shutter2 = Shutter('shutter 2', pulseblaster1, 'flag 2', delay='calibrated')
+dds1 = DDS('DDS 1', novatech1, 'channel 0')
+dds2 = DDS('DDS 2', novatech1, 'channel 1')
 
 scale = 1.0
 rate = 1e4
 t = 0
 
-input1.acquire('measurement1',0,1)
-input1.acquire('measurement2',3,5)
-input1.acquire('measurement3',7,9)
+input1.acquire('measurement1',0*scale,1*scale)
+input1.acquire('measurement2',3*scale,5*scale)
+input1.acquire('measurement3',7*scale,9*scale)
 
 dds1.setamp(t,0.5)
 dds1.setfreq(t,0.6)
@@ -54,19 +47,4 @@ analog2.constant(t=5.9*scale,value=5)
 analog2.constant(t=7*scale,value=4)
 analog2.constant(t=8*scale,value=5)
 
-start_time = time.time()
 stop(t=10*scale)
-generate_code()
-#############################################################################################
-print "from labscript import *: \t",round(labscriptimport,2),'sec'
-print "generate_code():         \t", round(time.time() - start_time,2),'sec'
-if os.name == 'posix':
-    # Unix only to measure hard drive write time, which is otherwise
-    # deferred. In winXP this happens during generate_code().
-    start_time = time.time()
-    os.system('sync')
-    print "os.system('sync'):       \t", round(time.time() - start_time,2),'sec'
-print "total time:              \t", round(time.time() - very_start_time,2),'sec'
-print 'hdf5 file size:          \t', round(os.path.getsize('dummy.h5')/(1024.0**2),1), 'MB'
-print
-#plot_outputs()
