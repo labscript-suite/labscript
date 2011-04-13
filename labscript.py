@@ -821,8 +821,8 @@ def generate_connection_table():
         # The three child 'devices' of a DDS aren't really devices, ignore them.
         if not isinstance(device.parent_device,DDS):
             connection_table.append((device.name, device.__class__.__name__,
-                                     device.parent_device.name if device.parent_device else '',
-                                     str(device.connection if device.parent_device else '')))
+                                     device.parent_device.name if device.parent_device else str(None),
+                                     str(device.connection if device.parent_device else str(None))))
     connection_table.sort()
     connection_table_dtypes = [('name','a256'), ('class','a256'), ('parent','a256'), ('connected to','a256')]
     connection_table_array = empty(len(connection_table),dtype=connection_table_dtypes)
