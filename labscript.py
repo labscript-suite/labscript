@@ -257,8 +257,8 @@ class PulseBlaster(PseudoClock):
     pb_instructions = {'CONTINUE':0,'STOP': 1, 'LOOP': 2, 'END_LOOP': 3}
     description = 'PB-DDSII-300'
     clock_limit = 8.3e6 # Slight underestimate I think.
-    fast_clock_flag = 0
-    slow_clock_flag = 1
+    fast_clock_flag = 10
+    slow_clock_flag = 11
     clock_type = 'slow clock'
     
     def get_direct_outputs(self):
