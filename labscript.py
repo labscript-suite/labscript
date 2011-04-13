@@ -95,6 +95,7 @@ class Device(object):
         try:
             # Test that name is a valid Python variable name:
             exec '%s = None'%name
+            assert '.' not in name
         except:
             raise ValueError('%s is not a valid Python variable name. Stopping.\n'%name)
         # Put self into the global namespace:
@@ -903,7 +904,7 @@ for name in params.keys():
                          'is not a valid python variable name.' +
                          ' Please choose a different variable name.\n')
         sys.exit(1)
-    exec(name + " = params['%s']"%name )
+    setattr(__main__,name, params[name])
 del name
 
 calibrations = h5py.File('calibrations.h5')
