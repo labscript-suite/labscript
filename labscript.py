@@ -862,6 +862,7 @@ def stop(t):
     for device in inventory:
         if not device.parent_device:  
             device.stop_time = t
+    hdf5_file.create_group('/devices')
     generate_code()
     generate_connection_table()
     labscriptfile = os.path.join(sys.path[0],sys.argv[0])
