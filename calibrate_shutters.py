@@ -14,8 +14,8 @@
 import h5py
 f = h5py.File('calibrations.h5','w')
 g = f.create_group('shutters')
-shutter1 = g.create_group('shutter 1')
-shutter2 = g.create_group('shutter 2')
+shutter1 = g.create_group('shutter1')
+shutter2 = g.create_group('shutter2')
 shutter1.attrs['open_delay'] = 5e-3
 shutter1.attrs['close_delay'] = 5e-3
 shutter2.attrs['open_delay'] = 7.5e-3

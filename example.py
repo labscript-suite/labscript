@@ -3,19 +3,18 @@ shutil.copy('dummy_template.h5', 'dummy.h5')
 
 from labscript import *
 
-pulseblaster1 = PulseBlaster(1)
-NI_board1 = NI_PCIe_6363(1, pulseblaster1,'fast clock',acquisition_rate=1e3)
-novatech1 = NovaTechDDS9M(1, pulseblaster1,'slow clock')
+PulseBlaster(  'pulseblaster_1')
+NI_PCIe_6363(  'ni_pcie_6363_1',  pulseblaster_1, 'fast clock', acquisition_rate=1e3)
+NovaTechDDS9M( 'novatechdds9m_1', pulseblaster_1, 'slow clock')
 
-analog0 = AnalogOut('output 1', NI_board1,'ao0')
-analog1 = AnalogOut('output 2', NI_board1,'ao1')
-analog2 = AnalogOut('output 3', NI_board1,'ao2')
-input1 = AnalogIn('input 1', NI_board1,'ai0')
-
-shutter1 = Shutter('shutter 1', NI_board1, 'port0/line0', delay='calibrated')
-shutter2 = Shutter('shutter 2', pulseblaster1, 'flag 2', delay='calibrated')
-dds1 = DDS('DDS 1', novatech1, 'channel 0')
-dds2 = DDS('DDS 2', novatech1, 'channel 1')
+AnalogOut( 'analog0',  ni_pcie_6363_1,         'ao0')
+AnalogOut( 'analog1',  ni_pcie_6363_1,         'ao1')
+AnalogOut( 'analog2',  ni_pcie_6363_1,         'ao2')
+AnalogIn(   'input1',  ni_pcie_6363_1,         'ai0')
+Shutter(  'shutter1',  ni_pcie_6363_1, 'port0/line0', delay='calibrated')
+Shutter(  'shutter2',  pulseblaster_1,      'flag 2', delay='calibrated')
+DDS(          'dds1', novatechdds9m_1,   'channel 0')
+DDS(          'dds2', novatechdds9m_1,   'channel 1')
 
 scale = 1.0
 rate = 1e4

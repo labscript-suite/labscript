@@ -1,3 +1,5 @@
+import __main__
+
 import os
 import sys
 import keyword
@@ -80,16 +82,23 @@ def plot_outputs():
 class Device(object):
     description = 'Generic Device'
     allowed_children = None
-    def __init__(self,number,parent_device,connection):
+    def __init__(self,name,parent_device,connection):
         if self.allowed_children is None:
             allowed_children = [Device]
-        self.name = self.description + '_' + str(number)
+        self.name = name
         self.parent_device = parent_device
         self.connection = connection
         self.child_devices = []
         inventory.append(self)
         if parent_device:
             parent_device.add_device(self)
+        try:
+            # Test that name is a valid Python variable name:
+            exec '%s = None'%name
+        except:
+            raise ValueError('%s is not a valid Python variable name. Stopping.\n'%name)
+        # Put self into the global namespace:
+        setattr(__main__,name,self)
         
     def add_device(self,device):
         if any([isinstance(device,DeviceClass) for DeviceClass in self.allowed_children]):
@@ -380,7 +389,6 @@ class Output(Device):
         self.ramp_limits = [] # For checking ramps don't overlap
         self.clock_type = parent_device.clock_type
         Device.__init__(self,name,parent_device,connection)   
-        self.name = name   
 
     def instruction_to_string(self,instruction):
         """gets a human readable description of an instruction"""
@@ -550,7 +558,6 @@ class AnalogIn(Device):
          self.scale_factor = scale_factor
          self.units=units
          Device.__init__(self,name,parent_device,connection)
-         self.name = name
    
     def acquire(self,label,start_time,end_time,scale_factor=None,units=None):
         if scale_factor is None:
@@ -562,11 +569,11 @@ class AnalogIn(Device):
         
   
 class IntermediateDevice(Device):
-    def __init__(self, number, parent_device,clock_type):
+    def __init__(self, name, parent_device,clock_type):
         if not clock_type in ['fast clock', 'slow clock']:
             sys.stderr.write('Clock type for %s %s can only be \'slow clock\' or \'fast clock\'. Stopping\n'%(self.name,self.description))
             sys.exit(1)
-        Device.__init__(self, number, parent_device, clock_type)
+        Device.__init__(self, name, parent_device, clock_type)
         self.clock_type = clock_type
         self.parent_device.clock_limit = min([self.parent_device.clock_limit,self.clock_limit])
         
@@ -578,8 +585,8 @@ class NIBoard(IntermediateDevice):
     digital_dtype = uint32
     clock_limit = 500e3 # underestimate I think.
     description = 'generic_NI_Board'
-    def __init__(self, number, parent_device,clock_type,acquisition_rate):
-        IntermediateDevice.__init__(self, number, parent_device,clock_type)
+    def __init__(self, name, parent_device,clock_type,acquisition_rate):
+        IntermediateDevice.__init__(self, name, parent_device,clock_type)
         self.acquisition_rate = acquisition_rate
         
     def add_output(self,output):
@@ -717,10 +724,9 @@ class DDS(Device):
     def __init__(self,name,parent_device,connection):
         self.clock_type = parent_device.clock_type
         Device.__init__(self,name,parent_device,connection)
-        self.name = name
-        self.frequency = AnalogOut(self.name+' (freq)',self,None)
-        self.amplitude = AnalogOut(self.name+' (amp)',self,None)
-        self.phase = AnalogOut(self.name+' (phase)',self,None)
+        self.frequency = AnalogOut(self.name+'_freq',self,None)
+        self.amplitude = AnalogOut(self.name+'_amp',self,None)
+        self.phase = AnalogOut(self.name+'_phase',self,None)
     def setamp(self,t,value):
         self.amplitude.constant(t,value)
     def setfreq(self,t,value):
