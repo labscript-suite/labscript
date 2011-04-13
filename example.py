@@ -1,5 +1,5 @@
-import shutil
-shutil.copy('utils/dummy_template.h5', 'dummy.h5')
+import shutil, os
+shutil.copy(os.path.join('utils','dummy_template.h5'), 'dummy.h5')
 
 from labscript import *
 

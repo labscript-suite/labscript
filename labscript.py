@@ -132,8 +132,9 @@ class Device(object):
 class PseudoClock(Device):
     description = 'Generic Pseudoclock'
     allowed_children = [Device]
-    def __init__(self,name):
-        Device.__init__(self,name,parent_device=None,connection=None)
+    generation = 0
+    def __init__(self,name,parent_device=None,connection=None):
+        Device.__init__(self,name,parent_device,connection)
     
     def collect_change_times(self, outputs):
         """Asks all connected outputs for a list of times that they
@@ -385,6 +386,7 @@ class Output(Device):
     allowed_states = {}
     dtype = float32
     scale_factor = 1
+    generation = 3
     def __init__(self,name,parent_device,connection):
         self.instructions = {}
         self.ramp_limits = [] # For checking ramps don't overlap
@@ -554,6 +556,7 @@ class DigitalOut(Output):
 
 class AnalogIn(Device):
     description = 'Analog Input'
+    generation = 3
     def __init__(self,name,parent_device,connection,scale_factor=1.0,units='Volts'):
          self.acquisitions = []
          self.scale_factor = scale_factor
@@ -570,6 +573,7 @@ class AnalogIn(Device):
         
   
 class IntermediateDevice(Device):
+    generation = 1
     def __init__(self, name, parent_device,clock_type):
         if not clock_type in ['fast clock', 'slow clock']:
             sys.stderr.write('Clock type for %s %s can only be \'slow clock\' or \'fast clock\'. Stopping\n'%(self.name,self.description))
@@ -586,7 +590,7 @@ class NIBoard(IntermediateDevice):
     digital_dtype = uint32
     clock_limit = 500e3 # underestimate I think.
     description = 'generic_NI_Board'
-    def __init__(self, name, parent_device,clock_type,acquisition_rate):
+    def __init__(self, name, parent_device,clock_type,acquisition_rate=0):
         IntermediateDevice.__init__(self, name, parent_device,clock_type)
         self.acquisition_rate = acquisition_rate
         
@@ -679,7 +683,8 @@ class NIBoard(IntermediateDevice):
         grp = hdf5_file.create_group('/devices/'+self.name)
         analog_dataset = grp.create_dataset('ANALOG_OUTS',compression=compression,data=analog_out_table)
         digital_dataset = grp.create_dataset('DIGITAL_OUTS',compression=compression,data=digital_out_table)
-        input_dataset = grp.create_dataset('ACQUISITIONS',compression=compression,data=acquisition_table)
+        if len(acquisition_table) > 0:
+            input_dataset = grp.create_dataset('ACQUISITIONS',compression=compression,data=acquisition_table)
         grp.attrs['analog_out_channels'] = ', '.join(analog_out_attrs)
         grp.attrs['analog_in_channels'] = ', '.join(input_attrs)
         grp.attrs['analog_scale_factor'] = 3276.7
@@ -722,6 +727,7 @@ class Shutter(DigitalOut):
 class DDS(Device):
     description = 'DDS'
     allowed_children = [AnalogOut] # Adds its own children when initialised
+    generation = 2
     def __init__(self,name,parent_device,connection):
         self.clock_type = parent_device.clock_type
         Device.__init__(self,name,parent_device,connection)
@@ -816,14 +822,20 @@ class NovaTechDDS9M(IntermediateDevice):
 def generate_connection_table():
     all_devices = []
     connection_table = []
+    devicedict = {}
+    def sortkey(row):
+        device = devicedict[row[0]]
+        return str(device.generation) + device.name
+    
     for device in inventory:
+        devicedict[device.name] = device
         all_devices.extend(device.get_all_children())
         # The three child 'devices' of a DDS aren't really devices, ignore them.
         if not isinstance(device.parent_device,DDS):
             connection_table.append((device.name, device.__class__.__name__,
                                      device.parent_device.name if device.parent_device else str(None),
                                      str(device.connection if device.parent_device else str(None))))
-    connection_table.sort()
+    connection_table.sort(key=sortkey)
     connection_table_dtypes = [('name','a256'), ('class','a256'), ('parent','a256'), ('connected to','a256')]
     connection_table_array = empty(len(connection_table),dtype=connection_table_dtypes)
     for i, row in enumerate(connection_table):
