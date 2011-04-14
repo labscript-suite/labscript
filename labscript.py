@@ -265,7 +265,12 @@ class PseudoClock(Device):
             
 
 class PulseBlaster(PseudoClock):
-    pb_instructions = {'CONTINUE':0,'STOP': 1, 'LOOP': 2, 'END_LOOP': 3}
+    pb_instructions = {'CONTINUE':0,
+                       'STOP': 1, 
+                       'LOOP': 2, 
+                       'END_LOOP': 3,
+                       'BRANCH': 6,
+                       'WAIT': 8}
     description = 'PB-DDSII-300'
     clock_limit = 8.3e6 # Slight underestimate I think.
     fast_clock_flag = 10
@@ -309,13 +314,16 @@ class PulseBlaster(PseudoClock):
         # index to record what line number of the pulseblaster hardware
         # instructions we're up to:
         j = 0
-        # An initial instruction with the fast clock at zero and the slow clock at one:
-        flags = [0]*12
-        flags[self.fast_clock_flag] = 0
-        flags[self.slow_clock_flag] = 1 
-        pb_inst.append({'flags': ''.join([str(flag) for flag in flags]), 'instruction': 'CONTINUE',
-                        'data': 0, 'delay': 10.0/self.clock_limit*1e9})  
-        j += 1
+        # We've delegated the initial instruction off to LabVIEW, which
+        # can ensure continuity with the state of the front panel. This
+        # will be deleted if we don't change our minds!
+#        # An initial instruction with the fast clock at zero and the slow clock at one:
+#        flags = [0]*12
+#        flags[self.fast_clock_flag] = 0
+#        flags[self.slow_clock_flag] = 1 
+#        pb_inst.append({'flags': ''.join([str(flag) for flag in flags]), 'instruction': 'CONTINUE',
+#                        'data': 0, 'delay': 10.0/self.clock_limit*1e9})  
+#        j += 1
         for k, instruction in enumerate(self.clock):
             flags = [0]*12
             for output in direct_outputs:
@@ -344,9 +352,17 @@ class PulseBlaster(PseudoClock):
                     i += 1
             except IndexError:
                 pass
-        # Gotta put a stop instruction at the end. It will have a short
-        # delay time and the same flag outputs as the previous instruction:
-        pb_inst.append({'flags': flagstring, 'instruction': 'STOP',
+        # This is how we stop the pulse program. We wait on the second
+        # last instruction whilst the control software in LabVIEW
+        # reprograms the zeroth instruction to whatever the system
+        # is going to revert to once the experiment is done. Then a
+        # software trigger is given to the PulseBlaster telling it
+        # to resume execution. The program proceeds to the last instruction,
+        # which is a branch to zero, and the system ends up in the state
+        # of LabVIEW's front panel without missing a beat.
+        pb_inst.append({'flags': flagstring, 'instruction': 'WAIT',
+                        'data': 0, 'delay': 10.0/self.clock_limit*1e9})  
+        pb_inst.append({'flags': flagstring, 'instruction': 'BRANCH',
                         'data': 0, 'delay': 10.0/self.clock_limit*1e9})  
         # OK now we squeeze the instructions into a numpy array ready for writing to hdf5:
         pb_dtype = [('freq0',int32), ('phase0',int32), ('amp0',int32), 
@@ -441,8 +457,8 @@ class Output(Device):
         # Check if there are no instructions. Generate a warning and insert an
         # instruction telling the output to remain at zero.
         if not self.instructions:
-            sys.stderr.write(' '.join(['WARNING:', self.name, 'has no instructions. It will be set to %s for all time.\n'%self.instruction_to_string(0)]))
-            self.add_instruction(0,0)  
+            sys.stderr.write(' '.join(['WARNING:', self.name, 'has no instructions. It will be set to %s for all time.\n'%self.instruction_to_string(self.default_value)]))
+            self.add_instruction(0,self.default_value)  
         # Check if there are no instructions at t=0. Generate a warning and insert an
         # instruction telling the output to start at zero.
         if 0 not in self.instructions.keys():
@@ -530,6 +546,7 @@ class Output(Device):
 
 class AnalogOut(Output):
     description = 'analog output'
+    default_value = 0
     def ramp(self,t,duration,initial,final,samplerate):
         self.add_instruction(t, {'function': functions.ramp(t,duration,initial,final), 'description':'linear ramp',
                                  'end time': t + duration, 'clock rate': samplerate})
@@ -547,6 +564,7 @@ class AnalogOut(Output):
 class DigitalOut(Output):
     description = 'digital output'
     allowed_states = {1:'high', 0:'low'}
+    default_value = 0
     dtype = uint8
     def go_high(self,t):
         self.add_instruction(t,1)
@@ -734,6 +752,8 @@ class DDS(Device):
         self.frequency = AnalogOut(self.name+'_freq',self,None)
         self.amplitude = AnalogOut(self.name+'_amp',self,None)
         self.phase = AnalogOut(self.name+'_phase',self,None)
+        if isinstance(self.parent_device,NovaTechDDS9M):
+            self.frequency.default_value = 0.1
     def setamp(self,t,value):
         self.amplitude.constant(t,value)
     def setfreq(self,t,value):
