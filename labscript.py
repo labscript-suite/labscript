@@ -322,7 +322,7 @@ class PulseBlaster(PseudoClock):
         flags = [0]*12
         flags[self.fast_clock_flag] = 0
         flags[self.slow_clock_flag] = 1 
-        pb_inst.append({'flags': ''.join([str(flag) for flag in flags]), 'instruction': 'CONTINUE',
+        pb_inst.append({'flags': ''.join([str(flag) for flag in flags]), 'instruction': 'STOP',
                         'data': 0, 'delay': 10.0/self.clock_limit*1e9})  
         j += 1
         for k, instruction in enumerate(self.clock):
