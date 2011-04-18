@@ -315,15 +315,16 @@ class PulseBlaster(PseudoClock):
         # instructions we're up to:
         j = 0
         # We've delegated the initial instruction off to LabVIEW, which
-        # can ensure continuity with the state of the front panel. This
-        # will be deleted if we don't change our minds!
-#        # An initial instruction with the fast clock at zero and the slow clock at one:
-#        flags = [0]*12
-#        flags[self.fast_clock_flag] = 0
-#        flags[self.slow_clock_flag] = 1 
-#        pb_inst.append({'flags': ''.join([str(flag) for flag in flags]), 'instruction': 'CONTINUE',
-#                        'data': 0, 'delay': 10.0/self.clock_limit*1e9})  
-#        j += 1
+        # can ensure continuity with the state of the front panel. Thus
+        # this first instruction doesn't actually do anything.  An initial
+        # instruction with the fast clock at zero and the slow clock
+        # at one:
+        flags = [0]*12
+        flags[self.fast_clock_flag] = 0
+        flags[self.slow_clock_flag] = 1 
+        pb_inst.append({'flags': ''.join([str(flag) for flag in flags]), 'instruction': 'CONTINUE',
+                        'data': 0, 'delay': 10.0/self.clock_limit*1e9})  
+        j += 1
         for k, instruction in enumerate(self.clock):
             flags = [0]*12
             for output in direct_outputs:
