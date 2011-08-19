@@ -47,3 +47,5 @@ analog2.constant(t=7*scale,value=4)
 analog2.constant(t=8*scale,value=5)
 
 stop(t=10*scale)
+
+plot_outputs()

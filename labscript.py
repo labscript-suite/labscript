@@ -889,7 +889,7 @@ def stop(t):
     labscriptfile = os.path.join(sys.path[0],sys.argv[0])
     hdf5_file.create_dataset('script',compression=compression,data=open(labscriptfile).read())
     hdf5_file.close()
-    sys.exit(0)
+#    sys.exit(0)
     
 def open_hdf5_file():
     try:
