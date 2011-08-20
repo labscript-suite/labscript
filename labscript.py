@@ -3,6 +3,7 @@ import __main__
 import os
 import sys
 import keyword
+import gtk
 
 import h5py
 from pylab import *
@@ -895,9 +896,26 @@ def open_hdf5_file():
     try:
         assert len(sys.argv) > 1
         hdf5_filename = sys.argv[-1]
+        assert hdf5_filename.lower().endswith('h5')
     except:
-        sys.stderr.write('ERROR: No hdf5 file provided as a command line argument. Stopping.\n')
-        sys.exit(1)
+        newh5file = os.path.join(sys.path[0],sys.argv[0].split('.py')[0]+'.h5')
+        if os.path.exists(newh5file) and '-replace' not in sys.argv:
+            dialog = gtk.MessageDialog(None,0,gtk.MESSAGE_WARNING, gtk.BUTTONS_OK_CANCEL,
+             'Replace existing hdf5 file ' + sys.argv[0].split('.py')[0]+'.h5?')
+            response = dialog.run()
+            # There is no gtk mainloop to make the dialog box
+            # vanish. We'll do a little mainloop here until there are
+            # no more events pending:
+            dialog.destroy()
+            while gtk.events_pending():
+                gtk.main_iteration()
+            if not response == gtk.RESPONSE_OK:
+                sys.stderr.write('ERROR: No hdf5 file provided, and not overwriting previously existing h5 file with default filename. Stopping.\n')
+                sys.exit(1)
+        f = h5py.File(newh5file,'w')
+        group = f.create_group('params')
+        f.close()
+        hdf5_filename = newh5file
     if not os.path.exists(hdf5_filename):
         sys.stderr.write('ERROR: Provided hdf5 filename %s doesn\'t exist. Stopping.\n'%hdf5_filename)
         sys.exit(1)
@@ -939,7 +957,11 @@ for name in params.keys():
                          ' Please choose a different variable name.\n')
         sys.exit(1)
     setattr(__main__,name, params[name])
-del name
+    
+if params.keys():
+    # get rid of the loop variable -- it caused a subtle bug once by
+    # continuing to exist:
+    del name
 
 calibrations = h5py.File('calibrations.h5')
        
