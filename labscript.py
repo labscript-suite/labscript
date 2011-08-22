@@ -890,7 +890,6 @@ def stop(t):
     labscriptfile = os.path.join(sys.path[0],sys.argv[0])
     hdf5_file.create_dataset('script',compression=compression,data=open(labscriptfile).read())
     hdf5_file.close()
-#    sys.exit(0)
     
 def open_hdf5_file():
     try:
@@ -898,6 +897,9 @@ def open_hdf5_file():
         hdf5_filename = sys.argv[-1]
         assert hdf5_filename.lower().endswith('h5')
     except:
+        if not sys.path[0]:
+            sys.stderr.write('ERROR: Can\'t run labscript interactively. Labscript relies on there being a script file. If you\'re just checking that you can import labscript, yes you can :)\n')
+            sys.exit(1)
         newh5file = os.path.join(sys.path[0],sys.argv[0].split('.py')[0]+'.h5')
         if os.path.exists(newh5file) and '-replace' not in sys.argv:
             dialog = gtk.MessageDialog(None,0,gtk.MESSAGE_WARNING, gtk.BUTTONS_OK_CANCEL,
@@ -963,5 +965,6 @@ if params.keys():
     # continuing to exist:
     del name
 
-calibrations = h5py.File('calibrations.h5')
+if os.path.exists('calibrations.h5'):
+    calibrations = h5py.File('calibrations.h5','r')
        
