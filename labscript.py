@@ -934,8 +934,9 @@ for name in params.keys():
         sys.exit(1)
         
     try:
-        exec(name + ' = 0')
         assert '.' not in name
+        exec(name + ' = 0')
+        exec('del ' + name )
     except:
         sys.stderr.write('ERROR whilst parsing globals from %s. \'%s\''%(sys.argv[1],name) +
                          'is not a valid python variable name.' +
