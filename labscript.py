@@ -155,7 +155,7 @@ class PseudoClock(Device):
         for i, t in enumerate(change_times[:-1]):
             dt = change_times[i+1] - t
             if dt < 1.0/self.clock_limit:
-                sys.stderr.write('ERROR: Commands have been issued to devices attached to %s at t= %s s and %s s. '%(self.name, str(t),str(self.change_times[i+1])) +
+                sys.stderr.write('ERROR: Commands have been issued to devices attached to %s at t= %s s and %s s. '%(self.name, str(t),str(change_times[i+1])) +
                                   'One or more connected devices cannot support update delays shorter than %s sec. Stopping.\n'%str(1.0/self.clock_limit))
                 sys.exit(1)
         return change_times

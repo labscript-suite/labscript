@@ -31,6 +31,7 @@ dds2.setphase(t,1.0)
 shutter1.close(t)
 shutter2.close(t)
 analog0.constant(t,2)
+
 analog2.constant(t,3)
 analog1.sine(t,duration=10*scale,amplitude=5,angfreq=2*pi,phase=0,dc_offset=0.0,samplerate=rate)
 t = 1*scale
