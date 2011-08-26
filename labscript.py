@@ -688,7 +688,6 @@ class NIBoard(IntermediateDevice):
             input_dataset = grp.create_dataset('ACQUISITIONS',compression=compression,data=acquisition_table)
         grp.attrs['analog_out_channels'] = ', '.join(analog_out_attrs)
         grp.attrs['analog_in_channels'] = ', '.join(input_attrs)
-        grp.attrs['analog_scale_factor'] = 3276.7
         grp.attrs['digital_lines'] = '/'.join((self.name,'port0','line0:%d'%(self.n_digitals-1)))
         grp.attrs['acquisition_rate'] = self.acquisition_rate
         
