@@ -1,7 +1,7 @@
 from labscript import *
 
 PulseBlaster(  'pulseblaster_0')
-NI_PCIe_6363(  'ni_pcie_6363_0',  pulseblaster_0, 'fast clock', acquisition_rate=1e3)
+NI_PCIe_6363(  'ni_pcie_6363_0',  pulseblaster_0, 'fast clock')
 NovaTechDDS9M( 'novatechdds9m_0', pulseblaster_0, 'slow clock')
 
 AnalogOut( 'analog0',  ni_pcie_6363_0,         'ao0')

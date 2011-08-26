@@ -634,31 +634,6 @@ class NIBoard(IntermediateDevice):
         return bits
             
             
-    def convert_to_int16(self,output):
-        """converts floats between -10 and 10 to signed 16 bit integers
-        between -32767 and 32767 inclusive (excluding -32768 for symmetry)"""
-        # This function is currenly responsible for about a 50% increase
-        # in run time, but i'm not sure whether it can be optimised much
-        # without sacrificing correctness.  The any(output.raw_output >
-        # 10) checks etc are what are slow, but without bounds checking
-        # the type casting to int16 wraps around without detecting
-        # overflow. Writing int16s results in less time to write to
-        # disk though, and so the net effect is not much. However if
-        # we use an OS with proper caching, such as Win 7, then write
-        # times don't concern us much. If we pass float32's, then LabVIEW
-        # presumably does its own bounds checking before giving the data
-        # to its cards. If it doesn't then we'll have to do this anyway,
-        # grumble grumble, to make sure the experiment doesn't silently
-        # fail when the user enters too high a voltage...
-        if any(output.raw_output > 10 )  or any(output.raw_output < -10 ):
-            sys.stderr.write('ERROR: %s %s '%(output.description, output.name) +
-                              'can only have values between -10 and 10 Volts, ' + 
-                              'the limit imposed by %s. Stopping.\n'%self.name)
-            sys.exit(1)
-        # have to round first else we just get the floor function on absolute values:
-        output.raw_output = array((3276.7*output.raw_output).round(),dtype=int16)
-        output.scale_factor = 3276.7
-    
     def generate_code(self):
         analogs = {}
         digitals = {}
@@ -672,13 +647,19 @@ class NIBoard(IntermediateDevice):
                 inputs[device.connection] = device
             else:
                 raise Exception('Got unexpected device.')
-        analog_out_table = empty((len(self.parent_device.times),len(analogs)), dtype=uint16)
+        analog_out_table = empty((len(self.parent_device.times),len(analogs)), dtype=float32)
         analog_connections = analogs.keys()
         analog_connections.sort()
         analog_out_attrs = []
         for i, connection in enumerate(analog_connections):
-            self.convert_to_int16(analogs[connection])
-            analog_out_table[:,i] = analogs[connection].raw_output
+            output = analogs[connection]
+            if any(output.raw_output > 10 )  or any(output.raw_output < -10 ):
+                # Bounds checking:
+                sys.stderr.write('ERROR: %s %s '%(output.description, output.name) +
+                                  'can only have values between -10 and 10 Volts, ' + 
+                                  'the limit imposed by %s. Stopping.\n'%self.name)
+                sys.exit(1)
+            analog_out_table[:,i] = output.raw_output
             analog_out_attrs.append(self.name+'/'+connection)
         input_connections = inputs.keys()
         input_connections.sort()
@@ -888,7 +869,9 @@ def stop(t):
     generate_code()
     generate_connection_table()
     labscriptfile = os.path.join(sys.path[0],sys.argv[0])
-    hdf5_file.create_dataset('script',compression=compression,data=open(labscriptfile).read())
+    script = hdf5_file.create_dataset('script',compression=compression,data=open(labscriptfile).read())
+    script.attrs['name'] = os.path.basename(sys.argv[0])
+    script.attrs['path'] = sys.path[0]
     hdf5_file.close()
     
 def open_hdf5_file():
