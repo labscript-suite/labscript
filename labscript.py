@@ -886,6 +886,7 @@ def open_hdf5_file():
         if os.path.exists(newh5file) and '-replace' not in sys.argv:
             dialog = gtk.MessageDialog(None,0,gtk.MESSAGE_WARNING, gtk.BUTTONS_OK_CANCEL,
              'Replace existing hdf5 file ' + sys.argv[0].split('.py')[0]+'.h5?')
+            dialog.present()
             response = dialog.run()
             # There is no gtk mainloop to make the dialog box
             # vanish. We'll do a little mainloop here until there are
