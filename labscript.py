@@ -898,7 +898,7 @@ def open_hdf5_file():
                 sys.stderr.write('ERROR: No hdf5 file provided, and not overwriting previously existing h5 file with default filename. Stopping.\n')
                 sys.exit(1)
         f = h5py.File(newh5file,'w')
-        group = f.create_group('params')
+        group = f.create_group('globals')
         f.close()
         hdf5_filename = newh5file
     if not os.path.exists(hdf5_filename):
