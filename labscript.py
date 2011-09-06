@@ -280,34 +280,110 @@ class PulseBlaster(PseudoClock):
     
     def get_direct_outputs(self):
         """Finds out which outputs are directly attached to the PulseBlaster"""
-        direct_outputs = []
+        dig_outputs = []
+        dds_outputs = []
         for output in self.get_all_outputs():
+            # If the device's parent is a DDS (remembering that DDSs
+            # have three fake child devices for amp, freq and phase),
+            # then maybe that DDS is one of our direct outputs:
+            if isinstance(output.parent_device,DDS) and output.parent_device.parent_device is self:
+                # If this is the case, then we're interested in that DDS. But we don't want to count it three times:
+                if not output.parent_device in dds_outputs:
+                    output = output.parent_device
             if output.parent_device is self:
                 try:
                     prefix, connection = output.connection.split()
-                    assert prefix == 'flag'
+                    assert prefix == 'flag' or prefix == 'dds'
                     connection = int(connection)
                 except:
                     sys.stderr.write('%s %s has invalid connection string: \'%s\'. '%(output.description,output.name,str(output.connection)) + 
-                                     'Format must be \'flag n\' with n an integer less than 12. Stopping.\n')
+                                     'Format must be \'flag n\' with n an integer less than 12, or \'dds n\' with n less than 2. Stopping.\n')
                     sys.exit(1)
                 if not connection < 12:
                     sys.stderr.write('%s is set as connected to output connection %d of %s. Output connection \
-                                      number must be a integer less than 12\n.'%(output.name, output.connection, self.name))
+                                      number must be a integer less than 12\n.'%(output.name, connection, self.name))
                     sys.exit(1)
-                if connection == self.slow_clock_flag or output.connection == self.fast_clock_flag:
-                    sys.stderr.write('%s is set as connected to flag %d of %s.'%(output.name, output.connection, self.name) +
-                                     'This is one of the PulseBlaster\'s clock connections. Stopping.\n')
+                if prefix == 'dds' and not connection < 2:
+                    sys.stderr.write('%s is set as connected to output connection %d of %s. DDS output connection \
+                                      number must be a integer less than 2\n.'%(output.name, connection, self.name))
                     sys.exit(1)
-                for other_output in direct_outputs:
+                if prefix == 'flag' and connection in [self.slow_clock_flag, self.fast_clock_flag]:
+                    sys.stderr.write('%s is set as connected to flag %d of %s.'%(output.name, connection, self.name) +
+                                     'This is one of the PulseBlaster\'s clock flags. Stopping.\n')
+                    sys.exit(1)
+                for other_output in dig_outputs + dds_outputs:
                     if output.connection == other_output.connection:
-                        sys.stderr.write('%s %s and %s %s are both set as connected to output %d of %s. Stopping.\n'%(output.name,
+                        sys.stderr.write('%s %s and %s %s are both set as connected to %s of %s. Stopping.\n'%(output.name,
                                          other_output.name, output.connection, self.name))
                         sys.exit(1)
-                direct_outputs.append(output)
-        return direct_outputs
-    
-    def convert_to_pb_inst(self, direct_outputs):
+                if isinstance(output,DigitalOut):
+                	dig_outputs.append(output)
+                elif isinstance(output, DDS):
+                	dds_outputs.append(output)
+                
+        return dig_outputs, dds_outputs
+
+    def generate_registers(self,dds_outputs):
+        ampdicts = {}
+        phasedicts = {}
+        freqdicts = {}
+        group = hdf5_file.create_group('/devices/'+self.name)
+        for output in dds_outputs:
+            num = int(output.connection.split()[1])
+            
+            # Ensure that amplitudes are within bounds:
+            if any(output.amplitude.raw_output > 1)  or any(output.amplitude.raw_output < 0):
+                sys.stderr.write('ERROR: %s %s '%(output.amplitude.description, output.amplitude.name) +
+                                  'can only have values between 0 and 1, ' + 
+                                  'the limit imposed by %s. Stopping.\n'%output.name)
+                                  
+            # Ensure that frequencies are within bounds:
+            if any(output.frequency.raw_output > 100e6 )  or any(output.frequency.raw_output < 0):
+                sys.stderr.write('ERROR: %s %s '%(output.frequency.description, output.frequency.name) +
+                                  'can only have values between 0Hz and and 100MHz, ' + 
+                                  'the limit imposed by %s. Stopping.\n'%output.name)
+                                  
+            # Ensure that phase wraps around:
+            output.phase.raw_output %= 360
+            
+            amps = set(output.amplitude.raw_output)
+            phases = set(output.phase.raw_output)
+            freqs = set(output.frequency.raw_output)
+                                  
+            amps.update([0])
+            phases.update([0]) # These will be the dummy instructions, overwritten by LabVIEW.
+            freqs.update([0])
+            
+            if len(amps) > 1024:
+                sys.stderr.write('%s dds%d can only support 1024 amplitude registers, and %s have been requested. Stopping.\n'%(self.name, num, str(len(amps))))
+                sys.exit(1)
+            if len(phases) > 128:
+                sys.stderr.write('%s dds%d can only support 128 phase registers, and %s have been requested. Stopping.\n'%(self.name, num, str(len(phases))))
+                sys.exit(1)
+            if len(freqs) > 1024:
+                sys.stderr.write('%s dds%d can only support 1024 frequency registers, and %s have been requested. Stopping.\n'%(self.name, num, str(len(freqs))))
+                sys.exit(1)
+                
+            ampregs = range(len(amps))
+            freqregs = range(len(freqs))
+            phaseregs = range(len(phases))
+            
+            ampdicts[num] = dict(zip(amps,ampregs))
+            freqdicts[num] = dict(zip(freqs,freqregs))
+            phasedicts[num] = dict(zip(phases,phaseregs))
+            
+            freq_table = array(sorted(freqs), dtype = float64)
+            amp_table = array(sorted(amps), dtype = float32)
+            phase_table = array(sorted(phases), dtype = float64)
+            
+            subgroup = group.create_group('DDS%d'%num)
+            subgroup.create_dataset('FREQ_REGS', compression=compression,data = freq_table)
+            subgroup.create_dataset('AMP_REGS', compression=compression,data = amp_table)
+            subgroup.create_dataset('PHASE_REGS', compression=compression,data = phase_table)
+            
+        return freqdicts, ampdicts, phasedicts
+        
+    def convert_to_pb_inst(self, dig_outputs, dds_outputs, freqs, amps, phases):
         pb_inst = []
         # index to keep track of where in output.raw_output the
         # pulseblaster flags are coming from
@@ -321,16 +397,29 @@ class PulseBlaster(PseudoClock):
         # instruction with the fast clock at zero and the slow clock
         # at one:
         flags = [0]*12
+        freqregs = [0]*2
+        ampregs = [0]*2
+        phaseregs = [0]*2
         flags[self.fast_clock_flag] = 0
         flags[self.slow_clock_flag] = 1 
-        pb_inst.append({'flags': ''.join([str(flag) for flag in flags]), 'instruction': 'STOP',
+        pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs,
+                        'flags': ''.join([str(flag) for flag in flags]), 'instruction': 'STOP',
                         'data': 0, 'delay': 10.0/self.clock_limit*1e9})  
         j += 1
         for k, instruction in enumerate(self.clock):
             flags = [0]*12
-            for output in direct_outputs:
+            freqregs = [0]*2
+            ampregs = [0]*2
+            phaseregs = [0]*2
+            for output in dig_outputs:
                 flagindex = int(output.connection.split()[1])
                 flags[flagindex] = int(output.raw_output[i])
+            for output in dds_outputs:
+                ddsnumber = int(output.connection.split()[1])
+                freqregs[ddsnumber] = freqs[ddsnumber][output.frequency.raw_output[i]]
+                ampregs[ddsnumber] = amps[ddsnumber][output.amplitude.raw_output[i]]
+                phaseregs[ddsnumber] = phases[ddsnumber][output.phase.raw_output[i]]
+                
             flags[self.fast_clock_flag] = 1
             flags[self.slow_clock_flag] = 0 if instruction['slow_clock_tick'] else 1
             flagstring = ''.join([str(flag) for flag in flags])
@@ -341,13 +430,15 @@ class PulseBlaster(PseudoClock):
                                   'please file a feature request at' +
                                   'http://redmine.physics.monash.edu.au/projects/labscript. Stopping.\n')
                 sys.exit(1)
-            pb_inst.append({'flags': flagstring, 'instruction': 'LOOP',
-                                 'data': instruction['reps'], 'delay': instruction['step']*1e9/2.0})
+            pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs,
+                            'flags': flagstring, 'instruction': 'LOOP',
+                            'data': instruction['reps'], 'delay': instruction['step']*1e9/2.0})
             flags[self.fast_clock_flag] = 0
             flags[self.slow_clock_flag] = 1
             flagstring = ''.join([str(flag) for flag in flags])
-            pb_inst.append({'flags': flagstring, 'instruction': 'END_LOOP',
-                                 'data': j, 'delay': instruction['step']*1e9/2.0})
+            pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs,
+                            'flags': flagstring, 'instruction': 'END_LOOP',
+                            'data': j, 'delay': instruction['step']*1e9/2.0})
             j += 2
             try:
                 if self.clock[k+1]['slow_clock_tick']:
@@ -362,9 +453,11 @@ class PulseBlaster(PseudoClock):
         # to resume execution. The program proceeds to the last instruction,
         # which is a branch to zero, and the system ends up in the state
         # of LabVIEW's front panel without missing a beat.
-        pb_inst.append({'flags': flagstring, 'instruction': 'WAIT',
+        pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs,
+                        'flags': flagstring, 'instruction': 'WAIT',
                         'data': 0, 'delay': 10.0/self.clock_limit*1e9})  
-        pb_inst.append({'flags': flagstring, 'instruction': 'BRANCH',
+        pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs,
+                        'flags': flagstring, 'instruction': 'BRANCH',
                         'data': 0, 'delay': 10.0/self.clock_limit*1e9})  
         # OK now we squeeze the instructions into a numpy array ready for writing to hdf5:
         pb_dtype = [('freq0',int32), ('phase0',int32), ('amp0',int32), 
@@ -379,11 +472,17 @@ class PulseBlaster(PseudoClock):
             instructionint = self.pb_instructions[inst['instruction']]
             dataint = inst['data']
             delaydouble = inst['delay']
-            pb_inst_table[i] = (0,0,0,0,0,0,0,0,0,0, flagint, 
+            freq0 = inst['freqs'][0]
+            freq1 = inst['freqs'][1]
+            phase0 = inst['phases'][0]
+            phase1 = inst['phases'][1]
+            amp0 = inst['amps'][0]
+            amp1 = inst['amps'][1]
+            pb_inst_table[i] = (freq0,phase0,amp0,1,0,freq1,amp1,phase1,1,0, flagint, 
                                 instructionint, dataint, delaydouble)
                               
-        # Okey now write it to the file:   
-        group = hdf5_file.create_group('/devices/'+self.name)
+        # Okey now write it to the file: 
+        group = hdf5_file['/devices/'+self.name]  
         group.create_dataset('PULSE_PROGRAM', compression=compression,data = pb_inst_table)         
         group.create_dataset('FAST_CLOCK', compression=compression,data = self.times)         
         group.create_dataset('SLOW_CLOCK', compression=compression,data = self.change_times)         
@@ -394,8 +493,9 @@ class PulseBlaster(PseudoClock):
                               
     def generate_code(self):
         PseudoClock.generate_code(self)
-        direct_outputs = self.get_direct_outputs()
-        self.convert_to_pb_inst(direct_outputs)
+        dig_outputs, dds_outputs = self.get_direct_outputs()
+        freqs, amps, phases = self.generate_registers(dds_outputs)
+        self.convert_to_pb_inst(dig_outputs, dds_outputs, freqs, amps, phases)
 
 
             
