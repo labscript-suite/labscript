@@ -708,11 +708,7 @@ class Shutter(DigitalOut):
     allowed_states = {1:'open', 0:'closed'}  
     def __init__(self,name,parent_device,connection,delay=(0,0)):
         DigitalOut.__init__(self,name,parent_device,connection)
-        if delay=='calibrated':
-            attrs = calibrations['/shutters/'+self.name].attrs
-            self.open_delay, self.close_delay = attrs['open_delay'], attrs['close_delay']
-        else:
-            self.open_delay, self.close_delay = delay
+        self.open_delay, self.close_delay = delay
         
     # If a shutter is asked to do something at t=0, it cannot start moving
     # earlier than that.  So initial shutter states will have imprecise
@@ -939,7 +935,7 @@ for name in params.keys():
         exec('del ' + name )
     except:
         sys.stderr.write('ERROR whilst parsing globals from %s. \'%s\''%(sys.argv[1],name) +
-                         'is not a valid python variable name.' +
+                         'is not a valid Python variable name.' +
                          ' Please choose a different variable name.\n')
         sys.exit(1)
     setattr(__main__,name, params[name])
@@ -949,6 +945,4 @@ if params.keys():
     # continuing to exist:
     del name
 
-if os.path.exists('calibrations.h5'):
-    calibrations = h5py.File('calibrations.h5','r')
        
