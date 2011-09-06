@@ -350,10 +350,6 @@ class PulseBlaster(PseudoClock):
             phases = set(output.phase.raw_output)
             freqs = set(output.frequency.raw_output)
                                   
-            amps.update([0])
-            phases.update([0]) # These will be the dummy instructions, overwritten by LabVIEW.
-            freqs.update([0])
-            
             if len(amps) > 1024:
                 sys.stderr.write('%s dds%d can only support 1024 amplitude registers, and %s have been requested. Stopping.\n'%(self.name, num, str(len(amps))))
                 sys.exit(1)
@@ -364,17 +360,21 @@ class PulseBlaster(PseudoClock):
                 sys.stderr.write('%s dds%d can only support 1024 frequency registers, and %s have been requested. Stopping.\n'%(self.name, num, str(len(freqs))))
                 sys.exit(1)
                 
-            ampregs = range(len(amps))
-            freqregs = range(len(freqs))
-            phaseregs = range(len(phases))
+            # start counting at 1 to leave room for the dummy instruction,
+            # which LabVEIW will fill in with the state of the front
+            # panel:
+            ampregs = range(1,len(amps)+1)
+            freqregs = range(1,len(freqs)+1)
+            phaseregs = range(1,len(phases)+1)
             
             ampdicts[num] = dict(zip(amps,ampregs))
             freqdicts[num] = dict(zip(freqs,freqregs))
             phasedicts[num] = dict(zip(phases,phaseregs))
             
-            freq_table = array(sorted(freqs), dtype = float64)
-            amp_table = array(sorted(amps), dtype = float32)
-            phase_table = array(sorted(phases), dtype = float64)
+            # The zeros are the dummy instructions:
+            freq_table = array([0] + sorted(freqs), dtype = float64)
+            amp_table = array([0] + sorted(amps), dtype = float32)
+            phase_table = array([0] + sorted(phases), dtype = float64)
             
             subgroup = group.create_group('DDS%d'%num)
             subgroup.create_dataset('FREQ_REGS', compression=compression,data = freq_table)
