@@ -107,7 +107,7 @@ class Device(object):
             self.child_devices.append(device)
         else:
             sys.stdout.write('ERROR: devices of type %s cannot be attached to devices of type %s. \n'%(device.description,self.description))
-            sys.exit(0)
+            sys.exit(1)
             
     def get_all_outputs(self):
         all_outputs = []
