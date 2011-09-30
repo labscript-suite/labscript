@@ -13,12 +13,15 @@ import functions
 def bitfield(arrays,dtype):
     """converts a list of arrays of ones and zeros into a single
     array of unsigned ints of the given datatype."""
+    n = {uint8:8,uint16:16,uint32:32}
     if arrays[0] is 0:
-        y = zeros(max([len(arr) if iterable(arr) else 1 for arr in arrays]),dtype=uint8)
+        y = zeros(max([len(arr) if iterable(arr) else 1 for arr in arrays]),dtype=dtype)
     else:
         y = array(arrays[0],dtype=dtype)
-    for i in range(1,8):
-        y |= arrays[i]<<i
+    for i in range(1,n[dtype]):
+        if iterable(arrays[i]):
+            print arrays[i], arrays[i]<<i
+            y |= arrays[i]<<i
     return y
 
 def fastflatten(inarray, dtype):
@@ -44,20 +47,6 @@ def fastflatten(inarray, dtype):
             i += 1
     return flat
     
-def discretise(t,y,stop_time):
-    tnew = zeros((len(t),2))
-    ynew = zeros((len(y),2))
-
-    tnew[:,0] = t[:]
-    tnew[:-1,1] = t[1:]
-    tnew= tnew.flatten()
-    tnew[-1] = stop_time
-
-    ynew[:,0] = y[:]
-    ynew[:,1] = y[:]
-    ynew= ynew.flatten()[:]
-    return tnew, ynew
-
 class Device(object):
     description = 'Generic Device'
     allowed_children = None
@@ -645,7 +634,7 @@ class DigitalOut(Output):
     description = 'digital output'
     allowed_states = {1:'high', 0:'low'}
     default_value = 0
-    dtype = uint8
+    dtype = uint32
     def go_high(self,t):
         self.add_instruction(t,1)
     def go_low(self,t):
