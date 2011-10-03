@@ -13,6 +13,7 @@ Shutter(  'shutter2',  pulseblaster_0,      'flag 2', delay=(0,0))
 DDS(          'dds1', novatechdds9m_0,   'channel 0')
 DDS(          'dds2', novatechdds9m_0,   'channel 1')
 DDS(          'dds3',  pulseblaster_0,       'dds 0')
+DDS(          'dds4',  pulseblaster_0,       'dds 1')
 
 scale = 1.0
 rate = 1e4
@@ -47,4 +48,4 @@ analog2.constant(t=8*scale,value=5)
 
 stop(t=10*scale)
 
-plot_outputs()
+#plot_outputs()
