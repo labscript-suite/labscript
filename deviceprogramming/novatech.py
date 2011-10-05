@@ -1,4 +1,4 @@
-usage = """USAGE:  python novatech.py [-serial=com1 | -tcp=192.168.1.10:10001] [-program] [-verify] -boardnumber=1 infile.h5"""
+usage = """USAGE:  python novatech.py [-serial=com1 | -tcp=192.168.1.10:10001] [-program] [-verify] -boardnumber=0 infile.h5"""
 
 import time   
 import sys
@@ -136,7 +136,7 @@ while not responding:
 
 success = True               
 with h5py.File(sys.argv[-1],'r') as hdf5_file:
-    instructions = hdf5_file['/NT-DDS9M_%s/TABLE_DATA'%boardnumber]
+    instructions = hdf5_file['/devices/novatechdds9m_%s/TABLE_DATA'%boardnumber]
     if '-program' in sys.argv:
         for i, (freq0,freq1,phase0,phase1,amp0,amp1) in enumerate(instructions):
             send_an_instruction(i, freq0,freq1,phase0,phase1,amp0,amp1,'00' if i == len(instructions)-1 else 'ff')
