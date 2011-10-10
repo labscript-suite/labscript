@@ -870,14 +870,18 @@ class NovaTechDDS9M(IntermediateDevice):
             times = self.parent_device.change_times
         else:
             times = self.parent_device.times
-        out_table = zeros(len(times),dtype=dtypes)
+        # Three extra instructions to aid in implementation -- will be
+        # filled in with 'front panel' values:
+        out_table = zeros(len(times)+3,dtype=dtypes)
         out_table['freq0'].fill(1)
         out_table['freq1'].fill(1)
         
         for connection, dds in DDSs.items():
-            out_table['freq%d'%connection] = dds.frequency.raw_output
-            out_table['amp%d'%connection] = dds.amplitude.raw_output
-            out_table['phase%d'%connection] = dds.phase.raw_output
+            # The first instruction, and last two instructions are left
+            # blank, for the control system to fill in at program time.
+            out_table['freq%d'%connection][1:-2] = dds.frequency.raw_output
+            out_table['amp%d'%connection][1:-2] = dds.amplitude.raw_output
+            out_table['phase%d'%connection][1:-2] = dds.phase.raw_output
         grp = hdf5_file.create_group('/devices/'+self.name)
         grp.attrs['frequency_scale_factor'] = 1e7
         grp.attrs['amplitude_scale_factor'] = 1023
