@@ -295,27 +295,39 @@ class PulseBlaster(PseudoClock):
         phasedicts = {}
         freqdicts = {}
         group = hdf5_file.create_group('/devices/'+self.name)
+        dds_dict = {}
         for output in dds_outputs:
             num = int(output.connection.split()[1])
+            dds_dict[num] = output
+        for num in [0,1]:
             
-            # Ensure that amplitudes are within bounds:
-            if any(output.amplitude.raw_output > 1)  or any(output.amplitude.raw_output < 0):
-                sys.stderr.write('ERROR: %s %s '%(output.amplitude.description, output.amplitude.name) +
-                                  'can only have values between 0 and 1, ' + 
-                                  'the limit imposed by %s. Stopping.\n'%output.name)
-                                  
-            # Ensure that frequencies are within bounds:
-            if any(output.frequency.raw_output > 100e6 )  or any(output.frequency.raw_output < 0):
-                sys.stderr.write('ERROR: %s %s '%(output.frequency.description, output.frequency.name) +
-                                  'can only have values between 0Hz and and 100MHz, ' + 
-                                  'the limit imposed by %s. Stopping.\n'%output.name)
-                                  
-            # Ensure that phase wraps around:
-            output.phase.raw_output %= 360
+            if num in dds_dict:
+                output = dds_dict[num]
             
-            amps = set(output.amplitude.raw_output)
-            phases = set(output.phase.raw_output)
-            freqs = set(output.frequency.raw_output)
+                # Ensure that amplitudes are within bounds:
+                if any(output.amplitude.raw_output > 1)  or any(output.amplitude.raw_output < 0):
+                    sys.stderr.write('ERROR: %s %s '%(output.amplitude.description, output.amplitude.name) +
+                                      'can only have values between 0 and 1, ' + 
+                                      'the limit imposed by %s. Stopping.\n'%output.name)
+                                      
+                # Ensure that frequencies are within bounds:
+                if any(output.frequency.raw_output > 100e6 )  or any(output.frequency.raw_output < 0):
+                    sys.stderr.write('ERROR: %s %s '%(output.frequency.description, output.frequency.name) +
+                                      'can only have values between 0Hz and and 100MHz, ' + 
+                                      'the limit imposed by %s. Stopping.\n'%output.name)
+                                      
+                # Ensure that phase wraps around:
+                output.phase.raw_output %= 360
+                
+                amps = set(output.amplitude.raw_output)
+                phases = set(output.phase.raw_output)
+                freqs = set(output.frequency.raw_output)
+            else:
+                # If the DDS is unused, it will use the following values
+                # for the whole experimental run:
+                amps = set([0])
+                phases = set([0])
+                freqs = set([0])
                                   
             if len(amps) > 1024:
                 sys.stderr.write('%s dds%d can only support 1024 amplitude registers, and %s have been requested. Stopping.\n'%(self.name, num, str(len(amps))))
@@ -378,9 +390,13 @@ class PulseBlaster(PseudoClock):
         j += 1
         for k, instruction in enumerate(self.clock):
             flags = [0]*12
-            freqregs = [0]*2
-            ampregs = [0]*2
-            phaseregs = [0]*2
+            # The registers below are ones, not zeros, so that we don't
+            # use the LabVIEW-inserted initial instructions. Instead
+            # unused DDSs have a 'zero' in register one for freq, amp
+            # and phase.
+            freqregs = [1]*2
+            ampregs = [1]*2
+            phaseregs = [1]*2
             for output in dig_outputs:
                 flagindex = int(output.connection.split()[1])
                 flags[flagindex] = int(output.raw_output[i])
