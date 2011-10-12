@@ -352,6 +352,9 @@ class PulseBlaster(PseudoClock):
         
     def convert_to_pb_inst(self, dig_outputs, dds_outputs, freqs, amps, phases):
         pb_inst = []
+        # An array for storing the line numbers of the instructions at
+        # which the slow clock ticks:
+        slow_clock_indices = []
         # index to keep track of where in output.raw_output the
         # pulseblaster flags are coming from
         i = 0
@@ -389,6 +392,8 @@ class PulseBlaster(PseudoClock):
                 
             flags[self.fast_clock_flag] = 1
             flags[self.slow_clock_flag] = 0 if instruction['slow_clock_tick'] else 1
+            if instruction['slow_clock_tick']:
+                slow_clock_indices.append(j)
             flagstring = ''.join([str(flag) for flag in flags])
             if instruction['reps'] > 1048576:
                 sys.stderr.write('ERROR: Pulseblaster cannot support more than 1048576 loop iterations. ' +
@@ -447,12 +452,13 @@ class PulseBlaster(PseudoClock):
             amp1 = inst['amps'][1]
             pb_inst_table[i] = (freq0,phase0,amp0,1,0,freq1,amp1,phase1,1,0, flagint, 
                                 instructionint, dataint, delaydouble)
-                              
+        slow_clock_indices = array(slow_clock_indices, dtype = uint32)                  
         # Okey now write it to the file: 
         group = hdf5_file['/devices/'+self.name]  
         group.create_dataset('PULSE_PROGRAM', compression=compression,data = pb_inst_table)         
         group.create_dataset('FAST_CLOCK', compression=compression,data = self.times)         
-        group.create_dataset('SLOW_CLOCK', compression=compression,data = self.change_times)         
+        group.create_dataset('SLOW_CLOCK', compression=compression,data = self.change_times)   
+        group.create_dataset('CLOCK_INDICES', compression=compression,data = slow_clock_indices)         
 #        for thing in pb_inst:
 #            for key,val in thing.items():
 #                print str(val).center(15),
