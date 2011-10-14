@@ -783,13 +783,15 @@ class NIBoard(IntermediateDevice):
 class NI_PCI_6733(NIBoard):
     description = 'NI-PCI-6733'
     n_analogs = 8
-    n_digitals = 8
+    n_digitals = 0
+    n_analog_ins = 0
     digital_dtype = uint8
     
 class NI_PCIe_6363(NIBoard):
     description = 'NI-PCIe-6363'
     n_analogs = 4
     n_digitals = 32
+    n_analog_ins = 32
     digital_dtype = uint32
     
 class Shutter(DigitalOut):
@@ -828,66 +830,126 @@ class DDS(Device):
     def setphase(self,t,value):
         self.phase.constant(t,value)
         
+class StaticDDS(Device):
+    description = 'Static DDS'
+    allowed_children = None
+    generation = 2
+    def __init__(self,name,parent_device,connection):
+        self.clock_type = parent_device.clock_type
+        Device.__init__(self,name,parent_device,connection)
+        self.freq = None
+        self.amp = None
+        self.phase = None
+        
+    def already_set(self, parameter, prev, new):
+        print parameter, prev, new
+        
+    def setamp(self,value):
+        if self.amp is None:
+            self.amp = value
+        else:
+            self.already_set('amp',self.amp, value)
+            
+    def setfreq(self,value):
+        if self.freq is None:
+            self.freq = value
+        else:
+            self.already_set('freq',self.freq, value)
+        
+    def setphase(self,value):
+        if self.phase is None:
+            self.phase = value
+        else:
+            self.already_set('phase',self.phase, value)
+        
 class NovaTechDDS9M(IntermediateDevice):
     description = 'NT-DDS9M'
-    allowed_children = [DDS]
+    allowed_children = [DDS, StaticDDS]
     clock_limit = 500e3 # TODO: find out what the actual max clock rate is.
     
-    def quantise_freq(self,output):
+    def quantise_freq(self,data, device):
         # Ensure that frequencies are within bounds:
-        if any(output.raw_output > 171e6 )  or any(output.raw_output < 0.1 ):
-            sys.stderr.write('ERROR: %s %s '%(output.description, output.name) +
-                              'can only have values between 0.1Hz and 171MHz, ' + 
+        if any(data > 171e6 )  or any(data < 0.1 ):
+            sys.stderr.write('ERROR: %s %s '%(device.description, device.name) +
+                              'can only have frequencies between 0.1Hz and 171MHz, ' + 
                               'the limit imposed by %s. Stopping.\n'%self.name)
             sys.exit(1)
         # It's faster to add 0.5 then typecast than to round to integers first:
-        output.raw_output = array((1e7*output.raw_output)+0.5,dtype=uint32)
-        output.scale_factor = 1e7
+        data = array((10*data)+0.5,dtype=uint32)
+        scale_factor = 10
+        return data, scale_factor
         
-    def quantise_phase(self,output):
+    def quantise_phase(self,data,device):
         # ensure that phase wraps around:
-        output.raw_output %= 360
+        data %= 360
         # It's faster to add 0.5 then typecast than to round to integers first:
-        output.raw_output = array((45.511111111111113*output.raw_output)+0.5,dtype=uint16)
-        output.scale_factor = 45.511111111111113
+        data = array((45.511111111111113*data)+0.5,dtype=uint16)
+        scale_factor = 45.511111111111113
+        return data, scale_factor
         
-    def quantise_amp(self,output):
+    def quantise_amp(self,data,device):
         # ensure that amplitudes are within bounds:
-        if any(output.raw_output > 1 )  or any(output.raw_output < 0):
-            sys.stderr.write('ERROR: %s %s '%(output.description, output.name) +
-                              'can only have values between 0 and 1 (Volts peak to peak approx), ' + 
+        if any(data > 1 )  or any(data < 0):
+            sys.stderr.write('ERROR: %s %s '%(device.description, device.name) +
+                              'can only have amplitudes between 0 and 1 (Volts peak to peak approx), ' + 
                               'the limit imposed by %s. Stopping.\n'%self.name)
             sys.exit(1)
         # It's faster to add 0.5 then typecast than to round to integers first:
-        output.raw_output = array((1023*output.raw_output)+0.5,dtype=uint16)
-        output.scale_factor = 1023
+        data = array((1023*data)+0.5,dtype=uint16)
+        scale_factor = 1023
+        return data, scale_factor
         
     def generate_code(self):
         DDSs = {}
         for output in self.child_devices:
         # Check that the instructions will fit into RAM:
-            if len(output.frequency.raw_output) > 16383:
+            if isinstance(output, DDS) and len(output.frequency.raw_output) > 16383:
                 sys.stderr.write('ERROR: %s can only support 16383 instructions. '%self.name +
                                  'Please decrease the sample rates of devices on the same clock, ' + 
                                  'or connect %s to a different pseudoclock. Stopping.\n'%self.name)
                 sys.exit(1)
-            # TODO: check that there are only two and that their connection no.s are right.
             try:
                 prefix, channel = output.connection.split()
                 channel = int(channel)
             except:
                 sys.stderr.write('%s %s has invalid connection string: \'%s\'. '%(output.description,output.name,str(output.connection)) + 
-                                     'Format must be \'channel n\' with n either 0 or 1. Stopping.\n')
+                                     'Format must be \'channel n\' with n from 0 to 4. Stopping.\n')
                 sys.exit(1)
             DDSs[channel] = output
-        for dds in DDSs.values():
-            self.quantise_freq(dds.frequency)
-            self.quantise_phase(dds.phase)
-            self.quantise_amp(dds.amplitude)
-            
+        for connection in DDSs:
+            if connection in range(2):
+                dds = DDSs[connection]
+                dds.frequency.raw_output, dds.frequency.scale_factor = self.quantise_freq(dds.frequency.raw_output, dds)
+                dds.phase.raw_output, dds.phase.scale_factor = self.quantise_phase(dds.phase.raw_output, dds)
+                dds.amplitude.raw_output, dds.amplitude.scale_factor = self.quantise_amp(dds.amplitude.raw_output, dds)
+            elif connection in range(2,4):
+                dds = DDSs[connection]
+                if dds.freq is None:
+                    sys.stderr.write('WARNING: %s %s has no frequency set. It will be set to .1Hz.\n'%(dds.description, dds.name))
+                    dds.freq = 0.1
+                dds.freq, dds.freq_scale_factor = self.quantise_freq(array(dds.freq), dds)
+                print dds.freq
+                if dds.phase is None:
+                    sys.stderr.write('WARNING: %s %s has no phase set. It will be set to zero.\n'%(dds.description, dds.name))
+                    dds.phase = 0
+                dds.phase, dds.phase_scale_factor = self.quantise_phase(array(dds.phase), dds)
+                if dds.amp is None:
+                    sys.stderr.write('WARNING: %s %s has no amplitude set. It will be set to zero.\n'%(dds.description, dds.name))
+                    dds.amp = 0
+                dds.amp, dds.amp_scale_factor = self.quantise_amp(array(dds.amp),dds)
+            else:
+                sys.stderr.write('%s %s has invalid connection string: \'%s\'. '%(dds.description,dds.name,str(dds.connection)) + 
+                                 'Format must be \'channel n\' with n from 0 to 4. Stopping.\n')
+                sys.exit(1)
+                
         dtypes = [('freq%d'%i,uint32) for i in range(2)] + \
                  [('phase%d'%i,uint16) for i in range(2)] + \
                  [('amp%d'%i,uint16) for i in range(2)]
+                 
+        static_dtypes = [('freq%d'%i,uint32) for i in range(2,4)] + \
+                        [('phase%d'%i,uint16) for i in range(2,4)] + \
+                        [('amp%d'%i,uint16) for i in range(2,4)]
+                        
         if self.clock_type == 'slow clock':
             times = self.parent_device.change_times
         else:
@@ -898,17 +960,33 @@ class NovaTechDDS9M(IntermediateDevice):
         out_table['freq0'].fill(1)
         out_table['freq1'].fill(1)
         
-        for connection, dds in DDSs.items():
+        static_table = zeros(1, dtype=static_dtypes)
+        static_table['freq2'].fill(1)
+        static_table['freq3'].fill(1)
+        
+        for connection in range(2):
+            if not connection in DDSs:
+                continue
+            dds = DDSs[connection]
             # The first instruction, and last two instructions are left
             # blank, for the control system to fill in at program time.
             out_table['freq%d'%connection][1:-2] = dds.frequency.raw_output
             out_table['amp%d'%connection][1:-2] = dds.amplitude.raw_output
             out_table['phase%d'%connection][1:-2] = dds.phase.raw_output
+        for connection in range(2,4):
+            if not connection in DDSs:
+                continue
+            dds = DDSs[connection]
+            static_table['freq%d'%connection] = dds.freq
+            static_table['amp%d'%connection] = dds.amp
+            static_table['phase%d'%connection] = dds.phase
+            
         grp = hdf5_file.create_group('/devices/'+self.name)
-        grp.attrs['frequency_scale_factor'] = 1e7
+        grp.attrs['frequency_scale_factor'] = 10
         grp.attrs['amplitude_scale_factor'] = 1023
         grp.attrs['phase_scale_factor'] = 45.511111111111113
         grp.create_dataset('TABLE_DATA',compression=compression,data=out_table) 
+        grp.create_dataset('STATIC_DATA',compression=compression,data=static_table) 
 
 def generate_connection_table():
     all_devices = []
