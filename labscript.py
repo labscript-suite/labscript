@@ -233,12 +233,15 @@ class PseudoClock(Device):
             
 
 class PulseBlaster(PseudoClock):
-    pb_instructions = {'CONTINUE':0,
-                       'STOP': 1, 
-                       'LOOP': 2, 
-                       'END_LOOP': 3,
-                       'BRANCH': 6,
-                       'WAIT': 8}
+    
+    pb_instructions = {'CONTINUE':   0,
+                       'STOP':       1, 
+                       'LOOP':       2, 
+                       'END_LOOP':   3,
+                       'BRANCH':     6,
+                       'LONG_DELAY': 7,
+                       'WAIT':       8}
+                       
     description = 'PB-DDSII-300'
     clock_limit = 8.3e6 # Slight underestimate I think.
     fast_clock_flag = 0
@@ -418,15 +421,35 @@ class PulseBlaster(PseudoClock):
                                   'please file a feature request at' +
                                   'http://redmine.physics.monash.edu.au/projects/labscript. Stopping.\n')
                 sys.exit(1)
+                
+            # Instruction delays > 55 secs will require a LONG_DELAY
+            # to be inserted. How many times does the delay of the
+            # loop/endloop instructions go into 55 secs?
+            quotient, remainder = divmod(instruction['step']/2.0,55.0)
+            if remainder < 100e-9:
+                # Don't want the delay time to get too small:
+                quotient, remainder = quotient - 1, remainder + 55.0
+                assert quotient >= 0 # Something is wrong if this is not the case
+                
+            # The loop and endloop instructions will only use the remainder:
             pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs,
                             'flags': flagstring, 'instruction': 'LOOP',
-                            'data': instruction['reps'], 'delay': instruction['step']*1e9/2.0})
+                            'data': instruction['reps'], 'delay': remainder*1e9})
             flags[self.fast_clock_flag] = 0
             flags[self.slow_clock_flag] = 1
             flagstring = ''.join([str(flag) for flag in flags])
+            # If there was a nonzero quotient, let's wait twice that
+            # many multiples of 55 seconds (one multiple of 55 seconds
+            # for each of the other two loop and endloop instructions):
+            if quotient:
+                pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs,
+                            'flags': flagstring, 'instruction': 'LONG_DELAY',
+                            'data': int(2*quotient), 'delay': 55*1e9})
+                j += 1
+                            
             pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs,
                             'flags': flagstring, 'instruction': 'END_LOOP',
-                            'data': j, 'delay': instruction['step']*1e9/2.0})
+                            'data': j, 'delay': remainder*1e9})
             j += 2
             try:
                 if self.clock[k+1]['slow_clock_tick']:
@@ -842,7 +865,8 @@ class StaticDDS(Device):
         self.phase = None
         
     def already_set(self, parameter, prev, new):
-        print parameter, prev, new
+        sys.stderr.write('%s %s %s has already been set to %s. It cannot also be set to %s. Stopping.\n'%(self.description, self.name, parameter, str(prev), str(new)))
+        sys.exit(1)
         
     def setamp(self,value):
         if self.amp is None:
@@ -928,7 +952,6 @@ class NovaTechDDS9M(IntermediateDevice):
                     sys.stderr.write('WARNING: %s %s has no frequency set. It will be set to .1Hz.\n'%(dds.description, dds.name))
                     dds.freq = 0.1
                 dds.freq, dds.freq_scale_factor = self.quantise_freq(array(dds.freq), dds)
-                print dds.freq
                 if dds.phase is None:
                     sys.stderr.write('WARNING: %s %s has no phase set. It will be set to zero.\n'%(dds.description, dds.name))
                     dds.phase = 0
