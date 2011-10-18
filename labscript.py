@@ -825,6 +825,15 @@ class Shutter(DigitalOut):
         DigitalOut.__init__(self,name,parent_device,connection)
         self.open_delay, self.close_delay = delay
         
+        classname = self.__class__.__name__
+        calibration_table_dtypes = [('name','a256'), ('open_delay',float), ('close_delay',float)]
+        if classname not in metadata_group:
+            metadata_group.create_dataset(classname, (0,), dtype=calibration_table_dtypes, maxshape=(None,))
+        metadata = (self.name,self.open_delay,self.close_delay)
+        dataset = metadata_group[classname]
+        dataset.resize((len(metadata_group[classname])+1,))
+        dataset[len(metadata_group[classname])-1] = metadata
+        
     # If a shutter is asked to do something at t=0, it cannot start moving
     # earlier than that.  So initial shutter states will have imprecise
     # timing. Not throwing a warning here because if I did, every run
@@ -1139,5 +1148,5 @@ if params.keys():
     # get rid of the loop variable -- it caused a subtle bug once by
     # continuing to exist:
     del name
-
-       
+    
+metadata_group = hdf5_file.create_group('calibrations')
