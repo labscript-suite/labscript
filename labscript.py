@@ -10,6 +10,15 @@ from pylab import *
 
 import functions
 
+ns = 1e-9
+us = 1e-6
+ms = 1e-3
+s = 1
+Hz = 1
+kHz = 1e3
+MHz = 1e6
+GHz = 1e9
+
 def bitfield(arrays,dtype):
     """converts a list of arrays of ones and zeros into a single
     array of unsigned ints of the given datatype."""
@@ -844,6 +853,145 @@ class Shutter(DigitalOut):
     def close(self,t):
         self.go_low(t-self.close_delay if t >= self.close_delay else 0)  
   
+class AndoriXon(DigitalOut):
+    description = 'Andor iXon camera'
+    allowed_states = {1:'triggered', 0:'untriggered'}
+    def __init__(self, name, parent_device, connection):
+        DigitalOut.__init__(self,name,parent_device,connection)
+        # Set defaults:
+        self.AcquisitionMode = None
+        self.CycleTime = None
+        self.Number = None
+        self.ExposureTime = None
+        self.PreAmpGain = None
+        self.EMCCDGain = None
+        self.VSSpeed = None
+        self.HSSpeed = None
+    
+    def trigger(t):
+        if self.instructions:
+            sys.stderr.write('ERROR: %s %s has already had its trigger time set. Stopping.\n')
+            sys.exit(1)
+        if t != 0 and 0 not in self.instructions:
+            self.go_low(0)
+        self.go_high(t)
+                    
+    def set_AcquisitionMode(self, mode='Single scan'):
+        modes = {'Single scan': 1, 'Accumulate': 2, 'Kinetics': '3'}
+        try:
+            self.AcquisitionMode = modes[mode]
+        except KeyError:
+            sys.stderr.write('%s is not a valid AcquisitionMode for %s %s. '%(str(mode), self.description, self.name))
+            sys.stderr.write('Valid modes are:' + ', '.join([mode for mode in modes]) + '. Stopping.\n')
+            sys.exit(1)
+            
+    def set_CycleTime(self, time=100*ms):
+        self.CycleTime = time
+            
+    def set_Number(self, number=1):
+        self.Number = number
+    
+    def set_ExposureTime(self, time=100*ms):
+        self.ExposureTime = time
+            
+    def set_PreAmpGain(self, gain = 1):
+        gains = {1: 0, 2.4: 1, 5.1:2}
+        try:
+            self.PreAmpGain = gains[gain]
+        except KeyError:
+            sys.stderr.write('%s is not a valid PreAmpGain for %s %s. '%(str(gain), self.description, self.name))
+            sys.stderr.write('Valid gain factors are:' + ', '.join([str(gain) for gain in gains]) + '. Stopping.\n')
+            sys.exit(1)
+            
+    def set_EMCCDGain(self, gain = 1):
+        if not gain in range(301):
+            sys.stderr.write('%s is not a valid PreAmpGain for %s %s. '%(str(gain), self.description, self.name))
+            sys.stderr.write('Valid gain parameters are integers from 0 to 300. Stopping.\n')
+            sys.exit(1)
+        else:
+            self.EMCCDGain = gain
+
+    def set_VSSpeed(self, speed = 0.3*us):
+        speeds = {0.3*us: 0, 0.5*us: 1, 0.9*us:2, 1.7*us:3, 3.3*us:4}
+        try:
+            self.VSSpeed = speeds[speed]
+        except KeyError:
+            sys.stderr.write('%s is not a valid VSSpeed for %s %s. '%(str(speed), self.description, self.name))
+            sys.stderr.write('Valid speeds are:' + ', '.join([str(speed*1e6)+'us' for speed in speeds]) + '. Stopping.\n')
+            sys.exit(1)    
+            
+    def set_HSSpeed(self, speed = 1*MHz):
+        speeds = {1*MHz: 0, 3*MHz: 1, 5*MHz: 2, 10*MHz: 3}
+        try:
+            self.HSSpeed  = speeds[speed]
+        except KeyError:
+            sys.stderr.write('%s is not a valid HSSpeed for %s %s. '%(str(speed), self.description, self.name))
+            sys.stderr.write('Valid speeds are:' + ', '.join([str(speed/1e6)+'MHz' for speed in speeds]) + '. Stopping.\n')
+            sys.exit(1)       
+
+    def generate_code(self):
+
+        if self.AcquisitionMode is None:
+            sys.stderr.write('WARNING: %s %s doesn\'t have AcquisitionMode set. '%(self.description,self.name) +
+                             'Using default mode: Single scan.\n')
+            self.set_AcquisitionMode()
+            
+        if self.AcquisitionMode > 1 and self.CycleTime is None:
+            sys.stderr.write('WARNING: %s %s doesn\'t have CycleTime set. '%(self.description,self.name) +
+                             'Using default time: 100ms.\n')
+            self.set_CycleTime()
+        elif self.CycleTime is None:
+            self.set_CycleTime()
+            
+        if self.AcquisitionMode > 1 and self.Number is None:
+            sys.stderr.write('WARNING: %s %s doesn\'t have Number set. '%(self.description,self.name) +
+                             'Using default number: 1.\n')
+            self.set_Number()
+        elif self.Number is None:
+            self.set_Number()
+            
+        if self.ExposureTime is None:
+            sys.stderr.write('WARNING: %s %s doesn\'t have ExposureTime set. '%(self.description,self.name) +
+                             'Using default time: 100ms.\n')
+            self.set_ExposureTime()
+        
+        if self.PreAmpGain is None:
+            sys.stderr.write('WARNING: %s %s doesn\'t have PreAmpGain set. '%(self.description,self.name) +
+                            'Using default gain: 1.\n')
+            self.set_PreAmpGain()
+            
+        if self.EMCCDGain is None:
+            sys.stderr.write('WARNING: %s %s doesn\'t have EMCCDGain set. '%(self.description,self.name) +
+                             'Using default gain: 1.\n')
+            self.set_EMCCDGain()
+            
+        if self.VSSpeed is None:
+            sys.stderr.write('WARNING: %s %s doesn\'t have VSSpeed set. '%(self.description,self.name) +
+                             'Using default speed: 0.3us.\n')
+            self.set_VSSpeed()
+                             
+        if self.HSSpeed is None:
+            sys.stderr.write('WARNING: %s %s doesn\'t have HSSpeed set. '%(self.description,self.name) +
+                             'Using default speed: 1MHz.\n')
+            self.set_HSSpeed()
+            
+        if self.AcquisitionMode > 1 and self.CycleTime < self.ExposureTime:
+            sys.stderr.write('%s %s cannot have a shorter CycleTime than ExposureTime. Stopping'%(self.description, self.name))
+            sys.exit(1)
+            
+        data = (self.AcquisitionMode, self.CycleTime, self.Number, self.ExposureTime, 
+                self.PreAmpGain, self.EMCCDGain, self.VSSpeed, self.HSSpeed)
+                
+        table_dtypes = [('AcquisitionMode',int),  ('CycleTime',float),
+                        ('Number',int), ('ExposureTime',float), ('PreAmpGain',float),
+                        ('EMCCDGain',int), ('VSSpeed',int), ('HSSpeed',int)]
+                        
+        data = array(data,dtype=table_dtypes)
+        
+        group = hdf5_file['devices'].create_group(self.name)
+        group.create_dataset('SETTINGS', data=data)
+
+            
 class DDS(Device):
     description = 'DDS'
     allowed_children = [AnalogOut] # Adds its own children when initialised
