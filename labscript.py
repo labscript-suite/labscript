@@ -757,6 +757,7 @@ class NIBoard(IntermediateDevice):
             
             
     def generate_code(self):
+        Device.generate_code(self)
         analogs = {}
         digitals = {}
         inputs = {}
