@@ -868,9 +868,9 @@ class AndoriXon(DigitalOut):
         self.VSSpeed = None
         self.HSSpeed = None
     
-    def trigger(t):
+    def trigger(self,t):
         if self.instructions:
-            sys.stderr.write('ERROR: %s %s has already had its trigger time set. Stopping.\n')
+            sys.stderr.write('ERROR: %s %s has already had its trigger time set. Stopping.\n'%(self.description,self.name))
             sys.exit(1)
         if t != 0 and 0 not in self.instructions:
             self.go_low(0)
@@ -903,7 +903,7 @@ class AndoriXon(DigitalOut):
             sys.stderr.write('Valid gain factors are:' + ', '.join([str(gain) for gain in gains]) + '. Stopping.\n')
             sys.exit(1)
             
-    def set_EMCCDGain(self, gain = 1):
+    def set_EMCCDGain(self, gain = 0):
         if not gain in range(301):
             sys.stderr.write('%s is not a valid PreAmpGain for %s %s. '%(str(gain), self.description, self.name))
             sys.stderr.write('Valid gain parameters are integers from 0 to 300. Stopping.\n')
@@ -962,7 +962,7 @@ class AndoriXon(DigitalOut):
             
         if self.EMCCDGain is None:
             sys.stderr.write('WARNING: %s %s doesn\'t have EMCCDGain set. '%(self.description,self.name) +
-                             'Using default gain: 1.\n')
+                             'Using default gain: OFF.\n')
             self.set_EMCCDGain()
             
         if self.VSSpeed is None:
