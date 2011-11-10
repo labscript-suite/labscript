@@ -400,7 +400,7 @@ class PulseBlaster(PseudoClock):
                         'flags': ''.join([str(flag) for flag in flags]), 'instruction': 'STOP',
                         'data': 0, 'delay': 10.0/self.clock_limit*1e9})  
         j += 1
-        flags = [0]*12 # So that this variable is still defined if the for loop has no iterations
+        flagstring = '000000000000' # So that this variable is still defined if the for loop has no iterations
         for k, instruction in enumerate(self.clock):
             flags = [0]*12
             # The registers below are ones, not zeros, so that we don't
