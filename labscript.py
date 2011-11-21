@@ -388,14 +388,13 @@ class PulseBlaster(PseudoClock):
         # We've delegated the initial instruction off to LabVIEW, which
         # can ensure continuity with the state of the front panel. Thus
         # this first instruction doesn't actually do anything.  An initial
-        # instruction with the fast clock at zero and the slow clock
-        # at one:
+        # instruction with both the fast and slow clocks low:
         flags = [0]*12
         freqregs = [0]*2
         ampregs = [0]*2
         phaseregs = [0]*2
         flags[self.fast_clock_flag] = 0
-        flags[self.slow_clock_flag] = 1 
+        flags[self.slow_clock_flag] = 0 
         pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs,
                         'flags': ''.join([str(flag) for flag in flags]), 'instruction': 'STOP',
                         'data': 0, 'delay': 10.0/self.clock_limit*1e9})  
@@ -420,7 +419,7 @@ class PulseBlaster(PseudoClock):
                 phaseregs[ddsnumber] = phases[ddsnumber][output.phase.raw_output[i]]
                 
             flags[self.fast_clock_flag] = 1
-            flags[self.slow_clock_flag] = 0 if instruction['slow_clock_tick'] else 1
+            flags[self.slow_clock_flag] = 1 if instruction['slow_clock_tick'] else 0
             if instruction['slow_clock_tick']:
                 slow_clock_indices.append(j)
             flagstring = ''.join([str(flag) for flag in flags])
@@ -446,7 +445,7 @@ class PulseBlaster(PseudoClock):
                             'flags': flagstring, 'instruction': 'LOOP',
                             'data': instruction['reps'], 'delay': remainder*1e9})
             flags[self.fast_clock_flag] = 0
-            flags[self.slow_clock_flag] = 1
+            flags[self.slow_clock_flag] = 0
             flagstring = ''.join([str(flag) for flag in flags])
             # If there was a nonzero quotient, let's wait twice that
             # many multiples of 55 seconds (one multiple of 55 seconds
