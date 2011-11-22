@@ -1218,6 +1218,9 @@ def generate_code():
             print
 
 def stop(t):
+    if t == 0:
+        sys.stderr.write('ERROR: Stop time cannot be t=0. Please make your run a finite duration\n')
+        sys.exit(1)
     for device in inventory:
         if not device.parent_device:  
             device.stop_time = t
