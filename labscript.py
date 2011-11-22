@@ -29,7 +29,6 @@ def bitfield(arrays,dtype):
         y = array(arrays[0],dtype=dtype)
     for i in range(1,n[dtype]):
         if iterable(arrays[i]):
-            print arrays[i], arrays[i]<<i
             y |= arrays[i]<<i
     return y
 
@@ -134,6 +133,15 @@ class PseudoClock(Device):
                 sys.stderr.write('ERROR: Commands have been issued to devices attached to %s at t= %s s and %s s. '%(self.name, str(t),str(change_times[i+1])) +
                                   'One or more connected devices cannot support update delays shorter than %s sec. Stopping.\n'%str(1.0/self.clock_limit))
                 sys.exit(1)
+        # If the device has no children, we still need it to have a
+        # single instruction. So we'll add 0 as a change time:
+        if not change_times:
+            change_times.append(0)
+        # Also, if the user has requested a single instruction, finite
+        # duration experiment, add an extra instruction to make the
+        # NI cards not throw an error (they require at least 2 values)
+        if self.stop_time != 0 and len(change_times) == 1:
+            change_times.append(self.stop_time)
         return change_times
     
     def expand_change_times(self, change_times, outputs):
