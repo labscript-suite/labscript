@@ -1094,7 +1094,7 @@ class NovaTechDDS9M(IntermediateDevice):
         DDSs = {}
         for output in self.child_devices:
         # Check that the instructions will fit into RAM:
-            if isinstance(output, DDS) and len(output.frequency.raw_output) > 16383:
+            if isinstance(output, DDS) and len(output.frequency.raw_output) > 16384 - 2: # -2 to include space for dummy instructions
                 sys.stderr.write('ERROR: %s can only support 16383 instructions. '%self.name +
                                  'Please decrease the sample rates of devices on the same clock, ' + 
                                  'or connect %s to a different pseudoclock. Stopping.\n'%self.name)
@@ -1146,7 +1146,7 @@ class NovaTechDDS9M(IntermediateDevice):
             times = self.parent_device.times
         # Three extra instructions to aid in implementation -- will be
         # filled in with 'front panel' values:
-        out_table = zeros(len(times)+3,dtype=dtypes)
+        out_table = zeros(len(times)+2,dtype=dtypes)
         out_table['freq0'].fill(1)
         out_table['freq1'].fill(1)
         
@@ -1160,9 +1160,10 @@ class NovaTechDDS9M(IntermediateDevice):
             dds = DDSs[connection]
             # The first instruction, and last two instructions are left
             # blank, for the control system to fill in at program time.
-            out_table['freq%d'%connection][1:-2] = dds.frequency.raw_output
-            out_table['amp%d'%connection][1:-2] = dds.amplitude.raw_output
-            out_table['phase%d'%connection][1:-2] = dds.phase.raw_output
+            out_table['freq%d'%connection][1:-1] = dds.frequency.raw_output
+            out_table['amp%d'%connection][1:-1] = dds.amplitude.raw_output
+            out_table['phase%d'%connection][1:-1] = dds.phase.raw_output
+            out_table[-1] = out_table[-2]
         for connection in range(2,4):
             if not connection in DDSs:
                 continue
