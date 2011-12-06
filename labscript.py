@@ -869,13 +869,15 @@ class Camera(DigitalOut):
     frame_types = ['atoms','flat','dark','fluoro','clean']
     minimum_recovery_time = 0 # To be set by subclasses
     
-    def __init__(self,*args,**kwargs):
-        DigitalOut.__init__(self,*args,**kwargs)
+    def __init__(self,name,parent_device,connection,exposuretime):
+        DigitalOut.__init__(self,name,parent_device,connection)
+        self.exposuretime = exposuretime
         self.exposures = []
         self.go_low(0)
         
-    def expose(self,name, t,duration,frametype):
+    def expose(self,name, t ,frametype):
         self.go_high(t)
+        duration = self.exposuretime
         self.go_low(t + duration)
         for exposure in self.exposures:
             dontcare, start, d, dontcare = exposure

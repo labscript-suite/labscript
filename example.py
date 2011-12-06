@@ -15,7 +15,7 @@ DDS(          'dds2', novatechdds9m_0,   'channel 1')
 StaticDDS(    'dds5', novatechdds9m_0,   'channel 2')
 DDS(          'dds3',  pulseblaster_0,       'dds 0')
 DDS(          'dds4',  pulseblaster_0,       'dds 1')
-AndoriXon('andor_ixon_0', pulseblaster_0,   'flag 3')
+AndoriXon('andor_ixon_0', pulseblaster_0,   'flag 3', exposuretime=.1)
 
 scale = 1.0
 rate = 1e4
@@ -43,7 +43,7 @@ t = 1*scale
 shutter2.open(t)
 analog0.ramp(t, duration=2*scale, initial=2, final=3, samplerate=rate)
 
-andor_ixon_0.expose('exposure_1',t,1,'flat')
+andor_ixon_0.expose('exposure_1',t,'flat')
 
 analog2.ramp(t=2*scale, duration=3*scale, initial=3, final=4, samplerate=rate)
 shutter1.open(t=5.89*scale)
