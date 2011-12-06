@@ -898,12 +898,13 @@ class Camera(DigitalOut):
             sys.stderr.write('%s is not a valid frame type for %s %s.'%(str(frametype), self.description, self.name) +\
                              'Allowed frame types are: \n%s'%'\n'.join(self.frame_types))
             sys.exit(1)
-        self.exposures.append((name, t,duration,frametype))
+        self.exposures.append((name, t, frametype))
         
     def generate_code(self):
-        table_dtypes = [('name','a256'),('time',float),  ('duration',float), ('frametype','a256')]
+        table_dtypes = [('name','a256'), ('time',float), ('frametype','a256')]
         data = array(self.exposures,dtype=table_dtypes)
         group = hdf5_file['devices'].create_group(self.name)
+        group.attrs['exposure_time'] = float(self.exposuretime)
         group.create_dataset('EXPOSURES', data=data)
         
         
