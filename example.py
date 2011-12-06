@@ -44,6 +44,7 @@ shutter2.open(t)
 analog0.ramp(t, duration=2*scale, initial=2, final=3, samplerate=rate)
 
 andor_ixon_0.expose('exposure_1',t,'flat')
+andor_ixon_0.expose('exposure_1',t+1,'atoms')
 
 analog2.ramp(t=2*scale, duration=3*scale, initial=3, final=4, samplerate=rate)
 shutter1.open(t=5.89*scale)

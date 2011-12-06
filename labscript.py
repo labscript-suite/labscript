@@ -880,8 +880,8 @@ class Camera(DigitalOut):
         duration = self.exposuretime
         self.go_low(t + duration)
         for exposure in self.exposures:
-            dontcare, start, d, dontcare = exposure
-            end = start + d
+            start = exposure[1]
+            end = start + duration
             # Check for overlapping exposures:
             if start <= t <= end or start <= t+duration <= end:
                 sys.stderr.write('%s %s has two overlapping exposures: ' %(self.description, self.name) + \
