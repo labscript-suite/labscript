@@ -300,7 +300,7 @@ class PulseBlaster(PseudoClock):
                     sys.exit(1)
                 for other_output in dig_outputs + dds_outputs:
                     if output.connection == other_output.connection:
-                        sys.stderr.write('%s %s and %s %s are both set as connected to %s of %s. Stopping.\n'%(output.name,
+                        sys.stderr.write('%s and %s are both set as connected to %s of %s. Stopping.\n'%(output.name,
                                          other_output.name, output.connection, self.name))
                         sys.exit(1)
                 if isinstance(output,DigitalOut):
