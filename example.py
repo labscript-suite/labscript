@@ -15,7 +15,7 @@ DDS(          'dds2', novatechdds9m_0,   'channel 1')
 StaticDDS(    'dds5', novatechdds9m_0,   'channel 2')
 DDS(          'dds3',  pulseblaster_0,       'dds 0')
 DDS(          'dds4',  pulseblaster_0,       'dds 1')
-AndoriXon('andor_ixon_0', pulseblaster_0,   'flag 3', exposuretime=.1)
+Camera('andor_ixon_0', pulseblaster_0,   'flag 3', exposuretime=.1,orientation='top')
 
 scale = 1.0
 rate = 1e4

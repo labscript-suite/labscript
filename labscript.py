@@ -869,9 +869,10 @@ class Camera(DigitalOut):
     frame_types = ['atoms','flat','dark','fluoro','clean']
     minimum_recovery_time = 0 # To be set by subclasses
     
-    def __init__(self,name,parent_device,connection,exposuretime):
+    def __init__(self,name,parent_device,connection,exposuretime,orientation):
         DigitalOut.__init__(self,name,parent_device,connection)
         self.exposuretime = exposuretime
+        self.orientation = orientation
         self.exposures = []
         self.go_low(0)
         
@@ -905,13 +906,8 @@ class Camera(DigitalOut):
         data = array(self.exposures,dtype=table_dtypes)
         group = hdf5_file['devices'].create_group(self.name)
         group.attrs['exposure_time'] = float(self.exposuretime)
+        group.attrs['orientation'] = self.orientation
         group.create_dataset('EXPOSURES', data=data)
-        
-        
-class AndoriXon(Camera):
-    description = 'Andor iXon camera'
-    # TODO override this with real value:
-    # minimum_recovery_time = ?
 
             
 class DDS(Device):
