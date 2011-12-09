@@ -907,7 +907,8 @@ class Camera(DigitalOut):
         group = hdf5_file['devices'].create_group(self.name)
         group.attrs['exposure_time'] = float(self.exposuretime)
         group.attrs['orientation'] = self.orientation
-        group.create_dataset('EXPOSURES', data=data)
+        if self.exposures:
+            group.create_dataset('EXPOSURES', data=data)
 
             
 class DDS(Device):
