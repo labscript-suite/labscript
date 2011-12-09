@@ -809,12 +809,13 @@ class NIBoard(IntermediateDevice):
         acquisition_table= empty(len(acquisitions), dtype=acquisitions_table_dtypes)
         for i, acq in enumerate(acquisitions):
             acquisition_table[i] = acq
-
-        digital_out_table = self.convert_bools_to_bytes(digitals.values())
+        if self.n_digitals:
+            digital_out_table = self.convert_bools_to_bytes(digitals.values())
         
         grp = hdf5_file.create_group('/devices/'+self.name)
         analog_dataset = grp.create_dataset('ANALOG_OUTS',compression=compression,data=analog_out_table)
-        digital_dataset = grp.create_dataset('DIGITAL_OUTS',compression=compression,data=digital_out_table)
+        if self.n_digitals:
+            digital_dataset = grp.create_dataset('DIGITAL_OUTS',compression=compression,data=digital_out_table)
         if len(acquisition_table) > 0:
             input_dataset = grp.create_dataset('ACQUISITIONS',compression=compression,data=acquisition_table)
         grp.attrs['analog_out_channels'] = ', '.join(analog_out_attrs)
@@ -827,7 +828,7 @@ class NI_PCI_6733(NIBoard):
     n_analogs = 8
     n_digitals = 0
     n_analog_ins = 0
-    digital_dtype = uint8
+    digital_dtype = uint32
     
 class NI_PCIe_6363(NIBoard):
     description = 'NI-PCIe-6363'
