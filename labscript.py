@@ -822,7 +822,7 @@ class NIBoard(IntermediateDevice):
         for i, acq in enumerate(acquisitions):
             acquisition_table[i] = acq
         digital_out_table = []
-        if self.n_digitals:
+        if digitals:
             digital_out_table = self.convert_bools_to_bytes(digitals.values())
         grp = hdf5_file.create_group('/devices/'+self.name)
         if all(analog_out_table.shape): # Both dimensions must be nonzero
