@@ -1,7 +1,8 @@
 from labscript import *
 
 PulseBlaster(  'pulseblaster_0')
-NI_PCIe_6363(  'ni_pcie_6363_0',  pulseblaster_0, 'fast clock')
+NI_PCIe_6363(  'ni_pcie_6363_0',  pulseblaster_0, 'fast clock', 'ni_pcie_6363_0/PFI0')
+NI_PCI_6733(   'ni_pci_6733_0',  pulseblaster_0, 'fast clock', 'ni_pcie_6363_0/PFI0')
 NovaTechDDS9M( 'novatechdds9m_0', pulseblaster_0, 'slow clock')
 
 AnalogOut( 'analog0',  ni_pcie_6363_0,         'ao0')
@@ -52,4 +53,4 @@ analog2.constant(t=5.9*scale,value=5)
 analog2.constant(t=7*scale,value=4)
 analog2.constant(t=8*scale,value=5)
 
-stop(t=10*scale+180)
+stop(t=8*scale+2e-6)

@@ -137,11 +137,20 @@ class PseudoClock(Device):
         # single instruction. So we'll add 0 as a change time:
         if not change_times:
             change_times.append(0)
-        # Also, if the user has requested a single instruction, finite
-        # duration experiment, add an extra instruction to make the
-        # NI cards not throw an error (they require at least 2 values)
-        if self.stop_time != 0 and len(change_times) == 1:
-            change_times.append(self.stop_time)
+        # Also add the stop time as as change time. First check that it isn't too close to the time of the last instruction:
+        dt = self.stop_time - change_times[-1]
+        if abs(dt) < 1.0/self.clock_limit:
+            sys.stderr.write('ERROR: The stop time of the experiment is t= %s s, but the last instruction for a device attached to %s is at t= %s s. '%( str(self.stop_time), self.name, str(change_times[-1])) +
+                              'One or more connected devices cannot support update delays shorter than %s sec. Please set the stop_time a bit later. Stopping.\n'%str(1.0/self.clock_limit))
+            sys.exit(1)
+        change_times.append(self.stop_time)
+        # Sort change times so self.stop_time will be in the middle
+        # somewhere if it is prior to the last actual instruction. Whilst
+        # this means the user has set stop_time in error, not catching
+        # the error here allows it to be caught later by the specific
+        # device that has more instructions after self.stop_time. Thus
+        # we provide the user with sligtly more detailed error info.
+        change_times.sort()
         return change_times
     
     def expand_change_times(self, change_times, outputs):
@@ -213,9 +222,10 @@ class PseudoClock(Device):
                 except IndexError:
                     if i != len(change_times) - 1:
                         raise
-                    # There is no next instruction. Hold the last clock
-                    # tick until self.stop_time.
                     if self.stop_time > time:
+                        # There is no next instruction. Hold the last clock
+                        # tick until self.stop_time.
+                        raise Exception('This shouldn\'t happen -- stop_time should always be equal to the time of the last instruction. Please report a bug.')
                         clock.append({'start': time, 'reps': 1, 'step': self.stop_time - time,'slow_clock_tick':True})
                     # Error if self.stop_time has been set to less
                     # than the time of the last instruction:
@@ -227,7 +237,7 @@ class PseudoClock(Device):
                     # out still, so that the total number of clock
                     # ticks matches the number of data points in the
                     # Output.raw_output arrays. We'll make this last
-                    # cycle be at ten times the maximum step duration.
+                    # cycle be at ten times the minimum step duration.
                     else:
                         clock.append({'start': time, 'reps': 1, 'step': 10.0/self.clock_limit,'slow_clock_tick':True})
         return all_times, clock
@@ -731,7 +741,7 @@ class IntermediateDevice(Device):
         Device.__init__(self, name, parent_device, clock_type)
         self.clock_type = clock_type
         self.parent_device.clock_limit = min([self.parent_device.clock_limit,self.clock_limit])
-        
+    
         
 class NIBoard(IntermediateDevice):
     allowed_children = [AnalogOut, DigitalOut, AnalogIn]
@@ -740,9 +750,11 @@ class NIBoard(IntermediateDevice):
     digital_dtype = uint32
     clock_limit = 500e3 # underestimate I think.
     description = 'generic_NI_Board'
-    def __init__(self, name, parent_device,clock_type,acquisition_rate=0):
+    
+    def __init__(self, name, parent_device, clock_type, clock_terminal, acquisition_rate=0):
         IntermediateDevice.__init__(self, name, parent_device,clock_type)
         self.acquisition_rate = acquisition_rate
+        self.clock_terminal = clock_terminal
         
     def add_output(self,output):
         # TODO: check there are no duplicates, check that connection
@@ -809,27 +821,38 @@ class NIBoard(IntermediateDevice):
         acquisition_table= empty(len(acquisitions), dtype=acquisitions_table_dtypes)
         for i, acq in enumerate(acquisitions):
             acquisition_table[i] = acq
+        digital_out_table = []
         if self.n_digitals:
             digital_out_table = self.convert_bools_to_bytes(digitals.values())
-        
         grp = hdf5_file.create_group('/devices/'+self.name)
-        analog_dataset = grp.create_dataset('ANALOG_OUTS',compression=compression,data=analog_out_table)
-        if self.n_digitals:
+        if all(analog_out_table.shape): # Both dimensions must be nonzero
+            analog_dataset = grp.create_dataset('ANALOG_OUTS',compression=compression,data=analog_out_table)
+            grp.attrs['analog_out_channels'] = ', '.join(analog_out_attrs)
+        if len(digital_out_table): # Table must be non empty
             digital_dataset = grp.create_dataset('DIGITAL_OUTS',compression=compression,data=digital_out_table)
-        if len(acquisition_table) > 0:
+            grp.attrs['digital_lines'] = '/'.join((self.name,'port0','line0:%d'%(self.n_digitals-1)))
+        if len(acquisition_table): # Table must be non empty
             input_dataset = grp.create_dataset('ACQUISITIONS',compression=compression,data=acquisition_table)
-        grp.attrs['analog_out_channels'] = ', '.join(analog_out_attrs)
-        grp.attrs['analog_in_channels'] = ', '.join(input_attrs)
-        grp.attrs['digital_lines'] = '/'.join((self.name,'port0','line0:%d'%(self.n_digitals-1)))
-        grp.attrs['acquisition_rate'] = self.acquisition_rate
+            grp.attrs['analog_in_channels'] = ', '.join(input_attrs)
+            grp.attrs['acquisition_rate'] = self.acquisition_rate
+        grp.attrs['clock_terminal'] = self.clock_terminal
         
 class NI_PCI_6733(NIBoard):
+            
     description = 'NI-PCI-6733'
     n_analogs = 8
     n_digitals = 0
     n_analog_ins = 0
     digital_dtype = uint32
     
+    def generate_code(self):
+        NIBoard.generate_code(self)
+        if len(self.child_devices) % 2:
+            sys.stderr.write('ERROR: %s %s must have an even numer of analog outputs '%(self.description, self.name) +
+                             'in order to guarantee an even total number of samples, which is a limitation of the DAQmx library. ' +
+                             'Please add a dummy output device or remove an output you\'re not using, so that there are an even number of outputs. Sorry, this is annoying I know :). Stopping.')
+            sys.exit(1)
+            
 class NI_PCIe_6363(NIBoard):
     description = 'NI-PCIe-6363'
     n_analogs = 4
