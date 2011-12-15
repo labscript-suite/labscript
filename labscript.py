@@ -730,7 +730,7 @@ class AnalogIn(Device):
             units = self.units
         self.acquisitions.append({'start_time': start_time, 'end_time': end_time,
                                  'label': label, 'scale_factor':scale_factor,'units':units})
-        
+        return end_time - start_time
   
 class IntermediateDevice(Device):
     generation = 1
