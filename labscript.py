@@ -516,7 +516,7 @@ class PulseBlaster(PseudoClock):
             phase1 = inst['phases'][1]
             amp0 = inst['amps'][0]
             amp1 = inst['amps'][1]
-            pb_inst_table[i] = (freq0,phase0,amp0,1,0,freq1,amp1,phase1,1,0, flagint, 
+            pb_inst_table[i] = (freq0,phase0,amp0,1,0,freq1,phase1,amp1,1,0, flagint, 
                                 instructionint, dataint, delaydouble)
         slow_clock_indices = array(slow_clock_indices, dtype = uint32)                  
         # Okey now write it to the file: 
