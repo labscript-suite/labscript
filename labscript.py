@@ -341,9 +341,9 @@ class PulseBlaster(PseudoClock):
                                       'the limit imposed by %s. Stopping.\n'%output.name)
                                       
                 # Ensure that frequencies are within bounds:
-                if any(output.frequency.raw_output > 100e6 )  or any(output.frequency.raw_output < 0):
+                if any(output.frequency.raw_output > 150e6 )  or any(output.frequency.raw_output < 0):
                     sys.stderr.write('ERROR: %s %s '%(output.frequency.description, output.frequency.name) +
-                                      'can only have values between 0Hz and and 100MHz, ' + 
+                                      'can only have values between 0Hz and and 150MHz, ' + 
                                       'the limit imposed by %s. Stopping.\n'%output.name)
                                       
                 # Ensure that phase wraps around:
@@ -381,7 +381,7 @@ class PulseBlaster(PseudoClock):
             phasedicts[num] = dict(zip(phases,phaseregs))
             
             # The zeros are the dummy instructions:
-            freq_table = array([0] + list(freqs), dtype = float64)
+            freq_table = array([0] + list(freqs), dtype = float64) / 1e6 # convert to MHz
             amp_table = array([0] + list(amps), dtype = float32)
             phase_table = array([0] + list(phases), dtype = float64)
             
