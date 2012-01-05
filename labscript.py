@@ -381,9 +381,9 @@ class PulseBlaster(PseudoClock):
             phasedicts[num] = dict(zip(phases,phaseregs))
             
             # The zeros are the dummy instructions:
-            freq_table = array([0] + sorted(freqs), dtype = float64)
-            amp_table = array([0] + sorted(amps), dtype = float32)
-            phase_table = array([0] + sorted(phases), dtype = float64)
+            freq_table = array([0] + list(freqs), dtype = float64)
+            amp_table = array([0] + list(amps), dtype = float32)
+            phase_table = array([0] + list(phases), dtype = float64)
             
             subgroup = group.create_group('DDS%d'%num)
             subgroup.create_dataset('FREQ_REGS', compression=compression,data = freq_table)
@@ -1127,6 +1127,8 @@ def analysis(results, module, function, traces=[], globals_=[], other_results=[]
     analyses.append((resultslist, module, function, traceslist, globalslist, otherresultslist, argslist, kwargslist))
     
 def generate_analysis_table():
+    if not analyses:
+        return
     dtypes = [('results','a4096'),
               ('module','a4096'),
               ('function','a4096'),
