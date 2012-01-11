@@ -561,6 +561,9 @@ class Output(Device):
             return str(instruction)
 
     def add_instruction(self,time,instruction):
+         # round to the nearest 0.1 nanoseconds, to prevent floating point
+         # rounding errors from breaking our equality checks later on.
+        time = round(time,10)
         #Check that time is not negative:
         if time < 0:
             err = ' '.join(['ERROR:', self.description, self.name, 'has an instruction at t=%ss.'%str(time),
