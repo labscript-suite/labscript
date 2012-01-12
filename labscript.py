@@ -403,10 +403,9 @@ class PulseBlaster(PseudoClock):
         # index to record what line number of the pulseblaster hardware
         # instructions we're up to:
         j = 0
-        # We've delegated the initial instruction off to LabVIEW, which
+        # We've delegated the initial two instructions off to BLACS, which
         # can ensure continuity with the state of the front panel. Thus
-        # this first instruction doesn't actually do anything.  An initial
-        # instruction with both the fast and slow clocks low:
+        # these two instructions don't actually do anything:
         flags = [0]*12
         freqregs = [0]*2
         ampregs = [0]*2
@@ -415,8 +414,11 @@ class PulseBlaster(PseudoClock):
         flags[self.slow_clock_flag] = 0 
         pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs,
                         'flags': ''.join([str(flag) for flag in flags]), 'instruction': 'STOP',
-                        'data': 0, 'delay': 10.0/self.clock_limit*1e9})  
-        j += 1
+                        'data': 0, 'delay': 10.0/self.clock_limit*1e9})
+        pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs,
+                        'flags': ''.join([str(flag) for flag in flags]), 'instruction': 'STOP',
+                        'data': 0, 'delay': 10.0/self.clock_limit*1e9})    
+        j += 2
         flagstring = '000000000000' # So that this variable is still defined if the for loop has no iterations
         for k, instruction in enumerate(self.clock):
             flags = [0]*12
@@ -483,17 +485,11 @@ class PulseBlaster(PseudoClock):
                     i += 1
             except IndexError:
                 pass
-        # This is how we stop the pulse program. We wait on the second
-        # last instruction whilst the control software in LabVIEW
-        # reprograms the zeroth instruction to whatever the system
-        # is going to revert to once the experiment is done. Then a
-        # software trigger is given to the PulseBlaster telling it
-        # to resume execution. The program proceeds to the last instruction,
-        # which is a branch to zero, and the system ends up in the state
-        # of LabVIEW's front panel without missing a beat.
-        pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs,
-                        'flags': flagstring, 'instruction': 'WAIT',
-                        'data': 0, 'delay': 10.0/self.clock_limit*1e9})  
+        # This is how we stop the pulse program. We branch from the last
+        # instruction to the zeroth, which BLACS has programmed in with
+        # the same values and a WAIT instruction. The PulseBlaster then
+        # waits on instuction zero, which is a state ready for either
+        # further static updates or buffered mode.
         pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs,
                         'flags': flagstring, 'instruction': 'BRANCH',
                         'data': 0, 'delay': 10.0/self.clock_limit*1e9})  
