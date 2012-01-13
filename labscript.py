@@ -639,7 +639,7 @@ class Output(Device):
         # instruction telling the output to start at zero.
         if 0 not in self.instructions.keys():
             sys.stderr.write(' '.join(['WARNING:', self.name, 'has no instructions at t=0. It will initially be set to %s.\n'%self.instruction_to_string(0)]))
-            self.add_instruction(0,0) 
+            self.add_instruction(0,self.default_value) 
         # Check that ramps have instructions following them.
         # If they don't, insert an instruction telling them to hold their final value.
         for instruction in self.instructions.values():
@@ -747,8 +747,8 @@ class StaticAnalogOut(Output):
     
     def constant(self,value,units=None):
         if not self.value_set:
-            # Since this is a StaticAnalogOut, we set the instruction to be at t=0
-            self.add_instruction(0,value,units)
+            # Since this is a StaticAnalogOut, we set the instruction to be at t=0.0
+            self.add_instruction(0.0,value,units)
             self.value_set = True
         else:
             sys.stderr.write('%s %s %s has already been set to %s (hardware units). It cannot also be set to %s (%s). Stopping.\n'%(self.description, self.name, parameter, str(self.instructions[0]), str(value),units if units is not None else "hardware_units"))
@@ -759,7 +759,7 @@ class StaticAnalogOut(Output):
         pass
     
     def expand_timeseries(self,*args,**kwargs):
-        self.raw_output = self.instructions[0]
+        self.raw_output = array([self.instructions[0.0]])
         
 class DigitalOut(Output):
     description = 'digital output'
@@ -995,60 +995,86 @@ class Camera(DigitalOut):
             
 class DDS(Device):
     description = 'DDS'
-    allowed_children = [AnalogOut] # Adds its own children when initialised
+    allowed_children = [AnalogOut,DigitalOut] # Adds its own children when initialised
     generation = 2
-    def __init__(self,name,parent_device,connection,freq_cal = None,freq_cal_params = {},amp_cal = None,amp_cal_params = {},phase_cal = None,phase_cal_params = {}):
+    def __init__(self,name,parent_device,connection,digital_gate={},freq_cal = None,freq_cal_params = {},amp_cal = None,amp_cal_params = {},phase_cal = None,phase_cal_params = {}):
         self.clock_type = parent_device.clock_type
         Device.__init__(self,name,parent_device,connection)
-        self.frequency = AnalogOut(self.name+'_freq',self,None,freq_cal,freq_cal_params)
-        self.amplitude = AnalogOut(self.name+'_amp',self,None,amp_cal,amp_cal_params)
-        self.phase = AnalogOut(self.name+'_phase',self,None,phase_cal,phase_cal_params)
+        self.frequency = AnalogOut(self.name+'_freq',self,'freq',freq_cal,freq_cal_params)
+        self.amplitude = AnalogOut(self.name+'_amp',self,'amp',amp_cal,amp_cal_params)
+        self.phase = AnalogOut(self.name+'_phase',self,'phase',phase_cal,phase_cal_params)
+        self.enable = None
         if isinstance(self.parent_device,NovaTechDDS9M):
             self.frequency.default_value = 0.1
+            if 'device' in digital_gate and 'connection' in digital_gate:            
+                self.enable = DigitalOut(self.name+'_en',digital_gate['device'],digital_gate['connection'])
+            # Did they only put one key in the dictionary, or use the wrong keywords?
+            elif len(digital_gate) > 0:
+                sys.stderr.write('You must specify the "device" and "connection" for the digital gate of %s.'%(self.name))
+                sys.exit(1)
+        elif isinstance(self.parent_device,PulseBlaster):
+            if 'device' in digital_gate and 'connection' in digital_gate: 
+                sys.stderr.write('You cannot specify a digital gate for a DDS connected to %s. The digital gate is always internal to the Pulseblaster.'%(self.parent_device.name))
+                sys.exit(1)
+            self.enable = DigitalOut(self.name+'_en',self,'enable')
+            
     def setamp(self,t,value,units=None):
         self.amplitude.constant(t,value,units)
     def setfreq(self,t,value,units=None):
         self.frequency.constant(t,value,units)
     def setphase(self,t,value,units=None):
         self.phase.constant(t,value,units)
+    def enable(self,t):
+        if self.enable:
+            self.enable.go_high(t)
+        else:
+            sys.stderr.write('DDS %s does not have a digital gate, so you cannot use the enable(t) method.'%(self.name))
+            sys.exit(1)
+            
+    def disable(self,t):
+        if self.enable:
+            self.enable.go_low(t)
+        else:
+            sys.stderr.write('DDS %s does not have a digital gate, so you cannot use the disable(t) method.'%(self.name))
+            sys.exit(1)
         
 class StaticDDS(Device):
-    description = 'Static DDS'
-    allowed_children = None
+    description = 'Static RF'
+    allowed_children = [StaticAnalogOut,DigitalOut]
     generation = 2
-    def __init__(self,name,parent_device,connection,freq_cal = None,freq_cal_params = {},amp_cal = None,amp_cal_params = {},phase_cal = None,phase_cal_params = {}):
+    def __init__(self,name,parent_device,connection,digital_gate = {},freq_cal = None,freq_cal_params = {},amp_cal = None,amp_cal_params = {},phase_cal = None,phase_cal_params = {}):
         self.clock_type = parent_device.clock_type
         Device.__init__(self,name,parent_device,connection)
-        self.freq = None
-        self.amp = None
-        self.phase = None
-        self.freq_calibration = freq_cal
-        self.amp_calibration = amp_cal
-        self.phase_calibration = phase_cal
-        self.freq_calibration_params = freq_cal_params
-        self.amp_calibration_params = amp_cal_params
-        self.phase_calibration_params = phase_cal_params
-        
-        
-
-        
+        self.frequency = StaticAnalogOut(self.name+'_freq',self,'freq',freq_cal,freq_cal_params)
+        self.amplitude = StaticAnalogOut(self.name+'_amp',self,'amp',amp_cal,amp_cal_params)
+        self.phase = StaticAnalogOut(self.name+'_phase',self,'phase',phase_cal,phase_cal_params)
+        if isinstance(self.parent_device,NovaTechDDS9M):
+            self.frequency.default_value = 0.1
+            if 'device' in digital_gate and 'connection' in digital_gate:            
+                self.enable = DigitalOut(self.name+'_en',digital_gate['device'],digital_gate['connection'])
+            # Did they only put one key in the dictionary, or use the wrong keywords?
+            elif len(digital_gate) > 0:
+                sys.stderr.write('You must specify the "device" and "connection" for the digital gate of %s.'%(self.name))
+                sys.exit(1)
     def setamp(self,value,units=None):
-        if self.amp is None:
-            self.amp = value
-        else:
-            self.already_set('amp',self.amp, value)
-            
+        self.amplitude.constant(value,units)
     def setfreq(self,value,units=None):
-        if self.freq is None:
-            self.freq = value
-        else:
-            self.already_set('freq',self.freq, value)
-        
+        self.frequency.constant(value,units)
     def setphase(self,value,units=None):
-        if self.phase is None:
-            self.phase = value
+        self.phase.constant(value,units)        
+    def enable(self,t):
+        if self.enable:
+            self.enable.go_high(t)
         else:
-            self.already_set('phase',self.phase, value)
+            sys.stderr.write('DDS %s does not have a digital gate, so you cannot use the enable(t) method.'%(self.name))
+            sys.exit(1)
+            
+    def disable(self,t):
+        if self.enable:
+            self.enable.go_low(t)
+        else:
+            sys.stderr.write('DDS %s does not have a digital gate, so you cannot use the disable(t) method.'%(self.name))
+            sys.exit(1)
         
 class NovaTechDDS9M(IntermediateDevice):
     description = 'NT-DDS9M'
@@ -1105,25 +1131,11 @@ class NovaTechDDS9M(IntermediateDevice):
                 sys.exit(1)
             DDSs[channel] = output
         for connection in DDSs:
-            if connection in range(2):
+            if connection in range(4):
                 dds = DDSs[connection]
                 dds.frequency.raw_output, dds.frequency.scale_factor = self.quantise_freq(dds.frequency.raw_output, dds)
                 dds.phase.raw_output, dds.phase.scale_factor = self.quantise_phase(dds.phase.raw_output, dds)
                 dds.amplitude.raw_output, dds.amplitude.scale_factor = self.quantise_amp(dds.amplitude.raw_output, dds)
-            elif connection in range(2,4):
-                dds = DDSs[connection]
-                if dds.freq is None:
-                    sys.stderr.write('WARNING: %s %s has no frequency set. It will be set to .1Hz.\n'%(dds.description, dds.name))
-                    dds.freq = 0.1
-                dds.freq, dds.freq_scale_factor = self.quantise_freq(array(dds.freq), dds)
-                if dds.phase is None:
-                    sys.stderr.write('WARNING: %s %s has no phase set. It will be set to zero.\n'%(dds.description, dds.name))
-                    dds.phase = 0
-                dds.phase, dds.phase_scale_factor = self.quantise_phase(array(dds.phase), dds)
-                if dds.amp is None:
-                    sys.stderr.write('WARNING: %s %s has no amplitude set. It will be set to zero.\n'%(dds.description, dds.name))
-                    dds.amp = 0
-                dds.amp, dds.amp_scale_factor = self.quantise_amp(array(dds.amp),dds)
             else:
                 sys.stderr.write('%s %s has invalid connection string: \'%s\'. '%(dds.description,dds.name,str(dds.connection)) + 
                                  'Format must be \'channel n\' with n from 0 to 4. Stopping.\n')
@@ -1165,9 +1177,9 @@ class NovaTechDDS9M(IntermediateDevice):
             if not connection in DDSs:
                 continue
             dds = DDSs[connection]
-            static_table['freq%d'%connection] = dds.freq
-            static_table['amp%d'%connection] = dds.amp
-            static_table['phase%d'%connection] = dds.phase
+            static_table['freq%d'%connection] = dds.frequency.raw_output[0]
+            static_table['amp%d'%connection] = dds.amplitude.raw_output[0]
+            static_table['phase%d'%connection] = dds.phase.raw_output[0]
             
         grp = hdf5_file.create_group('/devices/'+self.name)
         grp.attrs['frequency_scale_factor'] = 10
