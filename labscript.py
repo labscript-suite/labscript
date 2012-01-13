@@ -541,12 +541,42 @@ class Output(Device):
     dtype = float32
     scale_factor = 1
     generation = 3
-    def __init__(self,name,parent_device,connection):
+    def __init__(self,name,parent_device,connection,calibration_class = None,calibration_parameters = {}):
         self.instructions = {}
         self.ramp_limits = [] # For checking ramps don't overlap
         self.clock_type = parent_device.clock_type
-        Device.__init__(self,name,parent_device,connection)   
-
+        self.calibration_class = calibration_class
+        self.calibration_parameters = calibration_parameters
+        Device.__init__(self,name,parent_device,connection)  
+        
+        # Instatiate the calibration
+        if calibration_class is not None:
+            self.calibration = calibration_class(calibration_parameters)
+            # Validate the calibration class
+            for units in self.calibration.human_units:
+                #Does the conversion to hardware units function exist for each defined unit type?
+                if not hasattr(self.calibration,units+"_to_hardware"):
+                    sys.stderr.write('The function "%s_to_hardware" does not exist within the calibration "%s" used in output "%s"'%(units,self.calibration_class,self.name) + '\n')
+                    sys.exit(1)
+                #Does the conversion to hardware units function exist for each defined unit type?
+                if not hasattr(self.calibration,units+"_from_hardware"):
+                    sys.stderr.write('The function "%s_to_hardware" does not exist within the calibration "%s" used in output "%s"'%(units,self.calibration_class,self.name) + '\n')
+                    sys.exit(1)
+    
+    def apply_calibration(self,value,units):
+        # Is a calibration in use?
+        if self.calibration_class is None:
+            sys.stderr.write('You can not specify the units in an instruction for output "%s" as it does not have a calibration associated with it'%(self.name) + '\n')
+            sys.exit(1)
+        
+        # Does a calibration exist for the units specified?
+        if units not in self.calibration.human_units:
+            sys.stderr.write('The units "%s" does not exist within the calibration "%s" used in output "%s"'%(units,self.calibration_class,self.name) + '\n')
+            sys.exit(1)
+        
+        # Return the calibrated value
+        return getattr(self.calibration,units+"_to_hardware")(value)
+        
     def instruction_to_string(self,instruction):
         """gets a human readable description of an instruction"""
         if isinstance(instruction,dict):
@@ -556,7 +586,7 @@ class Output(Device):
         else:
             return str(instruction)
 
-    def add_instruction(self,time,instruction):
+    def add_instruction(self,time,instruction,units=None):
          # round to the nearest 0.1 nanoseconds, to prevent floating point
          # rounding errors from breaking our equality checks later on.
         time = round(time,10)
@@ -587,6 +617,11 @@ class Output(Device):
                     sys.stderr.write(err + '\n')
                     sys.exit(1)
             self.ramp_limits.append((time,instruction['end time']))
+        # Else we have a "constant", single valued instruction
+        # If we have units specified, convert the value
+        elif units is not None:
+            # Apply the unit calibration now
+            instruction = self.apply_calibration(instruction,units)
         self.instructions[time] = instruction
         
     def get_change_times(self):
@@ -609,7 +644,7 @@ class Output(Device):
         # If they don't, insert an instruction telling them to hold their final value.
         for instruction in self.instructions.values():
             if isinstance(instruction, dict) and instruction['end time'] not in self.instructions.keys():
-                self.add_instruction(instruction['end time'], instruction['function'](instruction['end time']))
+                self.add_instruction(instruction['end time'], instruction['function'](instruction['end time']),instruction['units'])
         times = self.instructions.keys()
         times.sort()
         self.times = times
@@ -675,6 +710,9 @@ class Output(Device):
                     next_time = all_times[i+1][0] if iterable(all_times[i+1]) else all_times[i+1]
                     midpoints[-1] = time[-1] + 0.5*(next_time - time[-1])
                     outarray = self.timeseries[i]['function'](midpoints)
+                    # Now that we have the list of output points, pass them through the unit calibration
+                    if self.timeseries[i]['units'] is not None:
+                        outarray = self.apply_calibration(outarray,self.timeseries[i]['units'])
                 else:
                     outarray = empty(len(time),dtype=float32)
                     outarray.fill(self.timeseries[i])
@@ -688,19 +726,40 @@ class Output(Device):
 class AnalogOut(Output):
     description = 'analog output'
     default_value = 0
-    def ramp(self,t,duration,initial,final,samplerate):
+    def ramp(self,t,duration,initial,final,samplerate,units=None):
         self.add_instruction(t, {'function': functions.ramp(t,duration,initial,final), 'description':'linear ramp',
-                                 'end time': t + duration, 'clock rate': samplerate})
+                                 'end time': t + duration, 'clock rate': samplerate, 'units': units})
         return duration
                                  
-    def sine(self,t,duration,amplitude,angfreq,phase,dc_offset,samplerate):
+    def sine(self,t,duration,amplitude,angfreq,phase,dc_offset,samplerate,units=None):
         self.add_instruction(t, {'function': functions.sine(t,duration,amplitude,angfreq,phase,dc_offset), 'description':'sine wave',
-                                 'end time': t + duration, 'clock rate': samplerate})
+                                 'end time': t + duration, 'clock rate': samplerate, 'units': units})
         return duration   
                                  
-    def constant(self,t,value):
-        self.add_instruction(t,value)
-        
+    def constant(self,t,value,units=None):
+        self.add_instruction(t,value,units)
+
+class StaticAnalogOut(Output):
+    description = 'static analog output'
+    default_value = 0
+    
+    value_set = False
+    
+    def constant(self,value,units=None):
+        if not self.value_set:
+            # Since this is a StaticAnalogOut, we set the instruction to be at t=0
+            self.add_instruction(0,value,units)
+            self.value_set = True
+        else:
+            sys.stderr.write('%s %s %s has already been set to %s (hardware units). It cannot also be set to %s (%s). Stopping.\n'%(self.description, self.name, parameter, str(self.instructions[0]), str(value),units if units is not None else "hardware_units"))
+            sys.exit(1)
+            
+    # Overwrite these functions so we don't needlessly expand out a single data point to a many point array    
+    def make_timseries(self,*args,**kwargs):
+        pass
+    
+    def expand_timeseries(self,*args,**kwargs):
+        self.raw_output = self.instructions[0]
         
 class DigitalOut(Output):
     description = 'digital output'
@@ -938,49 +997,54 @@ class DDS(Device):
     description = 'DDS'
     allowed_children = [AnalogOut] # Adds its own children when initialised
     generation = 2
-    def __init__(self,name,parent_device,connection):
+    def __init__(self,name,parent_device,connection,freq_cal = None,freq_cal_params = {},amp_cal = None,amp_cal_params = {},phase_cal = None,phase_cal_params = {}):
         self.clock_type = parent_device.clock_type
         Device.__init__(self,name,parent_device,connection)
-        self.frequency = AnalogOut(self.name+'_freq',self,None)
-        self.amplitude = AnalogOut(self.name+'_amp',self,None)
-        self.phase = AnalogOut(self.name+'_phase',self,None)
+        self.frequency = AnalogOut(self.name+'_freq',self,None,freq_cal,freq_cal_params)
+        self.amplitude = AnalogOut(self.name+'_amp',self,None,amp_cal,amp_cal_params)
+        self.phase = AnalogOut(self.name+'_phase',self,None,phase_cal,phase_cal_params)
         if isinstance(self.parent_device,NovaTechDDS9M):
             self.frequency.default_value = 0.1
-    def setamp(self,t,value):
-        self.amplitude.constant(t,value)
-    def setfreq(self,t,value):
-        self.frequency.constant(t,value)
-    def setphase(self,t,value):
-        self.phase.constant(t,value)
+    def setamp(self,t,value,units=None):
+        self.amplitude.constant(t,value,units)
+    def setfreq(self,t,value,units=None):
+        self.frequency.constant(t,value,units)
+    def setphase(self,t,value,units=None):
+        self.phase.constant(t,value,units)
         
 class StaticDDS(Device):
     description = 'Static DDS'
     allowed_children = None
     generation = 2
-    def __init__(self,name,parent_device,connection):
+    def __init__(self,name,parent_device,connection,freq_cal = None,freq_cal_params = {},amp_cal = None,amp_cal_params = {},phase_cal = None,phase_cal_params = {}):
         self.clock_type = parent_device.clock_type
         Device.__init__(self,name,parent_device,connection)
         self.freq = None
         self.amp = None
         self.phase = None
+        self.freq_calibration = freq_cal
+        self.amp_calibration = amp_cal
+        self.phase_calibration = phase_cal
+        self.freq_calibration_params = freq_cal_params
+        self.amp_calibration_params = amp_cal_params
+        self.phase_calibration_params = phase_cal_params
         
-    def already_set(self, parameter, prev, new):
-        sys.stderr.write('%s %s %s has already been set to %s. It cannot also be set to %s. Stopping.\n'%(self.description, self.name, parameter, str(prev), str(new)))
-        sys.exit(1)
         
-    def setamp(self,value):
+
+        
+    def setamp(self,value,units=None):
         if self.amp is None:
             self.amp = value
         else:
             self.already_set('amp',self.amp, value)
             
-    def setfreq(self,value):
+    def setfreq(self,value,units=None):
         if self.freq is None:
             self.freq = value
         else:
             self.already_set('freq',self.freq, value)
         
-    def setphase(self,value):
+    def setphase(self,value,units=None):
         if self.phase is None:
             self.phase = value
         else:
@@ -1147,24 +1211,45 @@ def generate_connection_table():
         device = devicedict[row[0]]
         return str(device.generation) + device.name
     
+    # This starts at 4 to accomodate "None"
+    max_cal_param_length = 4
     for device in inventory:
         devicedict[device.name] = device
         all_devices.extend(device.get_all_children())
-        # The three child 'devices' of a DDS aren't really devices, ignore them.
-        if not isinstance(device.parent_device,DDS):
-            connection_table.append((device.name, device.__class__.__name__,
-                                     device.parent_device.name if device.parent_device else str(None),
-                                     str(device.connection if device.parent_device else str(None))))
+        
+        # If the device has calibration parameters, then run some checks
+        if hasattr(device,"calibration_parameters"):
+            try:
+                # Are we able to store the calibration parameter dictionary in the h5 file as a string?
+                assert(eval(repr(device.calibration_parameters)) == device.calibration_parameters)
+            except(AssertionError,SyntaxError):
+                sys.stderr.write('ERROR: The calibration parameters for device "%s" are too complex to store as a string in the connection table\n'%device.name)
+                sys.exit(1)
+            
+            # Find the logest parameter string
+            cal_params = repr(device.calibration_parameters)
+            if len(cal_params) > max_cal_param_length:
+                max_cal_param_length = len(cal_params)
+        else:
+            cal_params = str(None)
+            
+        connection_table.append((device.name, device.__class__.__name__,
+                                 device.parent_device.name if device.parent_device else str(None),
+                                 str(device.connection if device.parent_device else str(None)),
+                                 device.calibration_class.__name__ if hasattr(device,"calibration_class") and device.calibration_class is not None else str(None),
+                                 cal_params))
+    
+    
     connection_table.sort(key=sortkey)
-    connection_table_dtypes = [('name','a256'), ('class','a256'), ('parent','a256'), ('connected to','a256')]
+    connection_table_dtypes = [('name','a256'), ('class','a256'), ('parent','a256'), ('connected to','a256'),('calibration class','a256'), ('calibration params','a'+str(max_cal_param_length))]
     connection_table_array = empty(len(connection_table),dtype=connection_table_dtypes)
     for i, row in enumerate(connection_table):
         connection_table_array[i] = row
     hdf5_file.create_dataset('connection table',compression=compression,data=connection_table_array)
-    print 'Name'.rjust(15), 'Class'.rjust(15), 'Parent'.rjust(15), 'connected to'.rjust(15)
-    print '----'.rjust(15), '-----'.rjust(15), '------'.rjust(15), '------------'.rjust(15)
+    print 'Name'.rjust(15), 'Class'.rjust(15), 'Parent'.rjust(15), 'connected to'.rjust(15), 'calibration class'.rjust(20), 'calibration params'.rjust(20)
+    print '----'.rjust(15), '-----'.rjust(15), '------'.rjust(15), '------------'.rjust(15), '-----------------'.rjust(20), '-----------------'.rjust(20)
     for row in connection_table:
-        print row[0].rjust(15), row[1].rjust(15), row[2].rjust(15), row[3].rjust(15)
+        print row[0].rjust(15), row[1].rjust(15), row[2].rjust(15), row[3].rjust(15),row[4].rjust(20),row[5].rjust(20)
                 
 def generate_code():
     for device in inventory:
