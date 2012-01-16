@@ -1003,11 +1003,11 @@ class DDS(Device):
         self.frequency = AnalogOut(self.name+'_freq',self,'freq',freq_cal,freq_cal_params)
         self.amplitude = AnalogOut(self.name+'_amp',self,'amp',amp_cal,amp_cal_params)
         self.phase = AnalogOut(self.name+'_phase',self,'phase',phase_cal,phase_cal_params)
-        self.enable = None
+        self.gate = None
         if isinstance(self.parent_device,NovaTechDDS9M):
             self.frequency.default_value = 0.1
             if 'device' in digital_gate and 'connection' in digital_gate:            
-                self.enable = DigitalOut(self.name+'_en',digital_gate['device'],digital_gate['connection'])
+                self.gate = DigitalOut(self.name+'_en',digital_gate['device'],digital_gate['connection'])
             # Did they only put one key in the dictionary, or use the wrong keywords?
             elif len(digital_gate) > 0:
                 sys.stderr.write('You must specify the "device" and "connection" for the digital gate of %s.'%(self.name))
@@ -1016,7 +1016,7 @@ class DDS(Device):
             if 'device' in digital_gate and 'connection' in digital_gate: 
                 sys.stderr.write('You cannot specify a digital gate for a DDS connected to %s. The digital gate is always internal to the Pulseblaster.'%(self.parent_device.name))
                 sys.exit(1)
-            self.enable = DigitalOut(self.name+'_en',self,'enable')
+            self.gate = DigitalOut(self.name+'_en',self,'gate')
             
     def setamp(self,t,value,units=None):
         self.amplitude.constant(t,value,units)
@@ -1025,15 +1025,15 @@ class DDS(Device):
     def setphase(self,t,value,units=None):
         self.phase.constant(t,value,units)
     def enable(self,t):
-        if self.enable:
-            self.enable.go_high(t)
+        if self.gate:
+            self.gate.go_high(t)
         else:
             sys.stderr.write('DDS %s does not have a digital gate, so you cannot use the enable(t) method.'%(self.name))
             sys.exit(1)
             
     def disable(self,t):
-        if self.enable:
-            self.enable.go_low(t)
+        if self.gate:
+            self.gate.go_low(t)
         else:
             sys.stderr.write('DDS %s does not have a digital gate, so you cannot use the disable(t) method.'%(self.name))
             sys.exit(1)
@@ -1051,7 +1051,7 @@ class StaticDDS(Device):
         if isinstance(self.parent_device,NovaTechDDS9M):
             self.frequency.default_value = 0.1
             if 'device' in digital_gate and 'connection' in digital_gate:            
-                self.enable = DigitalOut(self.name+'_en',digital_gate['device'],digital_gate['connection'])
+                self.gate = DigitalOut(self.name+'_en',digital_gate['device'],digital_gate['connection'])
             # Did they only put one key in the dictionary, or use the wrong keywords?
             elif len(digital_gate) > 0:
                 sys.stderr.write('You must specify the "device" and "connection" for the digital gate of %s.'%(self.name))
@@ -1063,15 +1063,15 @@ class StaticDDS(Device):
     def setphase(self,value,units=None):
         self.phase.constant(value,units)        
     def enable(self,t):
-        if self.enable:
-            self.enable.go_high(t)
+        if self.gate:
+            self.gate.go_high(t)
         else:
             sys.stderr.write('DDS %s does not have a digital gate, so you cannot use the enable(t) method.'%(self.name))
             sys.exit(1)
             
     def disable(self,t):
-        if self.enable:
-            self.enable.go_low(t)
+        if self.gate:
+            self.gate.go_low(t)
         else:
             sys.stderr.write('DDS %s does not have a digital gate, so you cannot use the disable(t) method.'%(self.name))
             sys.exit(1)
