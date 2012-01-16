@@ -42,6 +42,7 @@ analog2.constant(t,3)
 analog1.sine(t,duration=6*scale,amplitude=5,angfreq=2*pi,phase=0,dc_offset=0.0,samplerate=rate)
 t = 1*scale
 shutter2.open(t)
+dds3.enable(t)
 analog0.ramp(t, duration=2*scale, initial=2, final=3, samplerate=rate)
 
 andor_ixon_0.expose('exposure_1',t,'flat')

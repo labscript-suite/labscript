@@ -370,7 +370,7 @@ class PulseBlaster(PseudoClock):
                 sys.exit(1)
                 
             # start counting at 1 to leave room for the dummy instruction,
-            # which LabVEIW will fill in with the state of the front
+            # which BLACS will fill in with the state of the front
             # panel:
             ampregs = range(1,len(amps)+1)
             freqregs = range(1,len(freqs)+1)
@@ -410,12 +410,13 @@ class PulseBlaster(PseudoClock):
         freqregs = [0]*2
         ampregs = [0]*2
         phaseregs = [0]*2
+        dds_enables = [0]*2
         flags[self.fast_clock_flag] = 0
         flags[self.slow_clock_flag] = 0 
-        pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs,
+        pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs, 'enables':dds_enables,
                         'flags': ''.join([str(flag) for flag in flags]), 'instruction': 'STOP',
                         'data': 0, 'delay': 10.0/self.clock_limit*1e9})
-        pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs,
+        pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs, 'enables':dds_enables,
                         'flags': ''.join([str(flag) for flag in flags]), 'instruction': 'STOP',
                         'data': 0, 'delay': 10.0/self.clock_limit*1e9})    
         j += 2
@@ -423,12 +424,13 @@ class PulseBlaster(PseudoClock):
         for k, instruction in enumerate(self.clock):
             flags = [0]*12
             # The registers below are ones, not zeros, so that we don't
-            # use the LabVIEW-inserted initial instructions. Instead
+            # use the BLACS-inserted initial instructions. Instead
             # unused DDSs have a 'zero' in register one for freq, amp
             # and phase.
             freqregs = [1]*2
             ampregs = [1]*2
             phaseregs = [1]*2
+            dds_enables = [0]*2
             for output in dig_outputs:
                 flagindex = int(output.connection.split()[1])
                 flags[flagindex] = int(output.raw_output[i])
@@ -437,7 +439,7 @@ class PulseBlaster(PseudoClock):
                 freqregs[ddsnumber] = freqs[ddsnumber][output.frequency.raw_output[i]]
                 ampregs[ddsnumber] = amps[ddsnumber][output.amplitude.raw_output[i]]
                 phaseregs[ddsnumber] = phases[ddsnumber][output.phase.raw_output[i]]
-                
+                dds_enables[ddsnumber] = output.gate.raw_output[i]
             flags[self.fast_clock_flag] = 1
             flags[self.slow_clock_flag] = 1 if instruction['slow_clock_tick'] else 0
             if instruction['slow_clock_tick']:
@@ -461,7 +463,7 @@ class PulseBlaster(PseudoClock):
                 assert quotient >= 0 # Something is wrong if this is not the case
                 
             # The loop and endloop instructions will only use the remainder:
-            pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs,
+            pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs, 'enables':dds_enables,
                             'flags': flagstring, 'instruction': 'LOOP',
                             'data': instruction['reps'], 'delay': remainder*1e9})
             flags[self.fast_clock_flag] = 0
@@ -471,12 +473,12 @@ class PulseBlaster(PseudoClock):
             # many multiples of 55 seconds (one multiple of 55 seconds
             # for each of the other two loop and endloop instructions):
             if quotient:
-                pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs,
+                pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs, 'enables':dds_enables,
                             'flags': flagstring, 'instruction': 'LONG_DELAY',
                             'data': int(2*quotient), 'delay': 55*1e9})
                 j += 1
                             
-            pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs,
+            pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs, 'enables':dds_enables,
                             'flags': flagstring, 'instruction': 'END_LOOP',
                             'data': j, 'delay': remainder*1e9})
             j += 2
@@ -490,7 +492,7 @@ class PulseBlaster(PseudoClock):
         # the same values and a WAIT instruction. The PulseBlaster then
         # waits on instuction zero, which is a state ready for either
         # further static updates or buffered mode.
-        pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs,
+        pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs, 'enables':dds_enables,
                         'flags': flagstring, 'instruction': 'BRANCH',
                         'data': 0, 'delay': 10.0/self.clock_limit*1e9})  
         # OK now we squeeze the instructions into a numpy array ready for writing to hdf5:
@@ -512,7 +514,9 @@ class PulseBlaster(PseudoClock):
             phase1 = inst['phases'][1]
             amp0 = inst['amps'][0]
             amp1 = inst['amps'][1]
-            pb_inst_table[i] = (freq0,phase0,amp0,1,0,freq1,phase1,amp1,1,0, flagint, 
+            en0 = inst['enables'][0]
+            en1 = inst['enables'][1]
+            pb_inst_table[i] = (freq0,phase0,amp0,en0,0,freq1,phase1,amp1,en1,0, flagint, 
                                 instructionint, dataint, delaydouble)
         slow_clock_indices = array(slow_clock_indices, dtype = uint32)                  
         # Okey now write it to the file: 
