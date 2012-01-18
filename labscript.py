@@ -1206,8 +1206,6 @@ def analysis(results, module, function, traces=[], globals_=[], other_results=[]
     analyses.append((resultslist, module, function, traceslist, globalslist, otherresultslist, argslist, kwargslist))
     
 def generate_analysis_table():
-    if not analyses:
-        return
     dtypes = [('results','a4096'),
               ('module','a4096'),
               ('function','a4096'),
