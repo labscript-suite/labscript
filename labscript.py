@@ -797,6 +797,7 @@ class AnalogIn(Device):
 class IntermediateDevice(Device):
     generation = 1
     def __init__(self, name, parent_device,clock_type):
+        self.name = name
         if not clock_type in ['fast clock', 'slow clock']:
             sys.stderr.write('Clock type for %s %s can only be \'slow clock\' or \'fast clock\'. Stopping\n'%(self.name,self.description))
             sys.exit(1)
@@ -836,7 +837,6 @@ class NIBoard(IntermediateDevice):
             outputarray[line] = output.raw_output
         bits = bitfield(outputarray,dtype=self.digital_dtype)
         return bits
-            
             
     def generate_code(self):
         Device.generate_code(self)
@@ -1157,7 +1157,7 @@ class NovaTechDDS9M(IntermediateDevice):
             times = self.parent_device.change_times
         else:
             times = self.parent_device.times
-        # Three extra instructions to aid in implementation -- will be
+        # Two extra instructions to aid in implementation -- will be
         # filled in with 'front panel' values:
         out_table = zeros(len(times)+2,dtype=dtypes)
         out_table['freq0'].fill(1)
@@ -1171,11 +1171,11 @@ class NovaTechDDS9M(IntermediateDevice):
             if not connection in DDSs:
                 continue
             dds = DDSs[connection]
-            # The first instruction, and last two instructions are left
-            # blank, for the control system to fill in at program time.
-            out_table['freq%d'%connection][1:-1] = dds.frequency.raw_output
-            out_table['amp%d'%connection][1:-1] = dds.amplitude.raw_output
-            out_table['phase%d'%connection][1:-1] = dds.phase.raw_output
+            # The last two instructions are left blank, for BLACS
+            # to fill in at program time.
+            out_table['freq%d'%connection][:-1] = dds.frequency.raw_output
+            out_table['amp%d'%connection][:-1] = dds.amplitude.raw_output
+            out_table['phase%d'%connection][:-1] = dds.phase.raw_output
             out_table[-1] = out_table[-2]
         for connection in range(2,4):
             if not connection in DDSs:
@@ -1215,7 +1215,7 @@ def generate_analysis_table():
               ('args','a4096'),
               ('kwargs','a4096')]
     data = array(analyses,dtype=dtypes)
-    hdf5_file.create_dataset('analysis',data=data)
+    hdf5_file.create_dataset('analysis',data=data,maxshape=(None,))
     
 def generate_connection_table():
     all_devices = []
