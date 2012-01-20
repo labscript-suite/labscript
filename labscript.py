@@ -1157,9 +1157,7 @@ class NovaTechDDS9M(IntermediateDevice):
             times = self.parent_device.change_times
         else:
             times = self.parent_device.times
-        # Two extra instructions to aid in implementation -- will be
-        # filled in with 'front panel' values:
-        out_table = zeros(len(times)+2,dtype=dtypes)
+        out_table = zeros(len(times),dtype=dtypes)
         out_table['freq0'].fill(1)
         out_table['freq1'].fill(1)
         
@@ -1173,10 +1171,11 @@ class NovaTechDDS9M(IntermediateDevice):
             dds = DDSs[connection]
             # The last two instructions are left blank, for BLACS
             # to fill in at program time.
-            out_table['freq%d'%connection][:-1] = dds.frequency.raw_output
-            out_table['amp%d'%connection][:-1] = dds.amplitude.raw_output
-            out_table['phase%d'%connection][:-1] = dds.phase.raw_output
-            out_table[-1] = out_table[-2]
+            print len(out_table['freq%d'%connection][:])
+            print len(dds.frequency.raw_output)
+            out_table['freq%d'%connection][:] = dds.frequency.raw_output
+            out_table['amp%d'%connection][:] = dds.amplitude.raw_output
+            out_table['phase%d'%connection][:] = dds.phase.raw_output
         for connection in range(2,4):
             if not connection in DDSs:
                 continue
