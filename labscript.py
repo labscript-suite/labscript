@@ -558,13 +558,13 @@ class Output(Device):
             self.calibration = calibration_class(calibration_parameters)
             # Validate the calibration class
             for units in self.calibration.human_units:
-                #Does the conversion to hardware units function exist for each defined unit type?
-                if not hasattr(self.calibration,units+"_to_hardware"):
-                    sys.stderr.write('The function "%s_to_hardware" does not exist within the calibration "%s" used in output "%s"'%(units,self.calibration_class,self.name) + '\n')
+                #Does the conversion to base units function exist for each defined unit type?
+                if not hasattr(self.calibration,units+"_to_base"):
+                    sys.stderr.write('The function "%s_to_base" does not exist within the calibration "%s" used in output "%s"'%(units,self.calibration_class,self.name) + '\n')
                     sys.exit(1)
-                #Does the conversion to hardware units function exist for each defined unit type?
-                if not hasattr(self.calibration,units+"_from_hardware"):
-                    sys.stderr.write('The function "%s_to_hardware" does not exist within the calibration "%s" used in output "%s"'%(units,self.calibration_class,self.name) + '\n')
+                #Does the conversion to base units function exist for each defined unit type?
+                if not hasattr(self.calibration,units+"_from_base"):
+                    sys.stderr.write('The function "%s_from_base" does not exist within the calibration "%s" used in output "%s"'%(units,self.calibration_class,self.name) + '\n')
                     sys.exit(1)
     
     def apply_calibration(self,value,units):
@@ -579,7 +579,7 @@ class Output(Device):
             sys.exit(1)
         
         # Return the calibrated value
-        return getattr(self.calibration,units+"_to_hardware")(value)
+        return getattr(self.calibration,units+"_to_base")(value)
         
     def instruction_to_string(self,instruction):
         """gets a human readable description of an instruction"""
@@ -755,7 +755,7 @@ class StaticAnalogOut(Output):
             self.add_instruction(0.0,value,units)
             self.value_set = True
         else:
-            sys.stderr.write('%s %s %s has already been set to %s (hardware units). It cannot also be set to %s (%s). Stopping.\n'%(self.description, self.name, parameter, str(self.instructions[0]), str(value),units if units is not None else "hardware_units"))
+            sys.stderr.write('%s %s %s has already been set to %s (base units). It cannot also be set to %s (%s). Stopping.\n'%(self.description, self.name, parameter, str(self.instructions[0]), str(value),units if units is not None else "base units"))
             sys.exit(1)
             
     # Overwrite these functions so we don't needlessly expand out a single data point to a many point array    
