@@ -80,6 +80,7 @@ class Device(object):
     def add_device(self,device):
         if any([isinstance(device,DeviceClass) for DeviceClass in self.allowed_children]):
             self.child_devices.append(device)
+             
         else:
             sys.stdout.write('ERROR: devices of type %s cannot be attached to devices of type %s. \n'%(device.description,self.description))
             sys.exit(1)
@@ -545,7 +546,7 @@ class Output(Device):
     dtype = float32
     scale_factor = 1
     generation = 3
-    def __init__(self,name,parent_device,connection,calibration_class = None,calibration_parameters = {}):
+    def __init__(self,name,parent_device,connection,limits = None,calibration_class = None,calibration_parameters = {}):
         self.instructions = {}
         self.ramp_limits = [] # For checking ramps don't overlap
         self.clock_type = parent_device.clock_type
@@ -566,6 +567,19 @@ class Output(Device):
                 if not hasattr(self.calibration,units+"_from_base"):
                     sys.stderr.write('The function "%s_from_base" does not exist within the calibration "%s" used in output "%s"'%(units,self.calibration_class,self.name) + '\n')
                     sys.exit(1)
+        
+        # If limits exist, check they are valid
+        # Here we specifically differentiate "None" from False as we will later have a conditional which relies on
+        # self.limits being either a correct tuple, or "None"
+        if limits is not None:
+            if not isinstance(limits,tuple) or len(limits) is not 2:
+                sys.stderr.write('The limits for "%s" must be tuple of length 2. Eg. limits=(1,2)'%(self.name) + '\n')
+                sys.exit(1)
+            if limits[0] > limits[1]:
+                sys.stderr.write('The first element of the tuple myst be lower than the second element. Eg limits=(1,2), NOT limits=(2,1)\n')
+                sys.exit(1) 
+        # Save limits even if they are None        
+        self.limits = limits
     
     def apply_calibration(self,value,units):
         # Is a calibration in use?
@@ -622,10 +636,16 @@ class Output(Device):
                     sys.exit(1)
             self.ramp_limits.append((time,instruction['end time']))
         # Else we have a "constant", single valued instruction
-        # If we have units specified, convert the value
-        elif units is not None:
-            # Apply the unit calibration now
-            instruction = self.apply_calibration(instruction,units)
+        else:
+            # If we have units specified, convert the value
+            if units is not None:
+                # Apply the unit calibration now
+                instruction = self.apply_calibration(instruction,units)
+            # if we have limits, check the value is valid
+            if self.limits:
+                if self.limits[0] <= instruction <= self.limits[1]:
+                    sys.stderr.write('You cannot program the value %d (base units) to %s as it falls outside the limits (%d to %d)'%(instruction,self.name,limits[0],limits[1]) + '\n')
+                    sys.exit(1)
         self.instructions[time] = instruction
         
     def get_change_times(self):
@@ -717,6 +737,11 @@ class Output(Device):
                     # Now that we have the list of output points, pass them through the unit calibration
                     if self.timeseries[i]['units'] is not None:
                         outarray = self.apply_calibration(outarray,self.timeseries[i]['units'])
+                    # if we have limits, check the value is valid
+                    if self.limits:
+                        if ((outarray<self.limits[0])|(outarray>self.limits[1])).any():
+                            sys.stderr.write('The function %s called on "%s" at t=%d generated a value which falls outside the base unit limits (%d to %d)'%(self.timeseries[i]['function'],self.name,midpoints[0],limits[0],limits[1]) + '\n')
+                            sys.exit(1)
                 else:
                     outarray = empty(len(time),dtype=float32)
                     outarray.fill(self.timeseries[i])
@@ -770,6 +795,10 @@ class DigitalOut(Output):
     allowed_states = {1:'high', 0:'low'}
     default_value = 0
     dtype = uint32
+    
+    # Redefine __init__ so that you cannot define a limit of calibration for DO
+    def __init__(self,name,parent_device,connection):
+        Output.__init__(self,name,parent_device,connection)
     def go_high(self,t):
         self.add_instruction(t,1)
     def go_low(self,t):
@@ -819,10 +848,10 @@ class NIBoard(IntermediateDevice):
         self.acquisition_rate = acquisition_rate
         self.clock_terminal = clock_terminal
         
-    def add_output(self,output):
+    def add_device(self,output):
         # TODO: check there are no duplicates, check that connection
         # string is formatted correctly.
-        Device.add_output(self,output)
+        Device.add_device(self,output)
         
     def convert_bools_to_bytes(self,digitals):
         """converts digital outputs to an array of bitfields stored
@@ -1001,17 +1030,17 @@ class DDS(Device):
     description = 'DDS'
     allowed_children = [AnalogOut,DigitalOut] # Adds its own children when initialised
     generation = 2
-    def __init__(self,name,parent_device,connection,digital_gate={},freq_cal = None,freq_cal_params = {},amp_cal = None,amp_cal_params = {},phase_cal = None,phase_cal_params = {}):
+    def __init__(self,name,parent_device,connection,digital_gate={},freq_limits = None,freq_cal = None,freq_cal_params = {},amp_limits=None,amp_cal = None,amp_cal_params = {},phase_limits=None,phase_cal = None,phase_cal_params = {}):
         self.clock_type = parent_device.clock_type
         Device.__init__(self,name,parent_device,connection)
-        self.frequency = AnalogOut(self.name+'_freq',self,'freq',freq_cal,freq_cal_params)
-        self.amplitude = AnalogOut(self.name+'_amp',self,'amp',amp_cal,amp_cal_params)
-        self.phase = AnalogOut(self.name+'_phase',self,'phase',phase_cal,phase_cal_params)
+        self.frequency = AnalogOut(self.name+'_freq',self,'freq',freq_limits,freq_cal,freq_cal_params)
+        self.amplitude = AnalogOut(self.name+'_amp',self,'amp',amp_limits,amp_cal,amp_cal_params)
+        self.phase = AnalogOut(self.name+'_phase',self,'phase',phase_limits,phase_cal,phase_cal_params)
         self.gate = None
         if isinstance(self.parent_device,NovaTechDDS9M):
             self.frequency.default_value = 0.1
             if 'device' in digital_gate and 'connection' in digital_gate:            
-                self.gate = DigitalOut(self.name+'_en',digital_gate['device'],digital_gate['connection'])
+                self.gate = DigitalOut(self.name+'_gate',digital_gate['device'],digital_gate['connection'])
             # Did they only put one key in the dictionary, or use the wrong keywords?
             elif len(digital_gate) > 0:
                 sys.stderr.write('You must specify the "device" and "connection" for the digital gate of %s.'%(self.name))
@@ -1020,7 +1049,7 @@ class DDS(Device):
             if 'device' in digital_gate and 'connection' in digital_gate: 
                 sys.stderr.write('You cannot specify a digital gate for a DDS connected to %s. The digital gate is always internal to the Pulseblaster.'%(self.parent_device.name))
                 sys.exit(1)
-            self.gate = DigitalOut(self.name+'_en',self,'gate')
+            self.gate = DigitalOut(self.name+'_gate',self,'gate')
             
     def setamp(self,t,value,units=None):
         self.amplitude.constant(t,value,units)
@@ -1046,16 +1075,16 @@ class StaticDDS(Device):
     description = 'Static RF'
     allowed_children = [StaticAnalogOut,DigitalOut]
     generation = 2
-    def __init__(self,name,parent_device,connection,digital_gate = {},freq_cal = None,freq_cal_params = {},amp_cal = None,amp_cal_params = {},phase_cal = None,phase_cal_params = {}):
+    def __init__(self,name,parent_device,connection,digital_gate = {},freq_limits = None,freq_cal = None,freq_cal_params = {},amp_limits=None,amp_cal = None,amp_cal_params = {},phase_limits=None,phase_cal = None,phase_cal_params = {}):
         self.clock_type = parent_device.clock_type
         Device.__init__(self,name,parent_device,connection)
-        self.frequency = StaticAnalogOut(self.name+'_freq',self,'freq',freq_cal,freq_cal_params)
-        self.amplitude = StaticAnalogOut(self.name+'_amp',self,'amp',amp_cal,amp_cal_params)
-        self.phase = StaticAnalogOut(self.name+'_phase',self,'phase',phase_cal,phase_cal_params)
+        self.frequency = StaticAnalogOut(self.name+'_freq',self,'freq',freq_limits,freq_cal,freq_cal_params)
+        self.amplitude = StaticAnalogOut(self.name+'_amp',self,'amp',amp_limits,amp_cal,amp_cal_params)
+        self.phase = StaticAnalogOut(self.name+'_phase',self,'phase',phase_limits,phase_cal,phase_cal_params)
         if isinstance(self.parent_device,NovaTechDDS9M):
             self.frequency.default_value = 0.1
             if 'device' in digital_gate and 'connection' in digital_gate:            
-                self.gate = DigitalOut(self.name+'_en',digital_gate['device'],digital_gate['connection'])
+                self.gate = DigitalOut(self.name+'_gate',digital_gate['device'],digital_gate['connection'])
             # Did they only put one key in the dictionary, or use the wrong keywords?
             elif len(digital_gate) > 0:
                 sys.stderr.write('You must specify the "device" and "connection" for the digital gate of %s.'%(self.name))
