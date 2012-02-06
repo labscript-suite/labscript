@@ -54,9 +54,6 @@ analog2.constant(t=5.9*scale,value=5)
 analog2.constant(t=7*scale,value=4)
 analog2.constant(t=8*scale,value=5)
 
-analysis(['av_measurement_1'], 'pylab', 'average', traces=['measurement_1'], globals_=[], other_results = [], args = [], kwargs = {})
-analysis(['sqrt_av_measurement_1'], 'math','sqrt', other_results=['av_measurement_1'] )
-
 stop(t=8*scale+2e-6)
 
 

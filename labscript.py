@@ -1220,31 +1220,6 @@ class NovaTechDDS9M(IntermediateDevice):
         grp.create_dataset('TABLE_DATA',compression=compression,data=out_table) 
         grp.create_dataset('STATIC_DATA',compression=compression,data=static_table) 
 
-def analysis(results, module, function, traces=[], globals_=[], other_results=[], args=[], kwargs={}):
-    if not (traces or globals_ or other_results or args or kwargs):
-        sys.stderr.write('Calls to analysis() must include either traces, globals_and_results, other_args or other_kwargs as input. Stopping')
-        sys.exit(1)
-    # TODO: check that results names are not also the names of globals
-    resultslist = repr(list(results))
-    traceslist = repr(list(traces))
-    globalslist = repr(list(globals_))
-    otherresultslist = repr(list(other_results))
-    argslist = repr(list(args))
-    kwargslist = repr(dict(kwargs))
-    analyses.append((resultslist, module, function, traceslist, globalslist, otherresultslist, argslist, kwargslist))
-    
-def generate_analysis_table():
-    dtypes = [('results','a4096'),
-              ('module','a4096'),
-              ('function','a4096'),
-              ('traces','a4096'),
-              ('globals','a4096'),
-              ('other_results','a4096'),
-              ('args','a4096'),
-              ('kwargs','a4096')]
-    data = array(analyses,dtype=dtypes)
-    hdf5_file.create_dataset('analysis',data=data,maxshape=(None,))
-    
 def generate_connection_table():
     all_devices = []
     connection_table = []
@@ -1315,7 +1290,6 @@ def stop(t):
     hdf5_file.create_group('/devices')
     generate_code()
     generate_connection_table()
-    generate_analysis_table()
     labscriptfile = os.path.join(sys.path[0],sys.argv[0])
     script = hdf5_file.create_dataset('script',compression=compression,data=open(labscriptfile).read())
     script.attrs['name'] = os.path.basename(sys.argv[0])
