@@ -1,0 +1,52 @@
+\documentclass[12pt]{article}
+\include{pythonlisting}
+
+\begin{document}\title{How to add a new device class to BLACS}
+\author{Philip Starkey}
+\date{\today}
+\maketitle
+
+\section{Introduction}
+This tutorial covers the basics of adding a new device class to BLACS. Existing device classes include the PulseBlaster, NovatechDDS9m, NI PCIe 6363 and NI PCI 6733. These classes are used by BLACS to generate the unique tab for each device on the BLACS front panel. Adding support for your device to BLACS does not add support to labscript, which will also need to be done if you wish to use the device in a buffered sequence (see **TO BE ADDED IN LATER**). If your device is never to be used in a buffered sequence, you may instead wish to implement it as a virtual device (see ** TO BE ADDED IN LATER**).
+
+This tutorial assumes a working knowledge of Python, PyGTK and Glade. If are not familiar with one or more of these, please attempt a tutorial on the subject before continuing with this!
+
+\section{The Glade Interface}\label{glade interface}
+The first step is to roughly design the interface for your device in Glade. The design of your interface can be as simple or as complex as you like. 
+
+The backend of BLACS only requires that you conform to one rule for your interface. Anything you want to behave as a digital out should be represented by a widget that can be linked to a GtkAction (this is generally a togglebutton or a checkbox).
+
+Anything you want to behave as an analog out should be represented by a widget that can be linked to a GtkAdjustment (usually a GtkSpinButton) and should have a corresponding GtkComboBox for changing the units of the value shown in the GtkSpinButton.
+
+Also note that internally within BLACS and Labscript, we represent a DDS as a collection of 3 analog outs (one for frequency, amplitude and phase), so it is recommended to follow this pattern when creating an interface for a DDS device. In general, most interfaces can be broken down into a combination of digital outputs (a part of the device with only two states) and analog outputs (a part of the device which can take any value between a maximum and minimum value, often with a particular quantisation).
+
+\textbf{As of Feb 08, 2012, BLACS does not override the GtkSpinButton properties such as ``digits'' and ``climb rate''. It will however add it's own GtkAdjustment to the widget, so you are not required to do this yourself in glade. You are also not required to}
+
+\subsection{The GtkComboBox for unit selection}\label{glade unit selection}
+
+\section{Creating the Device Class}\label{creating class}
+All device classes as stored in pythonlib/BLACS/hardware\_interfaces. You should create a new file for your device in this folder, with an appropriate name (we shall refer to the name in this tutorial as ``pulseblaster.py'').
+
+The first thing you need to do in your empty python file is import the required packages and classes. The code below imports gtk and the BLACS backend classes for handling various output types. 
+The final line imports the BLACS backend for the tab state machine. We'll cover these more as we go.
+\begin{python}
+import gtk
+from output_classes import AO, DO, RF, DDS
+from tab_base_classes import Tab, Worker, define_state
+\end{python}
+
+Next we need to define two classes. The first class will handle the GUI, and related events. The second will handle the communication with the actual hardware. The first class name (hence forth known as the device class) should match (ignoring case) the device class shown in the entry in the connection table for an instance of your device. You may call the second class (hence forth known as the worker class) whatever you wish, though it is advisable to use something understandable!
+
+In this tutorial we will use ``pulseblaster'' and ``PulseblasterWorker'' as our class names.
+
+\begin{python}
+class pulseblaster(Tab):
+    pass
+	
+class PulseblasterWorker(Worker):
+    pass
+\end{python}
+
+\textbf{Note:} We have used ``pass'' here as a placeholder. You can assume that the ``pass'' statements will be removed once the tutorial inserts code at the same indentation level.
+
+\end{document}
