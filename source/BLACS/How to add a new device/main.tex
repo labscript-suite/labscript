@@ -196,12 +196,88 @@ Below is an example from the pulseblaster code. Here we make use of the \texttt{
 \end{python}
 
 \subsubsection{The \texttt{transition\_to\_buffered} method}\label{device_class_transition_to_buffered}
+This method is called by the BLACS experiment queue manager, as is designed to program the hardware for a buffered sequence, and place the device in a state ready for execution to begin. The \texttt{transition\_to\_buffered} method is likely to follow the below code almost exactly.
+\begin{python}
+@define_state
+    # This function is given the path to the experiment h5file, and a queue used
+    # to notify BLACS when the device is ready for the experiment to start
+    def transition_to_buffered(self,h5file,notify_queue):
+        self.static_mode = False 
+        initial_values = self.get_front_panel_state()
+        self.queue_work('program_buffered',h5file,initial_values)
+        self.do_after('leave_program_buffered',notify_queue)
+\end{python}
+
+The method sets the \texttt{static\_mode} instance variable to False to stop the device being reprogrammed mid experiment if the front panel is modified by the user. This only works if the variable is checked by your \texttt{program\_static} method (see section \ref{device_class_program_static}).
+
+We pass the h5file and front panel values to the \texttt{program\_buffered} method in the worker process, which handles the programming of the device. To avoid output changes upon programming, it is often required to use the front panel values as the first instruction given to the device, and to request that the device remain on this instruction until the device is triggered to start the experiment. Exceptions to this are the NI cards which will not update their outputs until they receive the first clock pulse. Your labscript device class should generate a dummy (or zero valued) instruction as the first instruction in the h5 file, which you can insert the current front panel values into at program time.
+
+Your worker process buffered programming function (above we called it the \texttt{program\_buffered} method) should return the output values of the final instruction. These are automatically passed to the \texttt{leave\_program\_buffered} method in the device class.
+
+The \texttt{leave\_program\_buffered} method will look very similar to this:
+\begin{python}
+    def leave_program_buffered(self,notify_queue,_results):
+        # These are the final values that the device will be in
+        # at the end of the run. Store them so that we can use them
+        # in transition_to_static:
+        self.final_values = _results
+        # Notify the queue manager thread that we've finished
+        # transitioning to buffered:
+        notify_queue.put(self.device_name)
+\end{python}
+
+We save the final values so that we can update the front panel when the experiment is over, and notify the BLACS queue manager that the device has finished programming is now ready for the experiment to begin.
 
 \subsubsection{The \texttt{transition\_to\_static} method}\label{device_class_transition_to_static}
+The \texttt{transition\_to\_static} method is called by the BLACS queue manager when it has detected that the experiment is over. The purpose of this method is to save any acquired data to the h5file, put the device in a state ready for manual front panel control and update the front panel to reflect the final value of the experiment run.
+
+The method generally follows:
+\begin{python}
+    @define_state
+    def transition_to_static(self,notify_queue):
+        # Code to update front panel values to final experiment output state
+        
+        # Code to place the device in a manual update mode and to
+        # save acquired data (usually calls a worker process method)
+        
+        # Reenable static updates triggered by GTK events
+        self.static_mode = True
+        # Notify the queue manager that we've finished transitioning to static:
+        # If your device needs to save data to the h5 file, only call this after
+        # the data has been saved
+        notify_queue.put(self.device_name)
+\end{python}
+
+The queue passed to this method is used as a rudimentary lock for saving data to the experiment h5 file. If your device does not need to access the h5 file at the end of the experiment (which most devices should not unless they have acquired data) you may put the device name in the queue immediately. This will ensure that the transition to static time is as short as possible as devices not accessing the h5 file can transition to static simultaneously. 
+
+If your device does need to access the h5 file, then you can be certain that your device has unobstructed write access to the h5 file until you use the \texttt{notify\_queue}. Generally the saving of data is done in a worker process method, and the \texttt{notify\_queue} is passed to a device class method called after the worker process method has finished. Note that the \texttt{transition\_to\_static} method is not passed the path to the h5 file, and so you need to save it somewhere in your \texttt{transition\_to\_buffered} (or the  associated worker process) method.
 
 \subsubsection{The \texttt{abort\_buffered} method}\label{device_class_abort_buffered}
+This method is called when your device has successfully run the \texttt{transition\_to\_buffered} method, but another device has failed the same step. At this point the BLACS queue manager cancels the experiment run and calls the \texttt{abort\_buffered} method. 
+
+This method should place the device back into a working manual mode state. Importantly, the output of the device should not have changed since before \texttt{transition\_to\_buffered} was called, and should not have changed after \texttt{abort\_buffered} has been called.
+
+The method header for this function is as follows:
+\begin{python}
+    def abort_buffered(self):
+\end{python}
+
+The contents of this method varies from device to device. It be as simple as setting \texttt{self.static\_mode = True}, it may call \texttt{transition\_to\_static} (with no notify queue) or be something else entirely.
 
 \subsubsection{The \texttt{destroy} method}\label{device_class_destroy}
+The \texttt{destroy} method is called when BLACS is asked to exit. It should place the device is a safe state, set the \texttt{destroy\_complete} instance variable to \texttt{True} and then call the \texttt{close\_tab} method which is defined in the Tab class as does \textbf{not} need overriding. 
+
+It will look something like:
+\begin{python}
+    @define_state
+    def destroy(self):        
+        self.queue_work('pb_close')
+        self.do_after('leave_destroy')
+        
+    def leave_destroy(self,_results):
+        self.destroy_complete = True
+        self.close_tab()
+\end{python}
 
 \section{Advanced Features}
 
