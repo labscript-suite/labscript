@@ -153,7 +153,176 @@ If you wish to execute some further code once the worker class method has been e
 \end{python}
 The last argument passed to the method called by \texttt{do\_after} is \texttt{\_results} which contains a tuple of values returned by the worker class method called by \texttt{queue\_work}. Note that the method called by \texttt{do\_after} does \textbf{not} have \texttt{@define\_state} written above it's definition.
 
+\subsubsection{Class attributes}\label{device_class_attributes}
+It is necessary to define the capabilities of the device as follows:
+\begin{python}
+class pulseblaster(Tab):
+    # Channel Capabilities
+    # You must follow the naming convention shown here as BLACS uses them to save
+    # the state of the AO/DO/DDS channels in your device.
+    num_DDS = 2
+    num_DO = 4 
+    # If one is zero, you may omit it.
+    # num_AO = 0
+    
+    # It is also a good idea to define hardware limits for your output channels here
+    # The names you give these variables are arbitrary and are for your use only,
+    # though it is recommended to stay consistent with these names
+    base_units = {'freq':'MHz',     'amp':'Vpp', 'phase':'Degrees'}
+    base_min =   {'freq':0.0000003, 'amp':0.0,   'phase':0}
+    base_max =   {'freq':150.0,     'amp':1.0,   'phase':360}
+    base_step =  {'freq':1,         'amp':0.01,  'phase':1}
+\end{python}
+
 \subsubsection{The \texttt{\_\_init\_\_} method}\label{device_class_init}
+The \texttt{\_\_init\_\_} method definition is as follows:
+\begin{python}
+    # notebook: The notebook in which this tab is located. 
+    #           You shouldn't need to use this, except to pass
+    #           it to the Tab __init__ method
+    #
+    # settings: This is a dictionary that contains the 'device_name'
+    #           The 'connection_table' object for BLACS
+    #           The 'saved_data' returned by self.get_save_data() on last exit
+    #           The 'front_panel_settings' which contains all saved data for
+    #           attached DO/AO/DDS channels
+    #
+    # restart: This is True only if the device tab has been restarted by the user
+    def __init__(self,notebook,settings,restart=False):
+\end{python}
+
+One of the first things to do in the \texttt{\_\_init\_\_} method is to instantiate the \texttt{Tab} base class via:
+\begin{python}
+		# PulseblasterWorker is the class name for the device worker class 
+		# you have defined previously.
+        Tab.__init__(self,PulseblasterWorker,notebook,settings)
+\end{python}
+
+You will probably also want to save the settings dictionary and device name as attributes. Now is also a good time to create some other attributes you will need later:
+\begin{python}
+        self.settings = settings
+        self.device_name = settings['device_name']
+        self.static_mode = True
+        self.destroy_complete = False
+\end{python}
+
+Now we want to load build our GUI from the glade file. We do that by calling:
+\begin{python}
+        # Create the PyGTK Builder:
+        self.builder = gtk.Builder()
+        self.builder.add_from_file('hardware_interfaces/your_glade_file.glade')
+        # Connect signals to methods in this class
+        self.builder.connect_signals(self)
+\end{python}
+This code also connects any signals you have defined in your glade file to methods within this class. If you do add any signals, make sure you remember to define the methods too!
+
+You can now pull out references to the GTK widgets you placed in your glade file via the names you gave them in glade. You will need to at least get a reference to the GtkScrolledWindow (the top most widget) in your glade file. For example, we have called the top most widget \texttt{toplevel} in \texttt{pulseblaster.glade}, so we would call in the \texttt{\_\_init\_\_} method:
+\begin{python} 
+        self.toplevel = self.builder.get_object('toplevel')
+\end{python}
+Any other 'one off' widgets you wish to access and change their content programmatically can be done in a similar fashion.
+
+We now move on to initialising the objects which will handle the widgets for the AO/DO/DDS channels of your device. Depending on the capabilities of your device, you will need to instantiate the following lists (naming convention must be followed):
+\begin{python}
+        self.dds_outputs = []
+        self.digital_outs = []
+        self.analog_outs = []
+\end{python}
+
+You will now want to loop over the channels for a particular output type. We will give the example for \texttt{DDS}'s here, as this involves making an internal \texttt{AO} object for each of the frequency, amplitude and phase components of the DDS.
+
+Here we loop over the number of DDS channels for the device, and generate a unique name, within this device instance, for each channel. We then get the connection table entry object, and use it to find the channel name if it exists. It is important that the channel name be set to \texttt{-} if it is not in the connection table.
+\begin{python}
+        for i in range(self.num_DDS):
+            # Generate a unique channel name (unique to the device instance,
+            # it does not need to be unique to BLACS)
+            channel = 'DDS %d'%i
+            
+            # Get the connection table entry object
+            conn_table_entry = self.settings['connection_table'].find_child(
+                self.settings['device_name'],'dds %d'%i)
+                
+            # Get the name of the channel
+            # If no name exists, it MUST be set to '-'
+            name = conn_table_entry.name if conn_table_entry else '-'
+            
+            # Set the label to reflect the connected channels name:
+            self.builder.get_object('channel_%d_label'%i).set_text(
+                channel + ' - ' + name)
+\end{python}  
+
+We now loop over the frequency, phase, and amplitude sections of the DDS, and we will create an \texttt{AO} object for each which we will later use to make a \texttt{DDS object}. First however we must get the calibration details for each sub channel from the connection table, and the widgets for each sub channel from the glade file.
+\begin{python}
+            # Loop over freq,amp,phase and create AO objects for each
+            ao_objects = {}
+            sub_chnl_list = ['freq','amp','phase']
+            for sub_chnl in sub_chnl_list:
+                calib = None
+                calib_params = {}
+                
+                # find the calibration details for this subchannel
+                # TODO: Also get their min/max values
+                if conn_table_entry:
+                	sub_chnl_name = conn_table_entry.name+'_'+sub_chnl
+                    if sub_chnl_name in conn_table_entry.child_list:
+                        sub_chnl_entry = conn_table_entry.child_list[sub_chnl_name]
+                        if sub_chnl_entry != "None":
+                            calib = sub_chnl_entry.calibration_class
+                            calib_params =
+                                eval(sub_chnl_entry.calibration_parameters)
+                
+                # Get the subchannel (eq freq) widget from the glade file
+                spinbutton = self.builder.get_object(sub_chnl+'_chnl_%d'%i)
+                # Get the unit selection for the subchannel widget
+                unit_selection = self.builder.get_object(sub_chnl+'_unit_chnl_%d'%i)
+\end{python}
+
+We then create the AO object. Note that we pass in a function as the 8th argument (\texttt{self.program\_static}). This function is covered in section \ref{device_class_program_static} and can be given a different name, just make sure you pass the correct function to the \texttt{AO} and \texttt{DO} objects.
+\begin{python}
+                # Make output object:
+                ao_objects[sub_chnl] = AO(name+'_'+sub_chnl, 
+                                          channel+'_'+sub_chnl, 
+                                          spinbutton, 
+                                          unit_selection, 
+                                          calib, 
+                                          calib_params, 
+                                          self.base_units[sub_chnl], 
+                                          self.program_static, 
+                                          self.base_min[sub_chnl], 
+                                          self.base_max[sub_chnl], 
+                                          self.base_step[sub_chnl])
+\end{python}
+
+We then update the values and settings of this object to the previously saved state:
+\begin{python}
+                # Set default values:
+                ao_objects[sub_chnl].update(settings)
+\end{python}
+
+We can then instantiate the \texttt{DO} object for the DDS gate (which is a lot simpler than the \texttt{AO} objects!) and add them to our \texttt{dds\_outputs} list:
+\begin{python}
+            # Get the widgets for the gate
+            gate_togglebutton = self.builder.get_object('active_chnl_%d'%i)        
+            # Make the gate DO object            
+            gate = DO(name+'_gate', 
+                      channel+'_gate', 
+                      gate_togglebutton, 
+                      self.program_static)
+            # update the gate value based on saved value
+            if 'DDS %d_gate'%i in settings['front_panel_settings']:
+                gate.set_state(
+                   settings['front_panel_settings'][channel+'_gate']['base_value'],
+                   program=False)
+                    
+                # TODO: Set lock state
+                    
+            # Construct the DDS object and store for later access:
+            self.dds_outputs.append(DDS(ao_objects['freq'],
+                                        ao_objects['amp'],
+                                        ao_objects['phase'],
+                                        gate))
+\end{python}
+
 
 \subsubsection{The \texttt{get\_save\_data} method} \label{device_class_get_save_data}
 This function provides an interface for saving tab specific data upon exiting BLACS. The data becomes available to the tab during the \texttt{\_\_init\_\_} method in the \texttt{settings['saved\_data']} variable (see section \ref{device_class_init}).
@@ -280,5 +449,7 @@ It will look something like:
 \end{python}
 
 \section{Advanced Features}
+
+statemachine timeout
 
 \end{document}
