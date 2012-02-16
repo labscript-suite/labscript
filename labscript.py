@@ -1,5 +1,3 @@
-import __main__
-
 import os
 import sys
 import keyword
@@ -75,7 +73,7 @@ class Device(object):
         except:
             raise ValueError('%s is not a valid Python variable name. Stopping.\n'%name)
         # Put self into the global namespace:
-        setattr(__main__,name,self)
+        __builtins__[name] = self
         
     def add_device(self,device):
         if any([isinstance(device,DeviceClass) for DeviceClass in self.allowed_children]):
@@ -1374,7 +1372,7 @@ for name in params.keys():
                          'is not a valid Python variable name.' +
                          ' Please choose a different variable name.\n')
         sys.exit(1)
-    setattr(__main__,name, params[name])
+    __builtins__[name] = params[name]
     
 if params.keys():
     # get rid of the loop variable -- it caused a subtle bug once by
