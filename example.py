@@ -1,12 +1,13 @@
 from labscript import *
+from unitconversions import *
 
 PulseBlaster(  'pulseblaster_0')
 NI_PCIe_6363(  'ni_pcie_6363_0',  pulseblaster_0, 'fast clock', 'ni_pcie_6363_0/PFI0')
 NI_PCI_6733(   'ni_pci_6733_0',  pulseblaster_0, 'fast clock', 'ni_pcie_6363_0/PFI0')
 NovaTechDDS9M( 'novatechdds9m_0', pulseblaster_0, 'slow clock')
 
-AnalogOut( 'analog0',  ni_pcie_6363_0,         'ao0')
-AnalogOut( 'analog1',  ni_pcie_6363_0,         'ao1')
+AnalogOut( 'analog0',  ni_pcie_6363_0,         'ao0',unit_conversion_class=test)
+AnalogOut( 'analog1',  ni_pcie_6363_0,         'ao1',unit_conversion_class=test,unit_conversion_parameters = {'a':5,'b':1})
 AnalogOut( 'analog2',  ni_pcie_6363_0,         'ao2')
 AnalogIn(   'input1',  ni_pcie_6363_0,         'ai0')
 Shutter(  'shutter1',  ni_pcie_6363_0, 'port0/line0', delay=(0,0))
@@ -14,7 +15,7 @@ Shutter(  'shutter2',  pulseblaster_0,      'flag 2', delay=(0,0))
 DDS(          'dds1', novatechdds9m_0,   'channel 0')
 DDS(          'dds2', novatechdds9m_0,   'channel 1')
 StaticDDS(    'dds5', novatechdds9m_0,   'channel 2')
-DDS(          'dds3',  pulseblaster_0,       'dds 0')
+DDS(          'dds3',  pulseblaster_0,       'dds 0',freq_conv_class=test,freq_conv_params={'a':4,'b':6},amp_conv_class=test,amp_conv_params={'a':2,'b':22})
 DDS(          'dds4',  pulseblaster_0,       'dds 1')
 Camera('andor_ixon_0', pulseblaster_0,   'flag 3', exposuretime=.1,orientation='top')
 

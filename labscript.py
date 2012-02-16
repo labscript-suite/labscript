@@ -546,26 +546,26 @@ class Output(Device):
     dtype = float32
     scale_factor = 1
     generation = 3
-    def __init__(self,name,parent_device,connection,limits = None,calibration_class = None,calibration_parameters = {}):
+    def __init__(self,name,parent_device,connection,limits = None,unit_conversion_class = None,unit_conversion_parameters = {}):
         self.instructions = {}
         self.ramp_limits = [] # For checking ramps don't overlap
         self.clock_type = parent_device.clock_type
-        self.calibration_class = calibration_class
-        self.calibration_parameters = calibration_parameters
+        self.unit_conversion_class = unit_conversion_class
+        self.unit_conversion_parameters = unit_conversion_parameters
         Device.__init__(self,name,parent_device,connection)  
         
         # Instatiate the calibration
-        if calibration_class is not None:
-            self.calibration = calibration_class(calibration_parameters)
+        if unit_conversion_class is not None:
+            self.calibration = unit_conversion_class(unit_conversion_parameters)
             # Validate the calibration class
-            for units in self.calibration.human_units:
+            for units in self.calibration.derived_units:
                 #Does the conversion to base units function exist for each defined unit type?
                 if not hasattr(self.calibration,units+"_to_base"):
-                    sys.stderr.write('The function "%s_to_base" does not exist within the calibration "%s" used in output "%s"'%(units,self.calibration_class,self.name) + '\n')
+                    sys.stderr.write('The function "%s_to_base" does not exist within the calibration "%s" used in output "%s"'%(units,self.unit_conversion_class,self.name) + '\n')
                     sys.exit(1)
                 #Does the conversion to base units function exist for each defined unit type?
                 if not hasattr(self.calibration,units+"_from_base"):
-                    sys.stderr.write('The function "%s_from_base" does not exist within the calibration "%s" used in output "%s"'%(units,self.calibration_class,self.name) + '\n')
+                    sys.stderr.write('The function "%s_from_base" does not exist within the calibration "%s" used in output "%s"'%(units,self.unit_conversion_class,self.name) + '\n')
                     sys.exit(1)
         
         # If limits exist, check they are valid
@@ -583,13 +583,13 @@ class Output(Device):
     
     def apply_calibration(self,value,units):
         # Is a calibration in use?
-        if self.calibration_class is None:
+        if self.unit_conversion_class is None:
             sys.stderr.write('You can not specify the units in an instruction for output "%s" as it does not have a calibration associated with it'%(self.name) + '\n')
             sys.exit(1)
         
         # Does a calibration exist for the units specified?
-        if units not in self.calibration.human_units:
-            sys.stderr.write('The units "%s" does not exist within the calibration "%s" used in output "%s"'%(units,self.calibration_class,self.name) + '\n')
+        if units not in self.calibration.derived_units:
+            sys.stderr.write('The units "%s" does not exist within the calibration "%s" used in output "%s"'%(units,self.unit_conversion_class,self.name) + '\n')
             sys.exit(1)
         
         # Return the calibrated value
@@ -752,8 +752,8 @@ class Output(Device):
         self.raw_output = fastflatten(outputarray, self.dtype)
         
 
-class AnalogOut(Output):
-    description = 'analog output'
+class AnalogQuantity(Output):
+    description = 'analog quantity'
     default_value = 0
     def ramp(self,t,duration,initial,final,samplerate,units=None):
         self.add_instruction(t, {'function': functions.ramp(t,duration,initial,final), 'description':'linear ramp',
@@ -768,8 +768,11 @@ class AnalogOut(Output):
     def constant(self,t,value,units=None):
         self.add_instruction(t,value,units)
 
-class StaticAnalogOut(Output):
-    description = 'static analog output'
+class AnalogOut(AnalogQuantity):
+    description = 'analog output'
+        
+class StaticAnalogQuantity(Output):
+    description = 'static analog quantity'
     default_value = 0
     
     value_set = False
@@ -789,9 +792,12 @@ class StaticAnalogOut(Output):
     
     def expand_timeseries(self,*args,**kwargs):
         self.raw_output = array([self.instructions[0.0]])
+
+class StaticAnalogOut(StaticAnalogQuantity):
+    description = 'static analog output'
         
-class DigitalOut(Output):
-    description = 'digital output'
+class DigitalQuantity(Output):
+    description = 'digital quantity'
     allowed_states = {1:'high', 0:'low'}
     default_value = 0
     dtype = uint32
@@ -804,6 +810,8 @@ class DigitalOut(Output):
     def go_low(self,t):
         self.add_instruction(t,0) 
 
+class DigitalOut(DigitalQuantity):
+    description = 'digital output'
 
 class AnalogIn(Device):
     description = 'Analog Input'
@@ -1028,14 +1036,14 @@ class Camera(DigitalOut):
             
 class DDS(Device):
     description = 'DDS'
-    allowed_children = [AnalogOut,DigitalOut] # Adds its own children when initialised
+    allowed_children = [AnalogQuantity,DigitalOut,DigitalQuantity] # Adds its own children when initialised
     generation = 2
-    def __init__(self,name,parent_device,connection,digital_gate={},freq_limits = None,freq_cal = None,freq_cal_params = {},amp_limits=None,amp_cal = None,amp_cal_params = {},phase_limits=None,phase_cal = None,phase_cal_params = {}):
+    def __init__(self,name,parent_device,connection,digital_gate={},freq_limits = None,freq_conv_class = None,freq_conv_params = {},amp_limits=None,amp_conv_class = None,amp_conv_params = {},phase_limits=None,phase_conv_class = None,phase_conv_params = {}):
         self.clock_type = parent_device.clock_type
         Device.__init__(self,name,parent_device,connection)
-        self.frequency = AnalogOut(self.name+'_freq',self,'freq',freq_limits,freq_cal,freq_cal_params)
-        self.amplitude = AnalogOut(self.name+'_amp',self,'amp',amp_limits,amp_cal,amp_cal_params)
-        self.phase = AnalogOut(self.name+'_phase',self,'phase',phase_limits,phase_cal,phase_cal_params)
+        self.frequency = AnalogQuantity(self.name+'_freq',self,'freq',freq_limits,freq_conv_class,freq_conv_params)
+        self.amplitude = AnalogQuantity(self.name+'_amp',self,'amp',amp_limits,amp_conv_class,amp_conv_params)
+        self.phase = AnalogQuantity(self.name+'_phase',self,'phase',phase_limits,phase_conv_class,phase_conv_params)
         self.gate = None
         if isinstance(self.parent_device,NovaTechDDS9M):
             self.frequency.default_value = 0.1
@@ -1049,7 +1057,7 @@ class DDS(Device):
             if 'device' in digital_gate and 'connection' in digital_gate: 
                 sys.stderr.write('You cannot specify a digital gate for a DDS connected to %s. The digital gate is always internal to the Pulseblaster.'%(self.parent_device.name))
                 sys.exit(1)
-            self.gate = DigitalOut(self.name+'_gate',self,'gate')
+            self.gate = DigitalQuantity(self.name+'_gate',self,'gate')
             
     def setamp(self,t,value,units=None):
         self.amplitude.constant(t,value,units)
@@ -1073,14 +1081,14 @@ class DDS(Device):
         
 class StaticDDS(Device):
     description = 'Static RF'
-    allowed_children = [StaticAnalogOut,DigitalOut]
+    allowed_children = [StaticAnalogQuantity,DigitalOut]
     generation = 2
-    def __init__(self,name,parent_device,connection,digital_gate = {},freq_limits = None,freq_cal = None,freq_cal_params = {},amp_limits=None,amp_cal = None,amp_cal_params = {},phase_limits=None,phase_cal = None,phase_cal_params = {}):
+    def __init__(self,name,parent_device,connection,digital_gate = {},freq_limits = None,freq_conv_class = None,freq_conv_params = {},amp_limits=None,amp_conv_class = None,amp_conv_params = {},phase_limits=None,phase_conv_class = None,phase_conv_params = {}):
         self.clock_type = parent_device.clock_type
         Device.__init__(self,name,parent_device,connection)
-        self.frequency = StaticAnalogOut(self.name+'_freq',self,'freq',freq_limits,freq_cal,freq_cal_params)
-        self.amplitude = StaticAnalogOut(self.name+'_amp',self,'amp',amp_limits,amp_cal,amp_cal_params)
-        self.phase = StaticAnalogOut(self.name+'_phase',self,'phase',phase_limits,phase_cal,phase_cal_params)
+        self.frequency = StaticAnalogQuantity(self.name+'_freq',self,'freq',freq_limits,freq_conv_class,freq_conv_params)
+        self.amplitude = StaticAnalogQuantity(self.name+'_amp',self,'amp',amp_limits,amp_conv_class,amp_conv_params)
+        self.phase = StaticAnalogQuantity(self.name+'_phase',self,'phase',phase_limits,phase_conv_class,phase_conv_params)
         if isinstance(self.parent_device,NovaTechDDS9M):
             self.frequency.default_value = 0.1
             if 'device' in digital_gate and 'connection' in digital_gate:            
@@ -1235,16 +1243,16 @@ def generate_connection_table():
         all_devices.extend(device.get_all_children())
         
         # If the device has calibration parameters, then run some checks
-        if hasattr(device,"calibration_parameters"):
+        if hasattr(device,"unit_conversion_parameters"):
             try:
                 # Are we able to store the calibration parameter dictionary in the h5 file as a string?
-                assert(eval(repr(device.calibration_parameters)) == device.calibration_parameters)
+                assert(eval(repr(device.unit_conversion_parameters)) == device.unit_conversion_parameters)
             except(AssertionError,SyntaxError):
                 sys.stderr.write('ERROR: The calibration parameters for device "%s" are too complex to store as a string in the connection table\n'%device.name)
                 sys.exit(1)
             
             # Find the logest parameter string
-            cal_params = repr(device.calibration_parameters)
+            cal_params = repr(device.unit_conversion_parameters)
             if len(cal_params) > max_cal_param_length:
                 max_cal_param_length = len(cal_params)
         else:
@@ -1253,20 +1261,20 @@ def generate_connection_table():
         connection_table.append((device.name, device.__class__.__name__,
                                  device.parent_device.name if device.parent_device else str(None),
                                  str(device.connection if device.parent_device else str(None)),
-                                 device.calibration_class.__name__ if hasattr(device,"calibration_class") and device.calibration_class is not None else str(None),
+                                 device.unit_conversion_class.__name__ if hasattr(device,"unit_conversion_class") and device.unit_conversion_class is not None else str(None),
                                  cal_params))
     
     
     connection_table.sort(key=sortkey)
-    connection_table_dtypes = [('name','a256'), ('class','a256'), ('parent','a256'), ('connected to','a256'),('calibration class','a256'), ('calibration params','a'+str(max_cal_param_length))]
+    connection_table_dtypes = [('name','a256'), ('class','a256'), ('parent','a256'), ('parent port','a256'),('unit conversion class','a256'), ('unit conversion params','a'+str(max_cal_param_length))]
     connection_table_array = empty(len(connection_table),dtype=connection_table_dtypes)
     for i, row in enumerate(connection_table):
         connection_table_array[i] = row
     hdf5_file.create_dataset('connection table',compression=compression,data=connection_table_array)
-    print 'Name'.rjust(15), 'Class'.rjust(15), 'Parent'.rjust(15), 'connected to'.rjust(15), 'calibration class'.rjust(20), 'calibration params'.rjust(20)
-    print '----'.rjust(15), '-----'.rjust(15), '------'.rjust(15), '------------'.rjust(15), '-----------------'.rjust(20), '-----------------'.rjust(20)
+    print 'Name'.rjust(15), 'Class'.rjust(15), 'Parent'.rjust(15), 'pareent_port'.rjust(15), 'unit_conversion_class'.rjust(22), 'unit_conversion_params'.rjust(22)
+    print '----'.rjust(15), '-----'.rjust(15), '------'.rjust(15), '------------'.rjust(15), '---------------------'.rjust(22), '----------------------'.rjust(22)
     for row in connection_table:
-        print row[0].rjust(15), row[1].rjust(15), row[2].rjust(15), row[3].rjust(15),row[4].rjust(20),row[5].rjust(20)
+        print row[0].rjust(15), row[1].rjust(15), row[2].rjust(15), row[3].rjust(15),row[4].rjust(22),row[5].rjust(22)
                 
 def generate_code():
     for device in inventory:
