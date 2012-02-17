@@ -1007,12 +1007,12 @@ class Camera(DigitalOut):
             # Check for overlapping exposures:
             if start <= t <= end or start <= t+duration <= end:
                 sys.stderr.write('%s %s has two overlapping exposures: ' %(self.description, self.name) + \
-                                 'one at t = %fs for %fs, and another at t = %fs for %fs. Stopping.'%(t,duration,start,d))
+                                 'one at t = %fs for %fs, and another at t = %fs for %fs. Stopping.'%(t,duration,start,duration))
                 sys.exit(1)
             # Check for exposures too close together:
             if abs(start - (t + duration)) < self.minimum_recovery_time or abs((t+duration) - end) < self.minimum_recovery_time:
                 sys.stderr.write('%s %s has two exposures closer together than the minimum recovery time: ' %(self.description, self.name) + \
-                                 'one at t = %fs for %fs, and another at t = %fs for %fs. '%(t,duration,start,d) + \
+                                 'one at t = %fs for %fs, and another at t = %fs for %fs. '%(t,duration,start,duration) + \
                                  'The minimum recovery time is %fs. Stopping.'%self.minimum_recovery_time)
                 sys.exit(1)
         # Check for invalid frame type:                        
