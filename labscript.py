@@ -1256,7 +1256,7 @@ class ZaberStageController(Device):
         for stage in self.child_devices:
             # Call these functions to finalise the stage, they are standard functions of all subclasses of Output:
             ignore = stage.get_change_times()
-            stage.make_timeseries()
+            stage.make_timeseries([])
             stage.expand_timeseries()
             connection = [int(s) for s in stage.connection.split() if s.isdigit()][0]
             value = stage.raw_output[0]
