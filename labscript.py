@@ -544,12 +544,14 @@ class Output(Device):
     dtype = float32
     scale_factor = 1
     generation = 3
-    def __init__(self,name,parent_device,connection,limits = None,unit_conversion_class = None,unit_conversion_parameters = {}):
+    def __init__(self,name,parent_device,connection,limits = None,unit_conversion_class = None,unit_conversion_parameters = None):
         self.instructions = {}
         self.ramp_limits = [] # For checking ramps don't overlap
         self.clock_type = parent_device.clock_type
+        if not unit_conversion_parameters:
+            unit_conversion_parameters = {}
         self.unit_conversion_class = unit_conversion_class
-        self.unit_conversion_parameters = unit_conversion_parameters
+        self.unit_conversion_parameters = unit_conversion_parameters        
         Device.__init__(self,name,parent_device,connection)  
         
         # Instatiate the calibration
@@ -1281,7 +1283,6 @@ class ZaberStageController(Device):
         
         
 def generate_connection_table():
-    all_devices = []
     connection_table = []
     devicedict = {}
     def sortkey(row):
@@ -1292,7 +1293,6 @@ def generate_connection_table():
     max_cal_param_length = 4
     for device in inventory:
         devicedict[device.name] = device
-        all_devices.extend(device.get_all_children())
         
         # If the device has calibration parameters, then run some checks
         if hasattr(device,"unit_conversion_parameters"):
