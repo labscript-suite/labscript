@@ -785,7 +785,7 @@ class StaticAnalogQuantity(Output):
             sys.exit(1)
             
     # Overwrite these functions so we don't needlessly expand out a single data point to a many point array    
-    def make_timseries(self,*args,**kwargs):
+    def make_timeseries(self,*args,**kwargs):
         pass
     
     def expand_timeseries(self,*args,**kwargs):
@@ -1226,6 +1226,60 @@ class NovaTechDDS9M(IntermediateDevice):
         grp.create_dataset('TABLE_DATA',compression=compression,data=out_table) 
         grp.create_dataset('STATIC_DATA',compression=compression,data=static_table) 
 
+
+class ZaberStageTLSR150D(StaticAnalogQuantity):
+    minval=0
+    maxval=75590
+    description = 'Zaber Stage T-LSR150D'
+    
+class ZaberStageTLSR300D(StaticAnalogQuantity):
+    minval=0
+    maxval=151181
+    description = 'Zaber Stage T-LSR300D'
+    
+class ZaberStageTLS28M(StaticAnalogQuantity):
+    minval=0
+    maxval=282204
+    description = 'Zaber Stage T-LS28-M'
+
+
+class ZaberStageController(Device):
+    allowed_children = [ZaberStageTLSR150D,ZaberStageTLSR300D,ZaberStageTLS28M]
+    generation = 0
+    def __init__(self, name):
+        Device.__init__(self, name, None, None)
+        self.clock_type = None
+        
+        
+    def generate_code(self):
+        data_dict = {}
+        for stage in self.child_devices:
+            # Call these functions to finalise the stage, they are standard functions of all subclasses of Output:
+            ignore = stage.get_change_times()
+            stage.make_timeseries()
+            stage.expand_timeseries()
+            connection = [int(s) for s in stage.connection.split() if s.isdigit()][0]
+            value = stage.raw_output[0]
+            if not stage.minval <= value <= stage.maxval:
+                # error, out of bounds
+                sys.stderr.write('%s %s has value out of bounds. Set value: %s Allowed range: %s to %s.\n Stopping.\n'%(stage.description,stage.name,str(value),str(stage.minval),str(stage.maxval)))
+                sys.exit(1)
+            if not connection > 0:
+                # error, invalid connection number
+                sys.stderr.write('%s %s has invalid connection number: %s\n Stopping.\n'%(stage.description,stage.name,str(stage.connection)))
+                sys.exit(1)
+            data_dict[str(stage.connection)] = value
+        dtypes = [(conn, int) for conn in data_dict]
+        data_array = zeros(1, dtype=dtypes)
+        for conn in data_dict:
+            data_array[0][conn] = data_dict[conn] 
+        grp = hdf5_file.create_group('/devices/'+self.name)
+        grp.create_dataset('static_values', data=data_array)
+            
+            
+
+        
+        
 def generate_connection_table():
     all_devices = []
     connection_table = []
@@ -1278,14 +1332,21 @@ def generate_code():
     for device in inventory:
         if not device.parent_device:
             device.generate_code()
-            print
-            print device.name + ':'
-            print 'Fast clock'.ljust(15) + str(len(device.times)).rjust(15) + ' x ', str(device.times.dtype).ljust(15)
-            print 'Slow clock'.ljust(15) + str(len(device.change_times)).rjust(15) + ' x ', str(device.change_times.dtype).ljust(15)
-            for output in device.get_all_outputs():
-                print output.name.ljust(15) + str(len(output.raw_output)).rjust(15) + ' x ', str(output.raw_output.dtype).ljust(15)
-            print
-
+            if isinstance(device, PseudoClock):
+                print
+                print device.name + ':'
+                print 'Fast clock'.ljust(15) + str(len(device.times)).rjust(15) + ' x ', str(device.times.dtype).ljust(15)
+                print 'Slow clock'.ljust(15) + str(len(device.change_times)).rjust(15) + ' x ', str(device.change_times.dtype).ljust(15)
+                for output in device.get_all_outputs():
+                    print output.name.ljust(15) + str(len(output.raw_output)).rjust(15) + ' x ', str(output.raw_output.dtype).ljust(15)
+                print
+            else:
+                print
+                print device.name + ':'
+                for output in device.get_all_outputs():
+                    print output.name.ljust(15) + str(len(output.raw_output)).rjust(15) + ' x ', str(output.raw_output.dtype).ljust(15)
+                print
+                
 def stop(t):
     if t == 0:
         sys.stderr.write('ERROR: Stop time cannot be t=0. Please make your run a finite duration\n')
