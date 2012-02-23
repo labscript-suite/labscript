@@ -785,8 +785,8 @@ class StaticAnalogQuantity(Output):
             sys.exit(1)
             
     # Overwrite these functions so we don't needlessly expand out a single data point to a many point array    
-    def make_timeseries(self,*args,**kwargs):
-        pass
+#    def make_timeseries(self,*args,**kwargs):
+#        pass
     
     def expand_timeseries(self,*args,**kwargs):
         self.raw_output = array([self.instructions[0.0]])
