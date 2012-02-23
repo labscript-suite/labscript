@@ -1229,17 +1229,17 @@ class NovaTechDDS9M(IntermediateDevice):
 
 class ZaberStageTLSR150D(StaticAnalogQuantity):
     minval=0
-    maxval=75590
+    maxval=76346
     description = 'Zaber Stage T-LSR150D'
     
 class ZaberStageTLSR300D(StaticAnalogQuantity):
     minval=0
-    maxval=151181
+    maxval=151937
     description = 'Zaber Stage T-LSR300D'
     
 class ZaberStageTLS28M(StaticAnalogQuantity):
     minval=0
-    maxval=282204
+    maxval=282879
     description = 'Zaber Stage T-LS28-M'
 
 
