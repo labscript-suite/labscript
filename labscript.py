@@ -1211,8 +1211,6 @@ class NovaTechDDS9M(IntermediateDevice):
             dds = DDSs[connection]
             # The last two instructions are left blank, for BLACS
             # to fill in at program time.
-            print len(out_table['freq%d'%connection][:])
-            print len(dds.frequency.raw_output)
             out_table['freq%d'%connection][:] = dds.frequency.raw_output
             out_table['amp%d'%connection][:] = dds.amplitude.raw_output
             out_table['phase%d'%connection][:] = dds.phase.raw_output
