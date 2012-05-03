@@ -766,7 +766,11 @@ class AnalogQuantity(Output):
     def sine(self,t,duration,amplitude,angfreq,phase,dc_offset,samplerate,units=None):
         self.add_instruction(t, {'function': functions.sine(t,duration,amplitude,angfreq,phase,dc_offset), 'description':'sine wave',
                                  'end time': t + duration, 'clock rate': samplerate, 'units': units})
-        return duration   
+        return duration
+        
+    def sine_ramp(self,t,duration,initial,final,samplerate,units=None):
+        self.add_instruction(t, {'function': functions.sine_ramp(t,duration,initial,final), 'description':'sinusoidal ramp',
+                                 'end time': t + duration, 'clock rate': samplerate, 'units': units})   
                                  
     def constant(self,t,value,units=None):
         self.add_instruction(t,value,units)
