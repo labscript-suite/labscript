@@ -771,8 +771,11 @@ class AnalogQuantity(Output):
     def sine_ramp(self,t,duration,initial,final,samplerate,units=None):
         self.add_instruction(t, {'function': functions.sine_ramp(t,duration,initial,final), 'description':'sinusoidal ramp',
                                  'end time': t + duration, 'clock rate': samplerate, 'units': units})   
+        return duration
                                  
     def constant(self,t,value,units=None):
+        # verify that value can be converted to float
+        val = float(value)
         self.add_instruction(t,value,units)
 
 class AnalogOut(AnalogQuantity):
