@@ -622,7 +622,7 @@ class Output(Device):
             err = ' '.join(['WARNING: State of', self.description, self.name, 'at t=%ss'%str(time),
                  'has already been set to %s.'%self.instruction_to_string(self.instructions[time]),
                  'Overwriting to %s.\n'%self.instruction_to_string(instruction)])
-            sys.stderr.write(err + '\n')
+            sys.stderr.write(err)
         # Check that ramps don't collide
         if isinstance(instruction,dict):
             # No ramps allowed if this output is on a slow clock:
@@ -772,7 +772,11 @@ class AnalogQuantity(Output):
         self.add_instruction(t, {'function': functions.sine_ramp(t,duration,initial,final), 'description':'sinusoidal ramp',
                                  'end time': t + duration, 'clock rate': samplerate, 'units': units})   
         return duration
-                                 
+    
+    def exp_ramp(self,t,duration, initial, final, samplerate, zero=0, units=None):
+        self.add_instruction(t, {'function': functions.exp_ramp(t,duration,initial,final,zero), 'description':'exponential ramp',
+                             'end time': t + duration, 'clock rate': samplerate, 'units': units})
+                             
     def constant(self,t,value,units=None):
         # verify that value can be converted to float
         val = float(value)
@@ -1331,29 +1335,31 @@ def generate_connection_table():
     for i, row in enumerate(connection_table):
         connection_table_array[i] = row
     hdf5_file.create_dataset('connection table',compression=compression,data=connection_table_array)
-    print 'Name'.rjust(15), 'Class'.rjust(15), 'Parent'.rjust(15), 'pareent_port'.rjust(15), 'unit_conversion_class'.rjust(22), 'unit_conversion_params'.rjust(22)
-    print '----'.rjust(15), '-----'.rjust(15), '------'.rjust(15), '------------'.rjust(15), '---------------------'.rjust(22), '----------------------'.rjust(22)
-    for row in connection_table:
-        print row[0].rjust(15), row[1].rjust(15), row[2].rjust(15), row[3].rjust(15),row[4].rjust(22),row[5].rjust(22)
-                
+    if '-verbose' in sys.argv:
+        print 'Name'.rjust(15), 'Class'.rjust(15), 'Parent'.rjust(15), 'pareent_port'.rjust(15), 'unit_conversion_class'.rjust(22), 'unit_conversion_params'.rjust(22)
+        print '----'.rjust(15), '-----'.rjust(15), '------'.rjust(15), '------------'.rjust(15), '---------------------'.rjust(22), '----------------------'.rjust(22)
+        for row in connection_table:
+            print row[0].rjust(15), row[1].rjust(15), row[2].rjust(15), row[3].rjust(15),row[4].rjust(22),row[5].rjust(22)
+                    
 def generate_code():
     for device in inventory:
         if not device.parent_device:
             device.generate_code()
-            if isinstance(device, PseudoClock):
-                print
-                print device.name + ':'
-                print 'Fast clock'.ljust(15) + str(len(device.times)).rjust(15) + ' x ', str(device.times.dtype).ljust(15)
-                print 'Slow clock'.ljust(15) + str(len(device.change_times)).rjust(15) + ' x ', str(device.change_times.dtype).ljust(15)
-                for output in device.get_all_outputs():
-                    print output.name.ljust(15) + str(len(output.raw_output)).rjust(15) + ' x ', str(output.raw_output.dtype).ljust(15)
-                print
-            else:
-                print
-                print device.name + ':'
-                for output in device.get_all_outputs():
-                    print output.name.ljust(15) + str(len(output.raw_output)).rjust(15) + ' x ', str(output.raw_output.dtype).ljust(15)
-                print
+            if '-verbose' in sys.argv:
+                if isinstance(device, PseudoClock):
+                    print
+                    print device.name + ':'
+                    print 'Fast clock'.ljust(15) + str(len(device.times)).rjust(15) + ' x ', str(device.times.dtype).ljust(15)
+                    print 'Slow clock'.ljust(15) + str(len(device.change_times)).rjust(15) + ' x ', str(device.change_times.dtype).ljust(15)
+                    for output in device.get_all_outputs():
+                        print output.name.ljust(15) + str(len(output.raw_output)).rjust(15) + ' x ', str(output.raw_output.dtype).ljust(15)
+                    print
+                else:
+                    print
+                    print device.name + ':'
+                    for output in device.get_all_outputs():
+                        print output.name.ljust(15) + str(len(output.raw_output)).rjust(15) + ' x ', str(output.raw_output.dtype).ljust(15)
+                    print
                 
 def stop(t):
     if t == 0:
