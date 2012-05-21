@@ -638,6 +638,10 @@ class Output(Device):
                     sys.stderr.write(err + '\n')
                     sys.exit(1)
             self.ramp_limits.append((time,instruction['end time']))
+            # Check that start time is before end time:
+            if time > instruction['end time']:
+                sys.stderr.write('ERROR: %s %s has been passed a function ramp %s with a negative duration. Stopping.\n'%(self.description, self.name, self.instruction_to_string(instruction)))
+                sys.exit(1)
         # Else we have a "constant", single valued instruction
         else:
             # If we have units specified, convert the value
