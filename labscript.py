@@ -1,5 +1,6 @@
 import os
 import sys
+import subprocess
 import keyword
 import gtk
 
@@ -1274,7 +1275,6 @@ class ZaberStageController(Device):
         Device.__init__(self, name, None, None)
         self.clock_type = None
         
-        
     def generate_code(self):
         data_dict = {}
         for stage in self.child_devices:
@@ -1299,9 +1299,6 @@ class ZaberStageController(Device):
             data_array[0][conn] = data_dict[conn] 
         grp = hdf5_file.create_group('/devices/'+self.name)
         grp.create_dataset('static_values', data=data_array)
-            
-            
-
         
         
 def generate_connection_table():
@@ -1344,7 +1341,7 @@ def generate_connection_table():
     connection_table_array = empty(len(connection_table),dtype=connection_table_dtypes)
     for i, row in enumerate(connection_table):
         connection_table_array[i] = row
-    hdf5_file.create_dataset('connection table',compression=compression,data=connection_table_array)
+    hdf5_file.create_dataset('connection table', compression=compression, data=connection_table_array, maxshape=(None,))
     if '-verbose' in sys.argv:
         print 'Name'.rjust(15), 'Class'.rjust(15), 'Parent'.rjust(15), 'pareent_port'.rjust(15), 'unit_conversion_class'.rjust(22), 'unit_conversion_params'.rjust(22)
         print '----'.rjust(15), '-----'.rjust(15), '------'.rjust(15), '------------'.rjust(15), '---------------------'.rjust(22), '----------------------'.rjust(22)
@@ -1370,7 +1367,28 @@ def generate_code():
                     for output in device.get_all_outputs():
                         print output.name.ljust(15) + str(len(output.raw_output)).rjust(15) + ' x ', str(output.raw_output.dtype).ljust(15)
                     print
-                
+ 
+def save_labscripts():
+    labscriptfile = os.path.join(sys.path[0],sys.argv[0])
+    script = hdf5_file.create_dataset('script',compression=compression,data=open(labscriptfile).read())
+    script.attrs['name'] = os.path.basename(sys.argv[0])
+    script.attrs['path'] = sys.path[0]
+    try:
+        import labscriptlib
+        prefix = os.path.dirname(labscriptlib.__file__)
+        for module in sys.modules.values():
+            if hasattr(module,'__file__'):
+                path = os.path.abspath(module.__file__)
+                if path.startswith(prefix) and (path.endswith('.pyc') or path.endswith('.py')):
+                    path = path.replace('.pyc','.py')
+                    save_path = 'labscriptlib/' + path.replace(prefix,'').replace('\\','/')
+                    hdf5_file.create_dataset(save_path, compression=compression, data=open(path).read())
+                    process = subprocess.Popen(['svn', 'info', path], stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+                    info, err = process.communicate()
+                    hdf5_file[save_path].attrs['svn info'] = info + '\n' + err
+    except ImportError:
+        pass
+                   
 def stop(t):
     if t == 0:
         sys.stderr.write('ERROR: Stop time cannot be t=0. Please make your run a finite duration\n')
@@ -1379,12 +1397,9 @@ def stop(t):
         if not device.parent_device:  
             device.stop_time = t
     hdf5_file.create_group('/devices')
+    save_labscripts()
     generate_code()
     generate_connection_table()
-    labscriptfile = os.path.join(sys.path[0],sys.argv[0])
-    script = hdf5_file.create_dataset('script',compression=compression,data=open(labscriptfile).read())
-    script.attrs['name'] = os.path.basename(sys.argv[0])
-    script.attrs['path'] = sys.path[0]
     hdf5_file.close()
     
 def open_hdf5_file():
