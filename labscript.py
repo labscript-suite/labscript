@@ -457,7 +457,9 @@ class PulseBlaster(PseudoClock):
             # loop/endloop instructions go into 55 secs?
             quotient, remainder = divmod(instruction['step']/2.0,55.0)
             if remainder < 100e-9:
-                # Don't want the delay time to get too small:
+                # The remainder will be used for the total duration of the LOOP and END_LOOP instructions. 
+                # It must not be too short for this, if it is, take one LONG_DELAY iteration and give 
+                # its duration to the loop instructions:
                 quotient, remainder = quotient - 1, remainder + 55.0
                 assert quotient >= 0 # Something is wrong if this is not the case
                 
@@ -475,12 +477,15 @@ class PulseBlaster(PseudoClock):
                 pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs, 'enables':dds_enables,
                             'flags': flagstring, 'instruction': 'LONG_DELAY',
                             'data': int(2*quotient), 'delay': 55*1e9})
-                j += 1
                             
             pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs, 'enables':dds_enables,
                             'flags': flagstring, 'instruction': 'END_LOOP',
                             'data': j, 'delay': remainder*1e9})
-            j += 2
+                            
+            # Two instructions were used in the case of there being no LONG_DELAY, 
+            # otherwise three. This increment is done here so that the j referred
+            # to in the previous line still refers to the LOOP instruction.
+            j += 3 if quotient else 2
             try:
                 if self.clock[k+1]['slow_clock_tick']:
                     i += 1
