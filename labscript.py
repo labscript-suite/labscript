@@ -785,6 +785,7 @@ class AnalogQuantity(Output):
     def exp_ramp(self,t,duration, initial, final, samplerate, zero=0, units=None):
         self.add_instruction(t, {'function': functions.exp_ramp(t,duration,initial,final,zero), 'description':'exponential ramp',
                              'end time': t + duration, 'clock rate': samplerate, 'units': units})
+        return duration
                              
     def constant(self,t,value,units=None):
         # verify that value can be converted to float
