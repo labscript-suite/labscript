@@ -1383,7 +1383,13 @@ def save_labscripts():
                     path = path.replace('.pyc','.py')
                     save_path = 'labscriptlib/' + path.replace(prefix,'').replace('\\','/')
                     hdf5_file.create_dataset(save_path, compression=compression, data=open(path).read())
-                    process = subprocess.Popen(['svn', 'info', path], stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+                    # Make sure the command window doesn't show for the svn subprocesses in Windows:
+                    if os.name=='nt':
+                        startupinfo = subprocess.STARTUPINFO()
+                        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                    else:
+                        startupinfo = None
+                    process = subprocess.Popen(['svn', 'info', path], stdout=subprocess.PIPE,stderr=subprocess.PIPE,startupinfo=startupinfo)
                     info, err = process.communicate()
                     hdf5_file[save_path].attrs['svn info'] = info + '\n' + err
     except ImportError:
