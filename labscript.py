@@ -1386,7 +1386,7 @@ def save_labscripts():
                     # Make sure the command window doesn't show for the svn subprocesses in Windows:
                     if os.name=='nt':
                         startupinfo = subprocess.STARTUPINFO()
-                        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                        startupinfo.dwFlags |= 1 #subprocess.STARTF_USESHOWWINDOW # This variable isn't defined, but apparently it's equal to one.
                     else:
                         startupinfo = None
                     process = subprocess.Popen(['svn', 'info', path], stdout=subprocess.PIPE,stderr=subprocess.PIPE,startupinfo=startupinfo)
