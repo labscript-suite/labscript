@@ -2,7 +2,6 @@ import os
 import sys
 import subprocess
 import keyword
-import gtk
 
 import h5py
 from pylab import *
@@ -18,6 +17,9 @@ kHz = 1e3
 MHz = 1e6
 GHz = 1e9
 
+supress_mild_warnings = True
+compression = None # set to 'gzip' for compression 
+    
 def bitfield(arrays,dtype):
     """converts a list of arrays of ones and zeros into a single
     array of unsigned ints of the given datatype."""
@@ -64,7 +66,7 @@ class Device(object):
         self.parent_device = parent_device
         self.connection = connection
         self.child_devices = []
-        inventory.append(self)
+        compiler.inventory.append(self)
         if parent_device:
             parent_device.add_device(self)
         try:
@@ -72,17 +74,15 @@ class Device(object):
             exec '%s = None'%name
             assert '.' not in name
         except:
-            raise ValueError('%s is not a valid Python variable name. Stopping.\n'%name)
+            raise ValueError('%s is not a valid Python variable name.'%name)
         # Put self into the global namespace:
         __builtins__[name] = self
         
     def add_device(self,device):
         if any([isinstance(device,DeviceClass) for DeviceClass in self.allowed_children]):
             self.child_devices.append(device)
-             
         else:
-            sys.stdout.write('ERROR: devices of type %s cannot be attached to devices of type %s. \n'%(device.description,self.description))
-            sys.exit(1)
+            raise LabscriptError('Devices of type %s cannot be attached to devices of type %s.'%(device.description,self.description))
             
     def get_all_outputs(self):
         all_outputs = []
@@ -100,9 +100,9 @@ class Device(object):
               all_children.extend(device.get_all_children())
         return all_children
 
-    def generate_code(self):
+    def generate_code(self, hdf5_file):
         for device in self.child_devices:
-            device.generate_code()
+            device.generate_code(hdf5_file)
   
 
 class PseudoClock(Device):
@@ -130,9 +130,8 @@ class PseudoClock(Device):
         for i, t in enumerate(change_times[:-1]):
             dt = change_times[i+1] - t
             if dt < 1.0/self.clock_limit:
-                sys.stderr.write('ERROR: Commands have been issued to devices attached to %s at t= %s s and %s s. '%(self.name, str(t),str(change_times[i+1])) +
-                                  'One or more connected devices cannot support update delays shorter than %s sec. Stopping.\n'%str(1.0/self.clock_limit))
-                sys.exit(1)
+                raise LabscriptError('Commands have been issued to devices attached to %s at t= %s s and %s s. '%(self.name, str(t),str(change_times[i+1])) +
+                                     'One or more connected devices cannot support update delays shorter than %s sec.'%str(1.0/self.clock_limit))
         # If the device has no children, we still need it to have a
         # single instruction. So we'll add 0 as a change time:
         if not change_times:
@@ -140,9 +139,8 @@ class PseudoClock(Device):
         # Also add the stop time as as change time. First check that it isn't too close to the time of the last instruction:
         dt = self.stop_time - change_times[-1]
         if abs(dt) < 1.0/self.clock_limit:
-            sys.stderr.write('ERROR: The stop time of the experiment is t= %s s, but the last instruction for a device attached to %s is at t= %s s. '%( str(self.stop_time), self.name, str(change_times[-1])) +
-                              'One or more connected devices cannot support update delays shorter than %s sec. Please set the stop_time a bit later. Stopping.\n'%str(1.0/self.clock_limit))
-            sys.exit(1)
+            raise LabscriptError('The stop time of the experiment is t= %s s, but the last instruction for a device attached to %s is at t= %s s. '%( str(self.stop_time), self.name, str(change_times[-1])) +
+                                 'One or more connected devices cannot support update delays shorter than %s sec. Please set the stop_time a bit later.'%str(1.0/self.clock_limit))
         change_times.append(self.stop_time)
         # Sort change times so self.stop_time will be in the middle
         # somewhere if it is prior to the last actual instruction. Whilst
@@ -174,9 +172,8 @@ class PseudoClock(Device):
                     # It does have the highest clock rate? Then store that rate to max_rate:
                     maxrate = output.timeseries[i]['clock rate']
             if maxrate > self.clock_limit:
-                sys.stderr.write('ERROR: at t = %s sec, a clock rate of %s Hz was requested. '%(str(time),str(maxrate)) + 
-                                 'One or more devices connected to %s cannot support clock rates higher than %sHz. Stopping.\n'%(str(self.name),str(self.clock_limit)))
-                sys.exit(1)
+                raise LabscriptError('At t = %s sec, a clock rate of %s Hz was requested. '%(str(time),str(maxrate)) + 
+                                    'One or more devices connected to %s cannot support clock rates higher than %sHz.'%(str(self.name),str(self.clock_limit)))
                 
             if maxrate:
                 # If there was ramping at this timestep, how many clock ticks fit before the next instruction?
@@ -230,8 +227,7 @@ class PseudoClock(Device):
                     # Error if self.stop_time has been set to less
                     # than the time of the last instruction:
                     elif self.stop_time < time:
-                        sys.stderr.write('ERROR: %s %s has more instructions after the experiment\'s stop time. Stopping.\n'%(self.description,self.name))
-                        sys.exit(1)
+                        raise LabscriptError('%s %s has more instructions after the experiment\'s stop time.'%(self.description,self.name))
                     # If self.stop_time is the same as the time of the last
                     # instruction, then we'll get the last instruction
                     # out still, so that the total number of clock
@@ -254,9 +250,9 @@ class PseudoClock(Device):
         self.change_times = fastflatten(change_times, float32)
         self.times = fastflatten(all_times,float32)
         
-    def generate_code(self):
+    def generate_code(self, hdf5_file):
         self.generate_clock()
-        Device.generate_code(self)
+        Device.generate_code(self, hdf5_file)
             
 
 class PulseBlaster(PseudoClock):
@@ -293,26 +289,20 @@ class PulseBlaster(PseudoClock):
                     assert prefix == 'flag' or prefix == 'dds'
                     connection = int(connection)
                 except:
-                    sys.stderr.write('%s %s has invalid connection string: \'%s\'. '%(output.description,output.name,str(output.connection)) + 
-                                     'Format must be \'flag n\' with n an integer less than 12, or \'dds n\' with n less than 2. Stopping.\n')
-                    sys.exit(1)
+                    raise LabscriptError('%s %s has invalid connection string: \'%s\'. '%(output.description,output.name,str(output.connection)) + 
+                                         'Format must be \'flag n\' with n an integer less than 12, or \'dds n\' with n less than 2.')
                 if not connection < 12:
-                    sys.stderr.write('%s is set as connected to output connection %d of %s. Output connection \
-                                      number must be a integer less than 12\n.'%(output.name, connection, self.name))
-                    sys.exit(1)
+                    raise LabscriptError('%s is set as connected to output connection %d of %s. '%(output.name, connection, self.name) +
+                                         'Output connection number must be a integer less than 12.')
                 if prefix == 'dds' and not connection < 2:
-                    sys.stderr.write('%s is set as connected to output connection %d of %s. DDS output connection \
-                                      number must be a integer less than 2\n.'%(output.name, connection, self.name))
-                    sys.exit(1)
+                    raise LabscriptError('%s is set as connected to output connection %d of %s. '%(output.name, connection, self.name) +
+                                         'DDS output connection number must be a integer less than 2.')
                 if prefix == 'flag' and connection in [self.slow_clock_flag, self.fast_clock_flag]:
-                    sys.stderr.write('%s is set as connected to flag %d of %s.'%(output.name, connection, self.name) +
-                                     'This is one of the PulseBlaster\'s clock flags. Stopping.\n')
-                    sys.exit(1)
+                    raise LabscriptError('%s is set as connected to flag %d of %s.'%(output.name, connection, self.name) +
+                                         'This is one of the PulseBlaster\'s clock flags.')
                 for other_output in dig_outputs + dds_outputs:
                     if output.connection == other_output.connection:
-                        sys.stderr.write('%s and %s are both set as connected to %s of %s. Stopping.\n'%(output.name,
-                                         other_output.name, output.connection, self.name))
-                        sys.exit(1)
+                        raise LabscriptError('%s and %s are both set as connected to %s of %s.'%(output.name, other_output.name, output.connection, self.name))
                 if isinstance(output,DigitalOut):
                 	dig_outputs.append(output)
                 elif isinstance(output, DDS):
@@ -320,7 +310,7 @@ class PulseBlaster(PseudoClock):
                 
         return dig_outputs, dds_outputs
 
-    def generate_registers(self,dds_outputs):
+    def generate_registers(self, hdf5_file, dds_outputs):
         ampdicts = {}
         phasedicts = {}
         freqdicts = {}
@@ -336,15 +326,15 @@ class PulseBlaster(PseudoClock):
             
                 # Ensure that amplitudes are within bounds:
                 if any(output.amplitude.raw_output > 1)  or any(output.amplitude.raw_output < 0):
-                    sys.stderr.write('ERROR: %s %s '%(output.amplitude.description, output.amplitude.name) +
+                    raise LabscriptError('%s %s '%(output.amplitude.description, output.amplitude.name) +
                                       'can only have values between 0 and 1, ' + 
-                                      'the limit imposed by %s. Stopping.\n'%output.name)
+                                      'the limit imposed by %s.'%output.name)
                                       
                 # Ensure that frequencies are within bounds:
                 if any(output.frequency.raw_output > 150e6 )  or any(output.frequency.raw_output < 0):
-                    sys.stderr.write('ERROR: %s %s '%(output.frequency.description, output.frequency.name) +
+                    raise LabscriptError('%s %s '%(output.frequency.description, output.frequency.name) +
                                       'can only have values between 0Hz and and 150MHz, ' + 
-                                      'the limit imposed by %s. Stopping.\n'%output.name)
+                                      'the limit imposed by %s.'%output.name)
                                       
                 # Ensure that phase wraps around:
                 output.phase.raw_output %= 360
@@ -360,15 +350,12 @@ class PulseBlaster(PseudoClock):
                 freqs = set([0])
                                   
             if len(amps) > 1024:
-                sys.stderr.write('%s dds%d can only support 1024 amplitude registers, and %s have been requested. Stopping.\n'%(self.name, num, str(len(amps))))
-                sys.exit(1)
+                raise LabscriptError('%s dds%d can only support 1024 amplitude registers, and %s have been requested.'%(self.name, num, str(len(amps))))
             if len(phases) > 128:
-                sys.stderr.write('%s dds%d can only support 128 phase registers, and %s have been requested. Stopping.\n'%(self.name, num, str(len(phases))))
-                sys.exit(1)
+                raise LabscriptError('%s dds%d can only support 128 phase registers, and %s have been requested.'%(self.name, num, str(len(phases))))
             if len(freqs) > 1024:
-                sys.stderr.write('%s dds%d can only support 1024 frequency registers, and %s have been requested. Stopping.\n'%(self.name, num, str(len(freqs))))
-                sys.exit(1)
-                
+                raise LabscriptError('%s dds%d can only support 1024 frequency registers, and %s have been requested.'%(self.name, num, str(len(freqs))))
+                                
             # start counting at 1 to leave room for the dummy instruction,
             # which BLACS will fill in with the state of the front
             # panel:
@@ -392,7 +379,7 @@ class PulseBlaster(PseudoClock):
             
         return freqdicts, ampdicts, phasedicts
         
-    def convert_to_pb_inst(self, dig_outputs, dds_outputs, freqs, amps, phases):
+    def convert_to_pb_inst(self, hdf5_file, dig_outputs, dds_outputs, freqs, amps, phases):
         pb_inst = []
         # An array for storing the line numbers of the instructions at
         # which the slow clock ticks:
@@ -446,12 +433,11 @@ class PulseBlaster(PseudoClock):
                 slow_clock_indices.append(j)
             flagstring = ''.join([str(flag) for flag in flags])
             if instruction['reps'] > 1048576:
-                sys.stderr.write('ERROR: Pulseblaster cannot support more than 1048576 loop iterations. ' +
-                                 str(instruction['reps']) +' were requested at t = ' + str(instruction['start']) + '. '+
-                                 'This can be fixed easily enough by using nested loops. If it is needed, ' +
-                                  'please file a feature request at' +
-                                  'http://redmine.physics.monash.edu.au/projects/labscript. Stopping.\n')
-                sys.exit(1)
+                raise LabscriptError('Pulseblaster cannot support more than 1048576 loop iterations. ' +
+                                      str(instruction['reps']) +' were requested at t = ' + str(instruction['start']) + '. '+
+                                     'This can be fixed easily enough by using nested loops. If it is needed, ' +
+                                     'please file a feature request at' +
+                                     'http://redmine.physics.monash.edu.au/projects/labscript.')
                 
             # Instruction delays > 55 secs will require a LONG_DELAY
             # to be inserted. How many times does the delay of the
@@ -531,16 +517,12 @@ class PulseBlaster(PseudoClock):
         group.create_dataset('SLOW_CLOCK', compression=compression,data = self.change_times)   
         group.create_dataset('CLOCK_INDICES', compression=compression,data = slow_clock_indices)  
         group.attrs['stop_time'] = self.stop_time       
-#        for thing in pb_inst:
-#            for key,val in thing.items():
-#                print str(val).center(15),
-#            print
                               
-    def generate_code(self):
-        PseudoClock.generate_code(self)
+    def generate_code(self, hdf5_file):
+        PseudoClock.generate_code(self, hdf5_file)
         dig_outputs, dds_outputs = self.get_direct_outputs()
-        freqs, amps, phases = self.generate_registers(dds_outputs)
-        self.convert_to_pb_inst(dig_outputs, dds_outputs, freqs, amps, phases)
+        freqs, amps, phases = self.generate_registers(hdf5_file, dds_outputs)
+        self.convert_to_pb_inst(hdf5_file, dig_outputs, dds_outputs, freqs, amps, phases)
 
 
             
@@ -567,37 +549,31 @@ class Output(Device):
             for units in self.calibration.derived_units:
                 #Does the conversion to base units function exist for each defined unit type?
                 if not hasattr(self.calibration,units+"_to_base"):
-                    sys.stderr.write('The function "%s_to_base" does not exist within the calibration "%s" used in output "%s"'%(units,self.unit_conversion_class,self.name) + '\n')
-                    sys.exit(1)
+                    raise LabscriptError('The function "%s_to_base" does not exist within the calibration "%s" used in output "%s"'%(units,self.unit_conversion_class,self.name))
                 #Does the conversion to base units function exist for each defined unit type?
                 if not hasattr(self.calibration,units+"_from_base"):
-                    sys.stderr.write('The function "%s_from_base" does not exist within the calibration "%s" used in output "%s"'%(units,self.unit_conversion_class,self.name) + '\n')
-                    sys.exit(1)
+                    raise LabscriptError('The function "%s_from_base" does not exist within the calibration "%s" used in output "%s"'%(units,self.unit_conversion_class,self.name))
         
         # If limits exist, check they are valid
         # Here we specifically differentiate "None" from False as we will later have a conditional which relies on
         # self.limits being either a correct tuple, or "None"
         if limits is not None:
             if not isinstance(limits,tuple) or len(limits) is not 2:
-                sys.stderr.write('The limits for "%s" must be tuple of length 2. Eg. limits=(1,2)'%(self.name) + '\n')
-                sys.exit(1)
+                raise LabscriptError('The limits for "%s" must be tuple of length 2. Eg. limits=(1,2)'%(self.name))
             if limits[0] > limits[1]:
-                sys.stderr.write('The first element of the tuple myst be lower than the second element. Eg limits=(1,2), NOT limits=(2,1)\n')
-                sys.exit(1) 
+                raise LabscriptError('The first element of the tuple must be lower than the second element. Eg limits=(1,2), NOT limits=(2,1)')
         # Save limits even if they are None        
         self.limits = limits
     
     def apply_calibration(self,value,units):
         # Is a calibration in use?
         if self.unit_conversion_class is None:
-            sys.stderr.write('You can not specify the units in an instruction for output "%s" as it does not have a calibration associated with it'%(self.name) + '\n')
-            sys.exit(1)
-        
+            raise LabscriptError('You can not specify the units in an instruction for output "%s" as it does not have a calibration associated with it'%(self.name))
+                    
         # Does a calibration exist for the units specified?
         if units not in self.calibration.derived_units:
-            sys.stderr.write('The units "%s" does not exist within the calibration "%s" used in output "%s"'%(units,self.unit_conversion_class,self.name) + '\n')
-            sys.exit(1)
-        
+            raise LabscriptError('The units "%s" does not exist within the calibration "%s" used in output "%s"'%(units,self.unit_conversion_class,self.name))
+                    
         # Return the calibrated value
         return getattr(self.calibration,units+"_to_base")(value)
         
@@ -619,36 +595,32 @@ class Output(Device):
             instruction['end time'] = round(instruction['end time'],10)
         #Check that time is not negative:
         if time < 0:
-            err = ' '.join(['ERROR:', self.description, self.name, 'has an instruction at t=%ss.'%str(time),
-                 'Labscript cannot handle instructions earlier than the experiment start time (t=0). Stopping.\n'])
-            sys.stderr.write(err + '\n')
-            sys.exit(1)
+            err = ' '.join([self.description, self.name, 'has an instruction at t=%ss.'%str(time),
+                 'Labscript cannot handle instructions earlier than the experiment start time (t=0).'])
+            raise LabscriptError(err)
         #Check that this doesn't collide with previous instructions:
         if time in self.instructions.keys():
-            err = ' '.join(['WARNING: State of', self.description, self.name, 'at t=%ss'%str(time),
-                 'has already been set to %s.'%self.instruction_to_string(self.instructions[time]),
-                 'Overwriting to %s.\n'%self.instruction_to_string(instruction)])
-            sys.stderr.write(err)
+            message = ' '.join(['WARNING: State of', self.description, self.name, 'at t=%ss'%str(time),
+                      'has already been set to %s.'%self.instruction_to_string(self.instructions[time]),
+                      'Overwriting to %s.'%self.instruction_to_string(instruction)])
+            sys.stderr.write(message+'\n')
         # Check that ramps don't collide
         if isinstance(instruction,dict):
             # No ramps allowed if this output is on a slow clock:
             if self.clock_type == 'slow clock':
-                sys.stderr.write('ERROR: %s %s is on a slow clock.'%(self.description, self.name) + 
-                                 'It cannot have a function ramp as an instruction. Stopping.\n')
-                sys.exit(1)
+                raise LabscriptError('%s %s is on a slow clock.'%(self.description, self.name) + 
+                                     'It cannot have a function ramp as an instruction.')
             for start, end in self.ramp_limits:
                 if start < time < end or start < instruction['end time'] < end:
-                    err = ' '.join(['ERROR: State of', self.description, self.name, 'from t = %ss to %ss'%(str(start),str(end)),
+                    err = ' '.join(['State of', self.description, self.name, 'from t = %ss to %ss'%(str(start),str(end)),
                         'has already been set to %s.'%self.instruction_to_string(self.instructions[start]),
-                        'Cannot set to %s from t = %ss to %ss. Stopping.'%(self.instruction_to_string(instruction),str(time),str(instruction['end time']))])
-                    sys.stderr.write(err + '\n')
-                    sys.exit(1)
-            self.ramp_limits.append((time,instruction['end time']))
+                        'Cannot set to %s from t = %ss to %ss.'%(self.instruction_to_string(instruction),str(time),str(instruction['end time']))])
+                    raise LabscriptError(err)
+                self.ramp_limits.append((time,instruction['end time']))
             # Check that start time is before end time:
             if time > instruction['end time']:
-                sys.stderr.write('ERROR: %s %s has been passed a function ramp %s with a negative duration. Stopping.\n'%(self.description, self.name, self.instruction_to_string(instruction)))
-                sys.exit(1)
-        # Else we have a "constant", single valued instruction
+                raise LabscriptError('%s %s has been passed a function ramp %s with a negative duration.'%(self.description, self.name, self.instruction_to_string(instruction)))
+            # Else we have a "constant", single valued instruction
         else:
             # If we have units specified, convert the value
             if units is not None:
@@ -657,8 +629,7 @@ class Output(Device):
             # if we have limits, check the value is valid
             if self.limits:
                 if self.limits[0] <= instruction <= self.limits[1]:
-                    sys.stderr.write('You cannot program the value %d (base units) to %s as it falls outside the limits (%d to %d)'%(instruction,self.name,limits[0],limits[1]) + '\n')
-                    sys.exit(1)
+                    raise LabscriptError('You cannot program the value %d (base units) to %s as it falls outside the limits (%d to %d)'%(instruction,self.name,limits[0],limits[1]))
         self.instructions[time] = instruction
         
     def get_change_times(self):
@@ -670,12 +641,14 @@ class Output(Device):
         # Check if there are no instructions. Generate a warning and insert an
         # instruction telling the output to remain at zero.
         if not self.instructions:
-            sys.stderr.write(' '.join(['WARNING:', self.name, 'has no instructions. It will be set to %s for all time.\n'%self.instruction_to_string(self.default_value)]))
+            if not supress_mild_warnings:
+                sys.stderr.write(' '.join(['WARNING:', self.name, 'has no instructions. It will be set to %s for all time.\n'%self.instruction_to_string(self.default_value)]))
             self.add_instruction(0,self.default_value)  
         # Check if there are no instructions at t=0. Generate a warning and insert an
         # instruction telling the output to start at zero.
         if 0 not in self.instructions.keys():
-            sys.stderr.write(' '.join(['WARNING:', self.name, 'has no instructions at t=0. It will initially be set to %s.\n'%self.instruction_to_string(0)]))
+            if not supress_mild_warnings:
+               sys.stderr.write(' '.join(['WARNING:', self.name, 'has no instructions at t=0. It will initially be set to %s.\n'%self.instruction_to_string(0)]))
             self.add_instruction(0,self.default_value) 
         # Check that ramps have instructions following them.
         # If they don't, insert an instruction telling them to hold their final value.
@@ -753,8 +726,7 @@ class Output(Device):
                     # if we have limits, check the value is valid
                     if self.limits:
                         if ((outarray<self.limits[0])|(outarray>self.limits[1])).any():
-                            sys.stderr.write('The function %s called on "%s" at t=%d generated a value which falls outside the base unit limits (%d to %d)'%(self.timeseries[i]['function'],self.name,midpoints[0],limits[0],limits[1]) + '\n')
-                            sys.exit(1)
+                            raise LabscriptError('The function %s called on "%s" at t=%d generated a value which falls outside the base unit limits (%d to %d)'%(self.timeseries[i]['function'],self.name,midpoints[0],limits[0],limits[1]))
                 else:
                     outarray = empty(len(time),dtype=float32)
                     outarray.fill(self.timeseries[i])
@@ -812,13 +784,8 @@ class StaticAnalogQuantity(Output):
             self.add_instruction(0.0,value,units)
             self.value_set = True
         else:
-            sys.stderr.write('%s %s %s has already been set to %s (base units). It cannot also be set to %s (%s). Stopping.\n'%(self.description, self.name, parameter, str(self.instructions[0]), str(value),units if units is not None else "base units"))
-            sys.exit(1)
-            
-    # Overwrite these functions so we don't needlessly expand out a single data point to a many point array    
-#    def make_timeseries(self,*args,**kwargs):
-#        pass
-    
+            raise LabscriptError('%s %s %s has already been set to %s (base units). It cannot also be set to %s (%s).'%(self.description, self.name, parameter, str(self.instructions[0]), str(value),units if units is not None else "base units"))
+                        
     def expand_timeseries(self,*args,**kwargs):
         self.raw_output = array([self.instructions[0.0]])
 
@@ -862,11 +829,11 @@ class AnalogIn(Device):
   
 class IntermediateDevice(Device):
     generation = 1
+    
     def __init__(self, name, parent_device,clock_type):
         self.name = name
         if not clock_type in ['fast clock', 'slow clock']:
-            sys.stderr.write('Clock type for %s %s can only be \'slow clock\' or \'fast clock\'. Stopping\n'%(self.name,self.description))
-            sys.exit(1)
+            raise LabscriptError("Clock type for %s %s can only be 'slow clock' or 'fast clock'."%(self.name,self.description))
         Device.__init__(self, name, parent_device, clock_type)
         self.clock_type = clock_type
         self.parent_device.clock_limit = min([self.parent_device.clock_limit,self.clock_limit])
@@ -898,14 +865,13 @@ class NIBoard(IntermediateDevice):
             port, line = output.connection.replace('port','').replace('line','').split('/')
             port, line  = int(port),int(line)
             if port > 0:
-                sys.stderr.write('ERROR: Ports > 0 on NI Boards not implemented. Please use port 0, or file a feature request at redmine.physics.monash.edu.au/labscript. Stopping.\n')
-                sys.exit(1)
+                raise LabscriptError('Ports > 0 on NI Boards not implemented. Please use port 0, or file a feature request at redmine.physics.monash.edu.au/labscript.')
             outputarray[line] = output.raw_output
         bits = bitfield(outputarray,dtype=self.digital_dtype)
         return bits
             
-    def generate_code(self):
-        Device.generate_code(self)
+    def generate_code(self, hdf5_file):
+        Device.generate_code(self, hdf5_file)
         analogs = {}
         digitals = {}
         inputs = {}
@@ -926,10 +892,9 @@ class NIBoard(IntermediateDevice):
             output = analogs[connection]
             if any(output.raw_output > 10 )  or any(output.raw_output < -10 ):
                 # Bounds checking:
-                sys.stderr.write('ERROR: %s %s '%(output.description, output.name) +
+                raise LabscriptError('%s %s '%(output.description, output.name) +
                                   'can only have values between -10 and 10 Volts, ' + 
-                                  'the limit imposed by %s. Stopping.\n'%self.name)
-                sys.exit(1)
+                                  'the limit imposed by %s.'%self.name)
             analog_out_table[:,i] = output.raw_output
             analog_out_attrs.append(self.name+'/'+connection)
         input_connections = inputs.keys()
@@ -965,22 +930,22 @@ class NIBoard(IntermediateDevice):
             grp.attrs['acquisition_rate'] = self.acquisition_rate
         grp.attrs['clock_terminal'] = self.clock_terminal
         
+        
 class NI_PCI_6733(NIBoard):
-            
     description = 'NI-PCI-6733'
     n_analogs = 8
     n_digitals = 0
     n_analog_ins = 0
     digital_dtype = uint32
     
-    def generate_code(self):
-        NIBoard.generate_code(self)
+    def generate_code(self, hdf5_file):
+        NIBoard.generate_code(self, hdf5_file)
         if len(self.child_devices) % 2:
-            sys.stderr.write('ERROR: %s %s must have an even numer of analog outputs '%(self.description, self.name) +
+            raise LabscriptError('%s %s must have an even numer of analog outputs '%(self.description, self.name) +
                              'in order to guarantee an even total number of samples, which is a limitation of the DAQmx library. ' +
-                             'Please add a dummy output device or remove an output you\'re not using, so that there are an even number of outputs. Sorry, this is annoying I know :). Stopping.')
-            sys.exit(1)
-            
+                             'Please add a dummy output device or remove an output you\'re not using, so that there are an even number of outputs. Sorry, this is annoying I know :).')
+        
+                        
 class NI_PCIe_6363(NIBoard):
     description = 'NI-PCIe-6363'
     n_analogs = 4
@@ -992,18 +957,10 @@ class NI_PCIe_6363(NIBoard):
 class Shutter(DigitalOut):
     description = 'shutter'
     allowed_states = {1:'open', 0:'closed'}  
+    
     def __init__(self,name,parent_device,connection,delay=(0,0)):
         DigitalOut.__init__(self,name,parent_device,connection)
         self.open_delay, self.close_delay = delay
-        
-        classname = self.__class__.__name__
-        calibration_table_dtypes = [('name','a256'), ('open_delay',float), ('close_delay',float)]
-        if classname not in metadata_group:
-            metadata_group.create_dataset(classname, (0,), dtype=calibration_table_dtypes, maxshape=(None,))
-        metadata = (self.name,self.open_delay,self.close_delay)
-        dataset = metadata_group[classname]
-        dataset.resize((len(metadata_group[classname])+1,))
-        dataset[len(metadata_group[classname])-1] = metadata
         
     # If a shutter is asked to do something at t=0, it cannot start moving
     # earlier than that.  So initial shutter states will have imprecise
@@ -1015,7 +972,17 @@ class Shutter(DigitalOut):
     def close(self,t):
         self.go_low(t-self.close_delay if t >= self.close_delay else 0)  
 
-
+    def generate_code(self, hdf5_file):
+        classname = self.__class__.__name__
+        calibration_table_dtypes = [('name','a256'), ('open_delay',float), ('close_delay',float)]
+        if classname not in hdf5_file['calibrations']:
+            hdf5_file['calibrations'].create_dataset(classname, (0,), dtype=calibration_table_dtypes, maxshape=(None,))
+        metadata = (self.name,self.open_delay,self.close_delay)
+        dataset = hdf5_file['calibrations'][classname]
+        dataset.resize((len(dataset)+1,))
+        dataset[len(dataset)-1] = metadata
+        
+        
 class Camera(DigitalOut):
     description = 'Generic Camera'
     frame_types = ['atoms','flat','dark','fluoro','clean']
@@ -1037,23 +1004,20 @@ class Camera(DigitalOut):
             end = start + duration
             # Check for overlapping exposures:
             if start <= t <= end or start <= t+duration <= end:
-                sys.stderr.write('%s %s has two overlapping exposures: ' %(self.description, self.name) + \
-                                 'one at t = %fs for %fs, and another at t = %fs for %fs. Stopping.'%(t,duration,start,duration))
-                sys.exit(1)
+                raise LabscriptError('%s %s has two overlapping exposures: ' %(self.description, self.name) + \
+                                 'one at t = %fs for %fs, and another at t = %fs for %fs.'%(t,duration,start,duration))
             # Check for exposures too close together:
             if abs(start - (t + duration)) < self.minimum_recovery_time or abs((t+duration) - end) < self.minimum_recovery_time:
-                sys.stderr.write('%s %s has two exposures closer together than the minimum recovery time: ' %(self.description, self.name) + \
+                raise LabscriptError('%s %s has two exposures closer together than the minimum recovery time: ' %(self.description, self.name) + \
                                  'one at t = %fs for %fs, and another at t = %fs for %fs. '%(t,duration,start,duration) + \
-                                 'The minimum recovery time is %fs. Stopping.'%self.minimum_recovery_time)
-                sys.exit(1)
+                                 'The minimum recovery time is %fs.'%self.minimum_recovery_time)
         # Check for invalid frame type:                        
         if not frametype in self.frame_types:
-            sys.stderr.write('%s is not a valid frame type for %s %s.'%(str(frametype), self.description, self.name) +\
+            raise LabscriptError('%s is not a valid frame type for %s %s.'%(str(frametype), self.description, self.name) +\
                              'Allowed frame types are: \n%s'%'\n'.join(self.frame_types))
-            sys.exit(1)
         self.exposures.append((name, t, frametype))
         
-    def generate_code(self):
+    def generate_code(self, hdf5_file):
         table_dtypes = [('name','a256'), ('time',float), ('frametype','a256')]
         data = array(self.exposures,dtype=table_dtypes)
         group = hdf5_file['devices'].create_group(self.name)
@@ -1080,12 +1044,10 @@ class DDS(Device):
                 self.gate = DigitalOut(self.name+'_gate',digital_gate['device'],digital_gate['connection'])
             # Did they only put one key in the dictionary, or use the wrong keywords?
             elif len(digital_gate) > 0:
-                sys.stderr.write('You must specify the "device" and "connection" for the digital gate of %s.'%(self.name))
-                sys.exit(1)
+                raise LabscriptError('You must specify the "device" and "connection" for the digital gate of %s.'%(self.name))
         elif isinstance(self.parent_device,PulseBlaster):
             if 'device' in digital_gate and 'connection' in digital_gate: 
-                sys.stderr.write('You cannot specify a digital gate for a DDS connected to %s. The digital gate is always internal to the Pulseblaster.'%(self.parent_device.name))
-                sys.exit(1)
+                raise LabscriptError('You cannot specify a digital gate for a DDS connected to %s. The digital gate is always internal to the Pulseblaster.'%(self.parent_device.name))
             self.gate = DigitalQuantity(self.name+'_gate',self,'gate')
             
     def setamp(self,t,value,units=None):
@@ -1098,16 +1060,15 @@ class DDS(Device):
         if self.gate:
             self.gate.go_high(t)
         else:
-            sys.stderr.write('DDS %s does not have a digital gate, so you cannot use the enable(t) method.'%(self.name))
-            sys.exit(1)
-            
+            raise LabscriptError('DDS %s does not have a digital gate, so you cannot use the enable(t) method.'%(self.name))
+                        
     def disable(self,t):
         if self.gate:
             self.gate.go_low(t)
         else:
-            sys.stderr.write('DDS %s does not have a digital gate, so you cannot use the disable(t) method.'%(self.name))
-            sys.exit(1)
-        
+            raise LabscriptError('DDS %s does not have a digital gate, so you cannot use the disable(t) method.'%(self.name))
+                
+                    
 class StaticDDS(Device):
     description = 'Static RF'
     allowed_children = [StaticAnalogQuantity,DigitalOut]
@@ -1124,28 +1085,30 @@ class StaticDDS(Device):
                 self.gate = DigitalOut(self.name+'_gate',digital_gate['device'],digital_gate['connection'])
             # Did they only put one key in the dictionary, or use the wrong keywords?
             elif len(digital_gate) > 0:
-                sys.stderr.write('You must specify the "device" and "connection" for the digital gate of %s.'%(self.name))
-                sys.exit(1)
+                raise LabscriptError('You must specify the "device" and "connection" for the digital gate of %s.'%(self.name))
+                
     def setamp(self,value,units=None):
         self.amplitude.constant(value,units)
+        
     def setfreq(self,value,units=None):
         self.frequency.constant(value,units)
+        
     def setphase(self,value,units=None):
-        self.phase.constant(value,units)        
+        self.phase.constant(value,units) 
+               
     def enable(self,t):
         if self.gate:
             self.gate.go_high(t)
         else:
-            sys.stderr.write('DDS %s does not have a digital gate, so you cannot use the enable(t) method.'%(self.name))
-            sys.exit(1)
-            
+            raise LabscriptError('DDS %s does not have a digital gate, so you cannot use the enable(t) method.'%(self.name))
+                        
     def disable(self,t):
         if self.gate:
             self.gate.go_low(t)
         else:
-            sys.stderr.write('DDS %s does not have a digital gate, so you cannot use the disable(t) method.'%(self.name))
-            sys.exit(1)
-        
+            raise LabscriptError('DDS %s does not have a digital gate, so you cannot use the disable(t) method.'%(self.name))
+                    
+                    
 class NovaTechDDS9M(IntermediateDevice):
     description = 'NT-DDS9M'
     allowed_children = [DDS, StaticDDS]
@@ -1154,10 +1117,9 @@ class NovaTechDDS9M(IntermediateDevice):
     def quantise_freq(self,data, device):
         # Ensure that frequencies are within bounds:
         if any(data > 171e6 )  or any(data < 0.1 ):
-            sys.stderr.write('ERROR: %s %s '%(device.description, device.name) +
+            raise LabscriptError('%s %s '%(device.description, device.name) +
                               'can only have frequencies between 0.1Hz and 171MHz, ' + 
-                              'the limit imposed by %s. Stopping.\n'%self.name)
-            sys.exit(1)
+                              'the limit imposed by %s.'%self.name)
         # It's faster to add 0.5 then typecast than to round to integers first:
         data = array((10*data)+0.5,dtype=uint32)
         scale_factor = 10
@@ -1174,31 +1136,28 @@ class NovaTechDDS9M(IntermediateDevice):
     def quantise_amp(self,data,device):
         # ensure that amplitudes are within bounds:
         if any(data > 1 )  or any(data < 0):
-            sys.stderr.write('ERROR: %s %s '%(device.description, device.name) +
+            raise LabscriptError('%s %s '%(device.description, device.name) +
                               'can only have amplitudes between 0 and 1 (Volts peak to peak approx), ' + 
-                              'the limit imposed by %s. Stopping.\n'%self.name)
-            sys.exit(1)
+                              'the limit imposed by %s.'%self.name)
         # It's faster to add 0.5 then typecast than to round to integers first:
         data = array((1023*data)+0.5,dtype=uint16)
         scale_factor = 1023
         return data, scale_factor
         
-    def generate_code(self):
+    def generate_code(self, hdf5_file):
         DDSs = {}
         for output in self.child_devices:
-        # Check that the instructions will fit into RAM:
+            # Check that the instructions will fit into RAM:
             if isinstance(output, DDS) and len(output.frequency.raw_output) > 16384 - 2: # -2 to include space for dummy instructions
-                sys.stderr.write('ERROR: %s can only support 16383 instructions. '%self.name +
-                                 'Please decrease the sample rates of devices on the same clock, ' + 
-                                 'or connect %s to a different pseudoclock. Stopping.\n'%self.name)
-                sys.exit(1)
+                raise LabscriptError('%s can only support 16383 instructions. '%self.name +
+                                     'Please decrease the sample rates of devices on the same clock, ' + 
+                                     'or connect %s to a different pseudoclock.'%self.name)
             try:
                 prefix, channel = output.connection.split()
                 channel = int(channel)
             except:
-                sys.stderr.write('%s %s has invalid connection string: \'%s\'. '%(output.description,output.name,str(output.connection)) + 
-                                     'Format must be \'channel n\' with n from 0 to 4. Stopping.\n')
-                sys.exit(1)
+                raise LabscriptError('%s %s has invalid connection string: \'%s\'. '%(output.description,output.name,str(output.connection)) + 
+                                     'Format must be \'channel n\' with n from 0 to 4.')
             DDSs[channel] = output
         for connection in DDSs:
             if connection in range(4):
@@ -1207,10 +1166,9 @@ class NovaTechDDS9M(IntermediateDevice):
                 dds.phase.raw_output, dds.phase.scale_factor = self.quantise_phase(dds.phase.raw_output, dds)
                 dds.amplitude.raw_output, dds.amplitude.scale_factor = self.quantise_amp(dds.amplitude.raw_output, dds)
             else:
-                sys.stderr.write('%s %s has invalid connection string: \'%s\'. '%(dds.description,dds.name,str(dds.connection)) + 
-                                 'Format must be \'channel n\' with n from 0 to 4. Stopping.\n')
-                sys.exit(1)
-                
+                raise LabscriptError('%s %s has invalid connection string: \'%s\'. '%(dds.description,dds.name,str(dds.connection)) + 
+                                     'Format must be \'channel n\' with n from 0 to 4.')
+                                
         dtypes = [('freq%d'%i,uint32) for i in range(2)] + \
                  [('phase%d'%i,uint16) for i in range(2)] + \
                  [('amp%d'%i,uint16) for i in range(2)]
@@ -1279,7 +1237,7 @@ class ZaberStageController(Device):
         Device.__init__(self, name, None, None)
         self.clock_type = None
         
-    def generate_code(self):
+    def generate_code(self, hdf5_file):
         data_dict = {}
         for stage in self.child_devices:
             # Call these functions to finalise the stage, they are standard functions of all subclasses of Output:
@@ -1290,12 +1248,10 @@ class ZaberStageController(Device):
             value = stage.raw_output[0]
             if not stage.minval <= value <= stage.maxval:
                 # error, out of bounds
-                sys.stderr.write('%s %s has value out of bounds. Set value: %s Allowed range: %s to %s.\n Stopping.\n'%(stage.description,stage.name,str(value),str(stage.minval),str(stage.maxval)))
-                sys.exit(1)
+                raise LabscriptError('%s %s has value out of bounds. Set value: %s Allowed range: %s to %s.'%(stage.description,stage.name,str(value),str(stage.minval),str(stage.maxval)))
             if not connection > 0:
                 # error, invalid connection number
-                sys.stderr.write('%s %s has invalid connection number: %s\n Stopping.\n'%(stage.description,stage.name,str(stage.connection)))
-                sys.exit(1)
+                raise LabscriptError('%s %s has invalid connection number: %s'%(stage.description,stage.name,str(stage.connection)))
             data_dict[str(stage.connection)] = value
         dtypes = [(conn, int) for conn in data_dict]
         data_array = zeros(1, dtype=dtypes)
@@ -1304,8 +1260,11 @@ class ZaberStageController(Device):
         grp = hdf5_file.create_group('/devices/'+self.name)
         grp.create_dataset('static_values', data=data_array)
         
-        
-def generate_connection_table():
+
+class LabscriptError(Exception):
+    pass
+            
+def generate_connection_table(hdf5_file):
     connection_table = []
     devicedict = {}
     def sortkey(row):
@@ -1314,7 +1273,7 @@ def generate_connection_table():
     
     # This starts at 4 to accomodate "None"
     max_cal_param_length = 4
-    for device in inventory:
+    for device in compiler.inventory:
         devicedict[device.name] = device
         
         # If the device has calibration parameters, then run some checks
@@ -1323,9 +1282,8 @@ def generate_connection_table():
                 # Are we able to store the calibration parameter dictionary in the h5 file as a string?
                 assert(eval(repr(device.unit_conversion_parameters)) == device.unit_conversion_parameters)
             except(AssertionError,SyntaxError):
-                sys.stderr.write('ERROR: The calibration parameters for device "%s" are too complex to store as a string in the connection table\n'%device.name)
-                sys.exit(1)
-            
+                raise LabscriptError('The calibration parameters for device "%s" are too complex to store as a string in the connection table'%device.name)
+                            
             # Find the logest parameter string
             cal_params = repr(device.unit_conversion_parameters)
             if len(cal_params) > max_cal_param_length:
@@ -1339,40 +1297,15 @@ def generate_connection_table():
                                  device.unit_conversion_class.__name__ if hasattr(device,"unit_conversion_class") and device.unit_conversion_class is not None else str(None),
                                  cal_params))
     
-    
     connection_table.sort(key=sortkey)
     connection_table_dtypes = [('name','a256'), ('class','a256'), ('parent','a256'), ('parent port','a256'),('unit conversion class','a256'), ('unit conversion params','a'+str(max_cal_param_length))]
     connection_table_array = empty(len(connection_table),dtype=connection_table_dtypes)
     for i, row in enumerate(connection_table):
         connection_table_array[i] = row
     hdf5_file.create_dataset('connection table', compression=compression, data=connection_table_array, maxshape=(None,))
-    if '-verbose' in sys.argv:
-        print 'Name'.rjust(15), 'Class'.rjust(15), 'Parent'.rjust(15), 'pareent_port'.rjust(15), 'unit_conversion_class'.rjust(22), 'unit_conversion_params'.rjust(22)
-        print '----'.rjust(15), '-----'.rjust(15), '------'.rjust(15), '------------'.rjust(15), '---------------------'.rjust(22), '----------------------'.rjust(22)
-        for row in connection_table:
-            print row[0].rjust(15), row[1].rjust(15), row[2].rjust(15), row[3].rjust(15),row[4].rjust(22),row[5].rjust(22)
-                    
-def generate_code():
-    for device in inventory:
-        if not device.parent_device:
-            device.generate_code()
-            if '-verbose' in sys.argv:
-                if isinstance(device, PseudoClock):
-                    print
-                    print device.name + ':'
-                    print 'Fast clock'.ljust(15) + str(len(device.times)).rjust(15) + ' x ', str(device.times.dtype).ljust(15)
-                    print 'Slow clock'.ljust(15) + str(len(device.change_times)).rjust(15) + ' x ', str(device.change_times.dtype).ljust(15)
-                    for output in device.get_all_outputs():
-                        print output.name.ljust(15) + str(len(output.raw_output)).rjust(15) + ' x ', str(output.raw_output.dtype).ljust(15)
-                    print
-                else:
-                    print
-                    print device.name + ':'
-                    for output in device.get_all_outputs():
-                        print output.name.ljust(15) + str(len(output.raw_output)).rjust(15) + ' x ', str(output.raw_output.dtype).ljust(15)
-                    print
- 
-def save_labscripts():
+  
+  
+def save_labscripts(hdf5_file):
     labscriptfile = os.path.join(sys.path[0],sys.argv[0])
     script = hdf5_file.create_dataset('script',compression=compression,data=open(labscriptfile).read())
     script.attrs['name'] = os.path.basename(sys.argv[0])
@@ -1398,95 +1331,70 @@ def save_labscripts():
                     hdf5_file[save_path].attrs['svn info'] = info + '\n' + err
     except ImportError:
         pass
-                   
+      
+def generate_code():
+    if compiler.hdf5_filename is None:
+        raise LabscriptError('hdf5 file for compilation not set. Please call labscript_init')
+    with h5py.File(compiler.hdf5_filename) as hdf5_file:
+        hdf5_file.create_group('devices')
+        hdf5_file.create_group('calibrations')
+        for device in compiler.inventory:
+            if not device.parent_device:
+                device.generate_code(hdf5_file)
+        generate_connection_table(hdf5_file)
+        save_labscripts(hdf5_file)
+                           
 def stop(t):
+    # Indicate the end of an experiment and initiate compilation:
     if t == 0:
-        sys.stderr.write('ERROR: Stop time cannot be t=0. Please make your run a finite duration\n')
-        sys.exit(1)
-    for device in inventory:
+        raise LabscriptError('Stop time cannot be t=0. Please make your run a finite duration')
+    for device in compiler.inventory:
         if not device.parent_device:  
             device.stop_time = t
-    hdf5_file.create_group('/devices')
-    save_labscripts()
     generate_code()
-    generate_connection_table()
-    hdf5_file.close()
-    
-def open_hdf5_file():
-    try:
-        assert len(sys.argv) > 1
-        hdf5_filename = sys.argv[-1]
-        assert hdf5_filename.lower().endswith('h5')
-    except:
-        if not sys.path[0]:
-            sys.stderr.write('ERROR: Can\'t run labscript interactively. Labscript relies on there being a script file. If you\'re just checking that you can import labscript, yes you can :)\n')
-            sys.exit(1)
-        newh5file = os.path.join(sys.path[0],sys.argv[0].split('.py')[0]+'.h5')
-        if os.path.exists(newh5file) and '-replace' not in sys.argv:
-            dialog = gtk.MessageDialog(None,0,gtk.MESSAGE_WARNING, gtk.BUTTONS_OK_CANCEL,
-             'Replace existing hdf5 file ' + sys.argv[0].split('.py')[0]+'.h5?')
-            dialog.present()
-            response = dialog.run()
-            # There is no gtk mainloop to make the dialog box
-            # vanish. We'll do a little mainloop here until there are
-            # no more events pending:
-            dialog.destroy()
-            while gtk.events_pending():
-                gtk.main_iteration()
-            if not response == gtk.RESPONSE_OK:
-                sys.stderr.write('ERROR: No hdf5 file provided, and not overwriting previously existing h5 file with default filename. Stopping.\n')
-                sys.exit(1)
-        f = h5py.File(newh5file,'w')
-        group = f.create_group('globals')
-        f.close()
-        hdf5_filename = newh5file
+
+
+def load_globals(hdf5_filename):
+    with h5py.File(hdf5_filename,'r') as hdf5_file:
+        params = dict(hdf5_file['globals'].attrs)
+        for name in params.keys():
+            if name in globals().keys() or name in locals().keys() or name in dir(__builtins__):
+                raise LabscriptError('Error whilst parsing globals from %s. \'%s\''%(sys.argv[1],name) +
+                                     ' is already a name used by Python, labscript, or Pylab.'+
+                                     ' Please choose a different variable name to avoid a conflict.')
+            if name in keyword.kwlist:
+                raise LabscriptError('Error whilst parsing globals from %s. \'%s\''%(sys.argv[1],name) +
+                                     ' is a reserved Python keyword.' +
+                                     ' Please choose a different variable name.')
+            try:
+                assert '.' not in name
+                exec(name + ' = 0')
+                exec('del ' + name )
+            except:
+                raise LabscriptError('ERROR whilst parsing globals from %s. \'%s\''%(sys.argv[1],name) +
+                                     'is not a valid Python variable name.' +
+                                     ' Please choose a different variable name.')
+            __builtins__[name] = params[name]
+            
+            
+def labscript_init(hdf5_filename, new=False):
+    if new:
+        with h5py.File(hdf5_filename ,'w') as hdf5_file:
+            hdf5_file.create_group('globals')
     if not os.path.exists(hdf5_filename):
-        sys.stderr.write('ERROR: Provided hdf5 filename %s doesn\'t exist. Stopping.\n'%hdf5_filename)
-        sys.exit(1)
-    try:
-        hdf5_file = h5py.File(hdf5_filename,'a')
-    except:
-        sys.stderr.write('ERROR: Couldn\'t open %s for writing. '%hdf5_filename +
-                         'Check it is a valid hdf5 file and is not read only.\n')
-        sys.exit(1) 
-    return hdf5_file      
-        
-                                         
-inventory = []
-analyses = []
-hdf5_file = open_hdf5_file()
-params = dict(hdf5_file['globals'].attrs)
-if '-compress' in sys.argv:
-    compression = 'gzip'
-else:
-    compression = None
-        
-for name in params.keys():
-    if name in globals().keys() or name in locals().keys() or name in dir(__builtins__):
-        sys.stderr.write('ERROR whilst parsing globals from %s. \'%s\''%(sys.argv[1],name) +
-                         ' is already a name used by Python, labscript, or Pylab.'+
-                         ' Please choose a different variable name to avoid a conflict.\n')
-        sys.exit(1)
-    if name in keyword.kwlist:
-        sys.stderr.write('ERROR whilst parsing globals from %s. \'%s\''%(sys.argv[1],name) +
-                         ' is a reserved Python keyword.' +
-                         ' Please choose a different variable name.\n')
-        sys.exit(1)
-        
-    try:
-        assert '.' not in name
-        exec(name + ' = 0')
-        exec('del ' + name )
-    except:
-        sys.stderr.write('ERROR whilst parsing globals from %s. \'%s\''%(sys.argv[1],name) +
-                         'is not a valid Python variable name.' +
-                         ' Please choose a different variable name.\n')
-        sys.exit(1)
-    __builtins__[name] = params[name]
+        raise LabscriptError('Provided hdf5 filename %s doesn\'t exist.'%hdf5_filename)
+    load_globals(hdf5_filename)
+    compiler.hdf5_filename = hdf5_filename
     
-if params.keys():
-    # get rid of the loop variable -- it caused a subtle bug once by
-    # continuing to exist:
-    del name
-    
-metadata_group = hdf5_file.create_group('calibrations')
+class compiler:
+    # All defined devices:
+    inventory = []
+    # The filepath of the h5 file containing globals and which will
+    # contain compilation output:
+    hdf5_filename = None
+ 
+# Initialisation, runs at import:
+if len(sys.argv) > 1:
+    labscript_init(sys.argv[1])
+elif sys.argv[0]:
+    labscript_init(sys.argv[0].replace('.py','.h5'),new=True)
