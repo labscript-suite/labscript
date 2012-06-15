@@ -17,8 +17,9 @@ kHz = 1e3
 MHz = 1e6
 GHz = 1e9
 
-supress_mild_warnings = True
-compression = None # set to 'gzip' for compression 
+class config:
+    supress_mild_warnings = True
+    compression = None # set to 'gzip' for compression 
     
 def bitfield(arrays,dtype):
     """converts a list of arrays of ones and zeros into a single
@@ -373,9 +374,9 @@ class PulseBlaster(PseudoClock):
             phase_table = array([0] + list(phases), dtype = float64)
             
             subgroup = group.create_group('DDS%d'%num)
-            subgroup.create_dataset('FREQ_REGS', compression=compression,data = freq_table)
-            subgroup.create_dataset('AMP_REGS', compression=compression,data = amp_table)
-            subgroup.create_dataset('PHASE_REGS', compression=compression,data = phase_table)
+            subgroup.create_dataset('FREQ_REGS', compression=config.compression,data = freq_table)
+            subgroup.create_dataset('AMP_REGS', compression=config.compression,data = amp_table)
+            subgroup.create_dataset('PHASE_REGS', compression=config.compression,data = phase_table)
             
         return freqdicts, ampdicts, phasedicts
         
@@ -512,10 +513,10 @@ class PulseBlaster(PseudoClock):
         slow_clock_indices = array(slow_clock_indices, dtype = uint32)                  
         # Okey now write it to the file: 
         group = hdf5_file['/devices/'+self.name]  
-        group.create_dataset('PULSE_PROGRAM', compression=compression,data = pb_inst_table)         
-        group.create_dataset('FAST_CLOCK', compression=compression,data = self.times)         
-        group.create_dataset('SLOW_CLOCK', compression=compression,data = self.change_times)   
-        group.create_dataset('CLOCK_INDICES', compression=compression,data = slow_clock_indices)  
+        group.create_dataset('PULSE_PROGRAM', compression=config.compression,data = pb_inst_table)         
+        group.create_dataset('FAST_CLOCK', compression=config.compression,data = self.times)         
+        group.create_dataset('SLOW_CLOCK', compression=config.compression,data = self.change_times)   
+        group.create_dataset('CLOCK_INDICES', compression=config.compression,data = slow_clock_indices)  
         group.attrs['stop_time'] = self.stop_time       
                               
     def generate_code(self, hdf5_file):
@@ -641,13 +642,13 @@ class Output(Device):
         # Check if there are no instructions. Generate a warning and insert an
         # instruction telling the output to remain at zero.
         if not self.instructions:
-            if not supress_mild_warnings:
+            if not config.supress_mild_warnings:
                 sys.stderr.write(' '.join(['WARNING:', self.name, 'has no instructions. It will be set to %s for all time.\n'%self.instruction_to_string(self.default_value)]))
             self.add_instruction(0,self.default_value)  
         # Check if there are no instructions at t=0. Generate a warning and insert an
         # instruction telling the output to start at zero.
         if 0 not in self.instructions.keys():
-            if not supress_mild_warnings:
+            if not config.supress_mild_warnings:
                sys.stderr.write(' '.join(['WARNING:', self.name, 'has no instructions at t=0. It will initially be set to %s.\n'%self.instruction_to_string(0)]))
             self.add_instruction(0,self.default_value) 
         # Check that ramps have instructions following them.
@@ -919,13 +920,13 @@ class NIBoard(IntermediateDevice):
             digital_out_table = self.convert_bools_to_bytes(digitals.values())
         grp = hdf5_file.create_group('/devices/'+self.name)
         if all(analog_out_table.shape): # Both dimensions must be nonzero
-            analog_dataset = grp.create_dataset('ANALOG_OUTS',compression=compression,data=analog_out_table)
+            analog_dataset = grp.create_dataset('ANALOG_OUTS',compression=config.compression,data=analog_out_table)
             grp.attrs['analog_out_channels'] = ', '.join(analog_out_attrs)
         if len(digital_out_table): # Table must be non empty
-            digital_dataset = grp.create_dataset('DIGITAL_OUTS',compression=compression,data=digital_out_table)
+            digital_dataset = grp.create_dataset('DIGITAL_OUTS',compression=config.compression,data=digital_out_table)
             grp.attrs['digital_lines'] = '/'.join((self.name,'port0','line0:%d'%(self.n_digitals-1)))
         if len(acquisition_table): # Table must be non empty
-            input_dataset = grp.create_dataset('ACQUISITIONS',compression=compression,data=acquisition_table)
+            input_dataset = grp.create_dataset('ACQUISITIONS',compression=config.compression,data=acquisition_table)
             grp.attrs['analog_in_channels'] = ', '.join(input_attrs)
             grp.attrs['acquisition_rate'] = self.acquisition_rate
         grp.attrs['clock_terminal'] = self.clock_terminal
@@ -1210,8 +1211,8 @@ class NovaTechDDS9M(IntermediateDevice):
         grp.attrs['frequency_scale_factor'] = 10
         grp.attrs['amplitude_scale_factor'] = 1023
         grp.attrs['phase_scale_factor'] = 45.511111111111113
-        grp.create_dataset('TABLE_DATA',compression=compression,data=out_table) 
-        grp.create_dataset('STATIC_DATA',compression=compression,data=static_table) 
+        grp.create_dataset('TABLE_DATA',compression=config.compression,data=out_table) 
+        grp.create_dataset('STATIC_DATA',compression=config.compression,data=static_table) 
 
 
 class ZaberStageTLSR150D(StaticAnalogQuantity):
@@ -1302,12 +1303,16 @@ def generate_connection_table(hdf5_file):
     connection_table_array = empty(len(connection_table),dtype=connection_table_dtypes)
     for i, row in enumerate(connection_table):
         connection_table_array[i] = row
-    hdf5_file.create_dataset('connection table', compression=compression, data=connection_table_array, maxshape=(None,))
+    hdf5_file.create_dataset('connection table', compression=config.compression, data=connection_table_array, maxshape=(None,))
   
   
 def save_labscripts(hdf5_file):
     labscriptfile = os.path.join(sys.path[0],sys.argv[0])
-    script = hdf5_file.create_dataset('script',compression=compression,data=open(labscriptfile).read())
+    if labscriptfile:
+        script_text = open(labscriptfile).read()
+    else:
+        script_text = ''
+    script = hdf5_file.create_dataset('script',compression=config.compression,data=script_text)
     script.attrs['name'] = os.path.basename(sys.argv[0])
     script.attrs['path'] = sys.path[0]
     try:
@@ -1319,7 +1324,7 @@ def save_labscripts(hdf5_file):
                 if path.startswith(prefix) and (path.endswith('.pyc') or path.endswith('.py')):
                     path = path.replace('.pyc','.py')
                     save_path = 'labscriptlib/' + path.replace(prefix,'').replace('\\','/')
-                    hdf5_file.create_dataset(save_path, compression=compression, data=open(path).read())
+                    hdf5_file.create_dataset(save_path, compression=config.compression, data=open(path).read())
                     # Make sure the command window doesn't show for the svn subprocesses in Windows:
                     if os.name=='nt':
                         startupinfo = subprocess.STARTUPINFO()
