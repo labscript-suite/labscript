@@ -272,6 +272,10 @@ class PulseBlaster(PseudoClock):
     slow_clock_flag = 1
     clock_type = 'slow clock'
     
+    def __init__(self,name,board_number):
+        PseudoClock.__init__(self,name,None,None)
+        self.BLACS_connection = board_number
+    
     def get_direct_outputs(self):
         """Finds out which outputs are directly attached to the PulseBlaster"""
         dig_outputs = []
@@ -989,12 +993,13 @@ class Camera(DigitalOut):
     frame_types = ['atoms','flat','dark','fluoro','clean']
     minimum_recovery_time = 0 # To be set by subclasses
     
-    def __init__(self,name,parent_device,connection,exposuretime,orientation):
+    def __init__(self,name,parent_device,connection,BIAS_port,exposuretime,orientation):
         DigitalOut.__init__(self,name,parent_device,connection)
         self.exposuretime = exposuretime
         self.orientation = orientation
         self.exposures = []
         self.go_low(0)
+        self.BLACS_connection = BIAS_port
         
     def expose(self,name, t ,frametype):
         self.go_high(t)
@@ -1079,7 +1084,7 @@ class StaticDDS(Device):
         Device.__init__(self,name,parent_device,connection)
         self.frequency = StaticAnalogQuantity(self.name+'_freq',self,'freq',freq_limits,freq_conv_class,freq_conv_params)
         self.amplitude = StaticAnalogQuantity(self.name+'_amp',self,'amp',amp_limits,amp_conv_class,amp_conv_params)
-        self.phase = StaticAnalogQuantity(self.name+'_phase',self,'phase',phase_limits,phase_conv_class,phase_conv_params)
+        self.phase = StaticAnalogQuantity(self.name+'_phase',self,'phase',phase_limits,phase_conv_class,phase_conv_params)        
         if isinstance(self.parent_device,NovaTechDDS9M):
             self.frequency.default_value = 0.1
             if 'device' in digital_gate and 'connection' in digital_gate:            
@@ -1114,6 +1119,10 @@ class NovaTechDDS9M(IntermediateDevice):
     description = 'NT-DDS9M'
     allowed_children = [DDS, StaticDDS]
     clock_limit = 500e3 # TODO: find out what the actual max clock rate is.
+    
+    def __init__(self, name, parent_device, clock_type, com_port):
+        IntermediateDevice.__init__(self, name, parent_device,clock_type)
+        self.BLACS_connection = com_port
     
     def quantise_freq(self,data, device):
         # Ensure that frequencies are within bounds:
@@ -1234,9 +1243,10 @@ class ZaberStageTLS28M(StaticAnalogQuantity):
 class ZaberStageController(Device):
     allowed_children = [ZaberStageTLSR150D,ZaberStageTLSR300D,ZaberStageTLS28M]
     generation = 0
-    def __init__(self, name):
+    def __init__(self, name,BLACS_connection):
         Device.__init__(self, name, None, None)
         self.clock_type = None
+        self.BLACS_connection = BLACS_connection
         
     def generate_code(self, hdf5_file):
         data_dict = {}
@@ -1274,6 +1284,7 @@ def generate_connection_table(hdf5_file):
     
     # This starts at 4 to accomodate "None"
     max_cal_param_length = 4
+    max_BLACS_conn_length = 1
     for device in compiler.inventory:
         devicedict[device.name] = device
         
@@ -1291,15 +1302,28 @@ def generate_connection_table(hdf5_file):
                 max_cal_param_length = len(cal_params)
         else:
             cal_params = str(None)
+        
+        
+        # If the device has a BLACS_connection atribute, then check to see if it is longer than the size of the hdf5 column
+        if hasattr(device,"BLACS_connection"):
+            # Make sure it is a string!
+            BLACS_connection = str(device.BLACS_connection)
+            if len(BLACS_connection) > max_BLACS_conn_length:
+                max_BLACS_conn_length = len(BLACS_connection)
+        else:
+            BLACS_connection = ""
             
         connection_table.append((device.name, device.__class__.__name__,
                                  device.parent_device.name if device.parent_device else str(None),
                                  str(device.connection if device.parent_device else str(None)),
                                  device.unit_conversion_class.__name__ if hasattr(device,"unit_conversion_class") and device.unit_conversion_class is not None else str(None),
-                                 cal_params))
+                                 cal_params,
+                                 BLACS_connection))
     
     connection_table.sort(key=sortkey)
-    connection_table_dtypes = [('name','a256'), ('class','a256'), ('parent','a256'), ('parent port','a256'),('unit conversion class','a256'), ('unit conversion params','a'+str(max_cal_param_length))]
+    connection_table_dtypes = [('name','a256'), ('class','a256'), ('parent','a256'), ('parent port','a256'),
+                               ('unit conversion class','a256'), ('unit conversion params','a'+str(max_cal_param_length)), 
+                               ('BLACS_connection','a'+str(max_BLACS_conn_length))]
     connection_table_array = empty(len(connection_table),dtype=connection_table_dtypes)
     for i, row in enumerate(connection_table):
         connection_table_array[i] = row
