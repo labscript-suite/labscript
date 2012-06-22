@@ -1251,10 +1251,10 @@ class ZaberStageTLS28M(StaticAnalogQuantity):
 class ZaberStageController(Device):
     allowed_children = [ZaberStageTLSR150D,ZaberStageTLSR300D,ZaberStageTLS28M]
     generation = 0
-    def __init__(self, name,BLACS_connection):
+    def __init__(self, name,com_port):
         Device.__init__(self, name, None, None)
         self.clock_type = None
-        self.BLACS_connection = BLACS_connection
+        self.BLACS_connection = com_port
         
     def generate_code(self, hdf5_file):
         data_dict = {}
