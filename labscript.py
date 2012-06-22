@@ -993,13 +993,18 @@ class Camera(DigitalOut):
     frame_types = ['atoms','flat','dark','fluoro','clean']
     minimum_recovery_time = 0 # To be set by subclasses
     
-    def __init__(self,name,parent_device,connection,BIAS_port,exposuretime,orientation):
+    def __init__(self,name,parent_device,connection,BIAS_port,serial_number,SDK,effective_pixel_size,exposuretime,orientation):
         DigitalOut.__init__(self,name,parent_device,connection)
         self.exposuretime = exposuretime
         self.orientation = orientation
         self.exposures = []
         self.go_low(0)
         self.BLACS_connection = BIAS_port
+        if isinstance(serial_number,str):
+            serial_number = int(serial_number,16)
+        self.sn = uint64(serial_number)
+        self.sdk = str(SDK)
+        self.effective_pixel_size = effective_pixel_size
         
     def expose(self,name, t ,frametype):
         self.go_high(t)
@@ -1029,6 +1034,9 @@ class Camera(DigitalOut):
         group = hdf5_file['devices'].create_group(self.name)
         group.attrs['exposure_time'] = float(self.exposuretime)
         group.attrs['orientation'] = self.orientation
+        group.attrs['SDK'] = self.sdk
+        group.attrs['serial_number'] = self.sn
+        group.attrs['effective_pixel_size'] = self.effective_pixel_size
         if self.exposures:
             group.create_dataset('EXPOSURES', data=data)
 

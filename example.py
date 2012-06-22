@@ -17,7 +17,7 @@ DDS(          'dds2', novatechdds9m_0,   'channel 1')
 StaticDDS(    'dds5', novatechdds9m_0,   'channel 2')
 DDS(          'dds3',  pulseblaster_0,       'dds 0',freq_conv_class=test,freq_conv_params={'a':4,'b':6},amp_conv_class=test,amp_conv_params={'a':2,'b':22})
 DDS(          'dds4',  pulseblaster_0,       'dds 1')
-Camera('andor_ixon_0', pulseblaster_0,   'flag 3',BIAS_port = 42520,exposuretime=.1,orientation='top')
+Camera('andor_ixon_0', pulseblaster_0,   'flag 3',BIAS_port = 42520,serial_number="111C00D1BE", SDK="IMAQdx", effective_pixel_size = 4.6e-6, exposuretime=.1,orientation='top')
 
 scale = 1.0
 rate = 1e4
