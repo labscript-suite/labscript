@@ -70,12 +70,21 @@ class Device(object):
         compiler.inventory.append(self)
         if parent_device:
             parent_device.add_device(self)
+        
+        # Check that the name doesn't already exist in the python namespace
+        if name in locals() or name in globals() or name in __builtins__:
+            raise LabscriptError('The device name %s already exists in the Python namespace. Please choose another.'%name)
+        if name in keyword.kwlist:
+                raise LabscriptError('%s is a reserved Python keyword.'%name +
+                                     ' Please choose a different device name.')
+                                     
         try:
             # Test that name is a valid Python variable name:
             exec '%s = None'%name
             assert '.' not in name
         except:
             raise ValueError('%s is not a valid Python variable name.'%name)
+        
         # Put self into the global namespace:
         __builtins__[name] = self
         
