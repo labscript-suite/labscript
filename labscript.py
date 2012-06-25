@@ -75,8 +75,8 @@ class Device(object):
         if name in locals() or name in globals() or name in __builtins__:
             raise LabscriptError('The device name %s already exists in the Python namespace. Please choose another.'%name)
         if name in keyword.kwlist:
-                raise LabscriptError('%s is a reserved Python keyword.'%name +
-                                     ' Please choose a different device name.')
+            raise LabscriptError('%s is a reserved Python keyword.'%name +
+                                 ' Please choose a different device name.')
                                      
         try:
             # Test that name is a valid Python variable name:
