@@ -769,7 +769,7 @@ class AnalogQuantity(Output):
                                  'end time': t + duration, 'clock rate': samplerate, 'units': units})   
         return duration
     
-    def exp_ramp(self,t,duration, initial, final, samplerate, zero=0,trunc = False, units=None):
+    def exp_ramp(self,t,duration, initial, final, samplerate, zero=0, trunc=False, units=None):
         if trunc:
             trunc_duration = duration*log((initial-zero)/(trunc-zero))/log((initial-zero)/(final-zero))
         else:
@@ -777,6 +777,12 @@ class AnalogQuantity(Output):
         self.add_instruction(t, {'function': functions.exp_ramp(t,duration,initial,final,zero), 'description':'exponential ramp',
                              'end time': t + trunc_duration, 'clock rate': samplerate, 'units': units})
         return trunc_duration
+     
+    def exp_ramp_t(self, t, duration, initial, final, time_constant, samplerate, units=None):
+        # Exponential ramp set by the time constant. No truncation yet!
+        self.add_instruction(t, {'function': functions.exp_ramp_t(t, duration, initial, final, time_constant), 'description':'exponential ramp with time consntant',
+                             'end time': t + duration, 'clock rate': samplerate, 'units': units})
+        return duration
                              
     def constant(self,t,value,units=None):
         # verify that value can be converted to float
