@@ -21,6 +21,13 @@ class config:
     supress_mild_warnings = True
     compression = None # set to 'gzip' for compression 
     
+# Startupinfo, for ensuring subprocesses don't launch with a visible command window:
+if os.name=='nt':
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= 1 #subprocess.STARTF_USESHOWWINDOW # This variable isn't defined, but apparently it's equal to one.
+else:
+    startupinfo = None
+                        
 def bitfield(arrays,dtype):
     """converts a list of arrays of ones and zeros into a single
     array of unsigned ints of the given datatype."""
@@ -344,7 +351,7 @@ class RFBlaster(PseudoClock):
                     assembly_group.create_dataset('DDS%d'%dds, data=assembly_code)
                 # compile to binary:
                 compilation = Popen([caspr,temp_assembly_filepath,temp_binary_filepath],
-                                     stdout=PIPE, stderr=PIPE, cwd=rfjuice_folder)
+                                     stdout=PIPE, stderr=PIPE, cwd=rfjuice_folder,startupinfo=startupinfo)
                 stdout, stderr = compilation.communicate()
                 if compilation.returncode:
                     print stdout
@@ -1467,12 +1474,6 @@ def save_labscripts(hdf5_file):
                     path = path.replace('.pyc','.py')
                     save_path = 'labscriptlib/' + path.replace(prefix,'').replace('\\','/')
                     hdf5_file.create_dataset(save_path, compression=config.compression, data=open(path).read())
-                    # Make sure the command window doesn't show for the svn subprocesses in Windows:
-                    if os.name=='nt':
-                        startupinfo = subprocess.STARTUPINFO()
-                        startupinfo.dwFlags |= 1 #subprocess.STARTF_USESHOWWINDOW # This variable isn't defined, but apparently it's equal to one.
-                    else:
-                        startupinfo = None
                     process = subprocess.Popen(['svn', 'info', path], stdout=subprocess.PIPE,stderr=subprocess.PIPE,startupinfo=startupinfo)
                     info, err = process.communicate()
                     hdf5_file[save_path].attrs['svn info'] = info + '\n' + err
