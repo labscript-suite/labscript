@@ -347,7 +347,8 @@ class RFBlaster(PseudoClock):
                     raise LabscriptError('RFBlaster compilation exited with code %d\n\n'%compilation.returncode + 
                                          'Stdout was:\n %s\n'%stdout + 'Stderr was:\n%s\n'%stderr)
                 # Save the binary to the h5 file:
-                binary_data = open(temp_binary_filepath,'rb').read()
+                with open(temp_binary_filepath,'rb') as binary_file:
+                    binary_data = binary_file.read()
                 binary_group.create_dataset('DDS%d'%dds, data=binary_data)
             finally:
                 # Delete the temporary files:
