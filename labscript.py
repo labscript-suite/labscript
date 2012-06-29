@@ -289,7 +289,7 @@ class RFBlaster(PseudoClock):
         if architecture == 'WindowsPE':
             caspr = os.path.join(rfjuice_folder,'caspr.exe')
         elif (bits, architecture) == ('64bit', 'ELF'):
-            caspr = os.path.join(rfjuice_folder,'caspr_linux_x86-64')
+            caspr = os.path.join(rfjuice_folder,'caspr_linux64')
         else:
             raise LabscriptError('The RFBlaster\'s compiler (caspr) has not been compiled for this platform')
         # Generate clock and save raw instructions to the h5 file:
@@ -327,9 +327,13 @@ class RFBlaster(PseudoClock):
             abs_table[:,3] = quantised_data['phase%d'%dds]
             # convert to diff table:
             diff_table = p.Table(abs_table).calcd()
-
-            fileno, temp_assembly_filepath = tempfile.mkstemp()
-            fileno, temp_binary_filepath = tempfile.mkstemp()
+            
+            # Create temporary files, get their paths, and close them:
+            with tempfile.NamedTemporaryFile(delete=False) as f:
+                temp_assembly_filepath = f.name
+            with tempfile.NamedTemporaryFile(delete=False) as f:
+                temp_binary_filepath = f.name
+                
             try:
                 # Compile to assembly:
                 with open(temp_assembly_filepath,'w') as assembly_file:
