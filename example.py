@@ -2,6 +2,8 @@ from labscript import *
 from unitconversions import *
 
 PulseBlaster(  'pulseblaster_0', board_number=0)
+RFBlaster('rfblaster_0','some.ip.address')
+
 NI_PCIe_6363(  'ni_pcie_6363_0',  pulseblaster_0, 'fast clock', 'ni_pcie_6363_0/PFI0')
 NI_PCI_6733(   'ni_pci_6733_0',  pulseblaster_0, 'fast clock', 'ni_pcie_6363_0/PFI0')
 NovaTechDDS9M( 'novatechdds9m_0', pulseblaster_0, 'slow clock', com_port="com10")
@@ -17,11 +19,16 @@ DDS(          'dds2', novatechdds9m_0,   'channel 1')
 StaticDDS(    'dds5', novatechdds9m_0,   'channel 2')
 DDS(          'dds3',  pulseblaster_0,       'dds 0',freq_conv_class=test,freq_conv_params={'a':4,'b':6},amp_conv_class=test,amp_conv_params={'a':2,'b':22})
 DDS(          'dds4',  pulseblaster_0,       'dds 1')
+DDS(          'dds6',  rfblaster_0,       'dds 1')
+
 Camera('andor_ixon_0', pulseblaster_0,   'flag 3',BIAS_port = 42520,serial_number="111C00D1BE", SDK="IMAQdx", effective_pixel_size = 4.6e-6, exposuretime=.1,orientation='top')
+
 
 scale = 1.0
 rate = 1e4
 t = 0
+
+dds6.frequency.ramp(t,duration=3,initial=0,final=5,samplerate=10)
 
 input1.acquire('measurement1',0*scale,1*scale)
 input1.acquire('measurement2',3*scale,5*scale)
