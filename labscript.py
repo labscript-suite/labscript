@@ -270,101 +270,6 @@ class PseudoClock(Device):
     def generate_code(self, hdf5_file):
         self.generate_clock()
         Device.generate_code(self, hdf5_file)
-            
-class RFBlaster(PseudoClock):
-    description = 'RF Blaster Rev1.1'
-    clock_limit = 500e3
-    clock_type = 'fast clock'
-    
-    def __init__(self,name,ip_address):
-        PseudoClock.__init__(self,name,None,None)
-        self.BLACS_connection = ip_address
-    
-    def generate_code(self, hdf5_file):
-        import rfjuice
-        import rfjuice.const as c     # constant definitions
-        import rfjuice.tables as t    # table functions
-        import rfjuice.util as u      # utility functions
-        import rfjuice.pulse as p     # pulse definitions
-        import rfjuice.compile as cp  # compilation functions
-        import platform
-        import tempfile
-        from subprocess import Popen, PIPE
-        
-        rfjuice_folder = os.path.dirname(rfjuice.__file__)
-        bits,architecture = platform.architecture()
-        if architecture == 'WindowsPE':
-            caspr = os.path.join(rfjuice_folder,'caspr.exe')
-        elif (bits, architecture) == ('64bit', 'ELF'):
-            caspr = os.path.join(rfjuice_folder,'caspr_linux64')
-        else:
-            raise LabscriptError('The RFBlaster\'s compiler (caspr) has not been compiled for this platform')
-        # Generate clock and save raw instructions to the h5 file:
-        PseudoClock.generate_code(self, hdf5_file)
-        dtypes = [('time',float),('amp0',float),('freq0',float),('phase0',float),('amp1',float),('freq1',float),('phase1',float)]
-        data = zeros(len(self.times),dtype=dtypes)
-        data['time'] = self.times
-        for dds in self.child_devices:
-            prefix, connection = dds.connection.split()
-            data['freq%s'%connection] = dds.frequency.raw_output
-            data['amp%s'%connection] = dds.amplitude.raw_output
-            data['phase%s'%connection] = dds.phase.raw_output
-        group = hdf5_file['devices'].create_group(self.name)
-        group.create_dataset('TABLE_DATA',data=data)
-        
-        # Quantise the data and save it to the h5 file:
-        quantised_dtypes = [('time',int32),('amp0',int32),('freq0',int32),('phase0',int32),('amp1',int32),('freq1',int32),('phase1',int32)]
-        quantised_data = zeros(len(self.times),dtype=quantised_dtypes)
-        quantised_data['time'] = array(c.tT*data['time']+0.5)
-        for dds in range(2):
-            # Adding 0.5 to each so that casting to integer rounds:
-            quantised_data['freq%d'%dds] = array(c.fF*data['freq%d'%dds] + 0.5)
-            quantised_data['amp%d'%dds]  = array((2**c.bitsA - 1)*data['amp%d'%dds] + 0.5)
-            quantised_data['phase%d'%dds] = array(c.pP*data['amp%d'%dds] + 0.5)
-        group.create_dataset('QUANTISED_DATA',data=quantised_data)
-        
-        # Generate some assembly code and compile it to machine code:
-        assembly_group = group.create_group('ASSEMBLY_CODE')
-        binary_group = group.create_group('BINARY_CODE')
-        for dds in range(2):
-            abs_table = zeros((len(self.times), 4),dtype=int32)
-            abs_table[:,0] = quantised_data['time']
-            abs_table[:,1] = quantised_data['amp%d'%dds]
-            abs_table[:,2] = quantised_data['freq%d'%dds]
-            abs_table[:,3] = quantised_data['phase%d'%dds]
-            # convert to diff table:
-            diff_table = p.Table(abs_table).calcd()
-            
-            # Create temporary files, get their paths, and close them:
-            with tempfile.NamedTemporaryFile(delete=False) as f:
-                temp_assembly_filepath = f.name
-            with tempfile.NamedTemporaryFile(delete=False) as f:
-                temp_binary_filepath = f.name
-                
-            try:
-                # Compile to assembly:
-                with open(temp_assembly_filepath,'w') as assembly_file:
-                    cp.compileD(diff_table, assembly_file, set_defaults = False)
-                # Save the assembly to the h5 file:
-                with open(temp_assembly_filepath,) as assembly_file:
-                    assembly_code = assembly_file.read()
-                    assembly_group.create_dataset('DDS%d'%dds, data=assembly_code)
-                # compile to binary:
-                compilation = Popen([caspr,temp_assembly_filepath,temp_binary_filepath],
-                                     stdout=PIPE, stderr=PIPE, cwd=rfjuice_folder,startupinfo=startupinfo)
-                stdout, stderr = compilation.communicate()
-                if compilation.returncode:
-                    print stdout
-                    raise LabscriptError('RFBlaster compilation exited with code %d\n\n'%compilation.returncode + 
-                                         'Stdout was:\n %s\n'%stdout + 'Stderr was:\n%s\n'%stderr)
-                # Save the binary to the h5 file:
-                with open(temp_binary_filepath,'rb') as binary_file:
-                    binary_data = binary_file.read()
-                binary_group.create_dataset('DDS%d'%dds, data=binary_data)
-            finally:
-                # Delete the temporary files:
-                os.remove(temp_assembly_filepath)
-                os.remove(temp_binary_filepath)
         
         
 class PulseBlaster(PseudoClock):
@@ -880,11 +785,16 @@ class AnalogQuantity(Output):
                              'end time': t + trunc_duration, 'clock rate': samplerate, 'units': units})
         return trunc_duration
      
-    def exp_ramp_t(self, t, duration, initial, final, time_constant, samplerate, units=None):
+    def exp_ramp_t(self, t, duration, initial, final, time_constant, samplerate, trunc=False, units=None):
         # Exponential ramp set by the time constant. No truncation yet!
+        zero = (final-initial*exp(-duration/time_constant)) / (1-exp(-duration/time_constant))
+        if trunc:
+            trunc_duration = time_constant * log((initial-zero)/(trunc-zero))
+        else:
+            trunc_duration = duration
         self.add_instruction(t, {'function': functions.exp_ramp_t(t, duration, initial, final, time_constant), 'description':'exponential ramp with time consntant',
-                             'end time': t + duration, 'clock rate': samplerate, 'units': units})
-        return duration
+                             'end time': t + trunc_duration, 'clock rate': samplerate, 'units': units})
+        return trunc_duration
                              
     def constant(self,t,value,units=None):
         # verify that value can be converted to float
@@ -1238,8 +1148,105 @@ class StaticDDS(Device):
             self.gate.go_low(t)
         else:
             raise LabscriptError('DDS %s does not have a digital gate, so you cannot use the disable(t) method.'%(self.name))
-                    
-                    
+              
+            
+class RFBlaster(PseudoClock):
+    description = 'RF Blaster Rev1.1'
+    clock_limit = 500e3
+    clock_type = 'fast clock'
+    allowed_children = [DDS]
+    
+    def __init__(self,name,ip_address):
+        PseudoClock.__init__(self,name,None,None)
+        self.BLACS_connection = ip_address
+    
+    def generate_code(self, hdf5_file):
+        import rfjuice
+        import rfjuice.const as c     # constant definitions
+        import rfjuice.tables as t    # table functions
+        import rfjuice.util as u      # utility functions
+        import rfjuice.pulse as p     # pulse definitions
+        import rfjuice.compile as cp  # compilation functions
+        import platform
+        import tempfile
+        from subprocess import Popen, PIPE
+        
+        rfjuice_folder = os.path.dirname(rfjuice.__file__)
+        bits,architecture = platform.architecture()
+        if architecture == 'WindowsPE':
+            caspr = os.path.join(rfjuice_folder,'caspr.exe')
+        elif (bits, architecture) == ('64bit', 'ELF'):
+            caspr = os.path.join(rfjuice_folder,'caspr_linux64')
+        else:
+            raise LabscriptError('The RFBlaster\'s compiler (caspr) has not been compiled for this platform')
+        # Generate clock and save raw instructions to the h5 file:
+        PseudoClock.generate_code(self, hdf5_file)
+        dtypes = [('time',float),('amp0',float),('freq0',float),('phase0',float),('amp1',float),('freq1',float),('phase1',float)]
+        data = zeros(len(self.times),dtype=dtypes)
+        data['time'] = self.times
+        for dds in self.child_devices:
+            prefix, connection = dds.connection.split()
+            data['freq%s'%connection] = dds.frequency.raw_output
+            data['amp%s'%connection] = dds.amplitude.raw_output
+            data['phase%s'%connection] = dds.phase.raw_output
+        group = hdf5_file['devices'].create_group(self.name)
+        group.create_dataset('TABLE_DATA',data=data)
+        
+        # Quantise the data and save it to the h5 file:
+        quantised_dtypes = [('time',int32),('amp0',int32),('freq0',int32),('phase0',int32),('amp1',int32),('freq1',int32),('phase1',int32)]
+        quantised_data = zeros(len(self.times),dtype=quantised_dtypes)
+        quantised_data['time'] = array(c.tT*data['time']+0.5)
+        for dds in range(2):
+            # Adding 0.5 to each so that casting to integer rounds:
+            quantised_data['freq%d'%dds] = array(c.fF*data['freq%d'%dds] + 0.5)
+            quantised_data['amp%d'%dds]  = array((2**c.bitsA - 1)*data['amp%d'%dds] + 0.5)
+            quantised_data['phase%d'%dds] = array(c.pP*data['amp%d'%dds] + 0.5)
+        group.create_dataset('QUANTISED_DATA',data=quantised_data)
+        
+        # Generate some assembly code and compile it to machine code:
+        assembly_group = group.create_group('ASSEMBLY_CODE')
+        binary_group = group.create_group('BINARY_CODE')
+        for dds in range(2):
+            abs_table = zeros((len(self.times), 4),dtype=int32)
+            abs_table[:,0] = quantised_data['time']
+            abs_table[:,1] = quantised_data['amp%d'%dds]
+            abs_table[:,2] = quantised_data['freq%d'%dds]
+            abs_table[:,3] = quantised_data['phase%d'%dds]
+            # convert to diff table:
+            diff_table = p.Table(abs_table).calcd()
+            
+            # Create temporary files, get their paths, and close them:
+            with tempfile.NamedTemporaryFile(delete=False) as f:
+                temp_assembly_filepath = f.name
+            with tempfile.NamedTemporaryFile(delete=False) as f:
+                temp_binary_filepath = f.name
+                
+            try:
+                # Compile to assembly:
+                with open(temp_assembly_filepath,'w') as assembly_file:
+                    cp.compileD(diff_table, assembly_file, set_defaults = False)
+                # Save the assembly to the h5 file:
+                with open(temp_assembly_filepath,) as assembly_file:
+                    assembly_code = assembly_file.read()
+                    assembly_group.create_dataset('DDS%d'%dds, data=assembly_code)
+                # compile to binary:
+                compilation = Popen([caspr,temp_assembly_filepath,temp_binary_filepath],
+                                     stdout=PIPE, stderr=PIPE, cwd=rfjuice_folder,startupinfo=startupinfo)
+                stdout, stderr = compilation.communicate()
+                if compilation.returncode:
+                    print stdout
+                    raise LabscriptError('RFBlaster compilation exited with code %d\n\n'%compilation.returncode + 
+                                         'Stdout was:\n %s\n'%stdout + 'Stderr was:\n%s\n'%stderr)
+                # Save the binary to the h5 file:
+                with open(temp_binary_filepath,'rb') as binary_file:
+                    binary_data = binary_file.read()
+                binary_group.create_dataset('DDS%d'%dds, data=binary_data)
+            finally:
+                # Delete the temporary files:
+                os.remove(temp_assembly_filepath)
+                os.remove(temp_binary_filepath)
+        
+                            
 class NovaTechDDS9M(IntermediateDevice):
     description = 'NT-DDS9M'
     allowed_children = [DDS, StaticDDS]
