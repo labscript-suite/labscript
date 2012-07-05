@@ -28,7 +28,7 @@ scale = 1.0
 rate = 1e4
 t = 0
 
-dds6.frequency.ramp(t,duration=3,initial=0,final=5,samplerate=10)
+dds6.frequency.ramp(t,duration=3,initial=50,final=100,samplerate=10)
 
 input1.acquire('measurement1',0*scale,1*scale)
 input1.acquire('measurement2',3*scale,5*scale)
