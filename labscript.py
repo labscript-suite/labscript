@@ -204,7 +204,12 @@ class PseudoClock(Device):
                     n_ticks += 1
                 duration = n_ticks/float(maxrate) # avoiding integer division
                 ticks = linspace(time,time + duration,n_ticks,endpoint=False)
-                all_times.append(ticks)
+                all_times.append(array(ticks,dtype=float32))
+                # Note that even though all arrays are single precision
+                # floating point, the numbers stored to the clock list
+                # below are double precision. This is important so that
+                # rounding errors in the stepsize don't become significant
+                # after many clock cycles.
                 if n_ticks > 1:
                     # If n_ticks is only one, then this step doesn't do
                     # anything, it has reps=0. So we should only include
@@ -259,8 +264,8 @@ class PseudoClock(Device):
         for output in outputs:
             output.expand_timeseries(all_times)
         self.clock = clock
-        self.change_times = fastflatten(change_times, float)
-        self.times = fastflatten(all_times,float)
+        self.change_times = fastflatten(change_times, float32)
+        self.times = fastflatten(all_times,float64)
         
     def generate_code(self, hdf5_file):
         self.generate_clock()
@@ -1161,7 +1166,7 @@ class RFBlaster(PseudoClock):
         import rfjuice.tables as t    # table functions
         import rfjuice.util as u      # utility functions
         import rfjuice.pulse as p     # pulse definitions
-        import rfjuice.compile as cp  # compilation functions
+        import rfjuice.cython.compile as cp  # compilation functions
         import platform
         import tempfile
         from subprocess import Popen, PIPE
@@ -1208,7 +1213,6 @@ class RFBlaster(PseudoClock):
             abs_table[:,2] = quantised_data['freq%d'%dds]
             abs_table[:,3] = quantised_data['phase%d'%dds]
             # convert to diff table:
-            print 'rfblaster: making diff table for dds %d'%dds
             diff_table = p.Table(abs_table).calcd()
             
             # Create temporary files, get their paths, and close them:
@@ -1220,14 +1224,12 @@ class RFBlaster(PseudoClock):
             try:
                 # Compile to assembly:
                 with open(temp_assembly_filepath,'w') as assembly_file:
-                    print 'rfblaster: compiling to assembly for dds %d'%dds
                     cp.compileD(diff_table, assembly_file, set_defaults = False)
                 # Save the assembly to the h5 file:
                 with open(temp_assembly_filepath,) as assembly_file:
                     assembly_code = assembly_file.read()
                     assembly_group.create_dataset('DDS%d'%dds, data=assembly_code)
                 # compile to binary:
-                print 'rfblaster: assembling for dds %d'%dds
                 compilation = Popen([caspr,temp_assembly_filepath,temp_binary_filepath],
                                      stdout=PIPE, stderr=PIPE, cwd=rfjuice_folder,startupinfo=startupinfo)
                 stdout, stderr = compilation.communicate()
