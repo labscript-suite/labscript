@@ -1158,7 +1158,7 @@ class RFBlaster(PseudoClock):
     def generate_code(self, hdf5_file):
         import rfjuice
         import rfjuice.const as c     # constant definitions
-        import rfjuice.tables as t    # table functions
+        from rfjuice.cython.make_diff_table import make_diff_table
         import rfjuice.util as u      # utility functions
         import rfjuice.pulse as p     # pulse definitions
         import rfjuice.cython.compile as cp  # compilation functions
@@ -1208,7 +1208,7 @@ class RFBlaster(PseudoClock):
             abs_table[:,2] = quantised_data['freq%d'%dds]
             abs_table[:,3] = quantised_data['phase%d'%dds]
             # convert to diff table:
-            diff_table = p.Table(abs_table).calcd()
+            diff_table = make_diff_table(abs_table)
             
             # Create temporary files, get their paths, and close them:
             with tempfile.NamedTemporaryFile(delete=False) as f:
@@ -1238,7 +1238,8 @@ class RFBlaster(PseudoClock):
                 binary_group.create_dataset('DDS%d'%dds, data=binary_data)
             finally:
                 # Delete the temporary files:
-                os.remove(temp_assembly_filepath)
+                print temp_assembly_filepath
+#                os.remove(temp_assembly_filepath)
                 os.remove(temp_binary_filepath)
         
                             
