@@ -204,12 +204,7 @@ class PseudoClock(Device):
                     n_ticks += 1
                 duration = n_ticks/float(maxrate) # avoiding integer division
                 ticks = linspace(time,time + duration,n_ticks,endpoint=False)
-                all_times.append(array(ticks,dtype=float32))
-                # Note that even though all arrays are single precision
-                # floating point, the numbers stored to the clock list
-                # below are double precision. This is important so that
-                # rounding errors in the stepsize don't become significant
-                # after many clock cycles.
+                all_times.append(ticks)
                 if n_ticks > 1:
                     # If n_ticks is only one, then this step doesn't do
                     # anything, it has reps=0. So we should only include
@@ -264,8 +259,8 @@ class PseudoClock(Device):
         for output in outputs:
             output.expand_timeseries(all_times)
         self.clock = clock
-        self.change_times = fastflatten(change_times, float32)
-        self.times = fastflatten(all_times,float64)
+        self.change_times = fastflatten(change_times, float)
+        self.times = fastflatten(all_times,float)
         
     def generate_code(self, hdf5_file):
         self.generate_clock()
