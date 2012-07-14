@@ -1156,24 +1156,16 @@ class RFBlaster(PseudoClock):
         self.BLACS_connection = ip_address
     
     def generate_code(self, hdf5_file):
-        import rfjuice
-        import rfjuice.const as c     # constant definitions
-        from rfjuice.cython.make_diff_table import make_diff_table
-        import rfjuice.util as u      # utility functions
-        import rfjuice.pulse as p     # pulse definitions
-        import rfjuice.cython.compile as cp  # compilation functions
-        import platform
+        from rfblaster import caspr
+        import rfblaster.rfjuice
+        rfjuice_folder = os.path.dirname(rfblaster.rfjuice.__file__)
+        
+        import rfblaster.rfjuice.const as c
+        from rfblaster.rfjuice.cython.make_diff_table import make_diff_table
+        from rfblaster.rfjuice.cython.compile import compileD
         import tempfile
         from subprocess import Popen, PIPE
         
-        rfjuice_folder = os.path.dirname(rfjuice.__file__)
-        bits,architecture = platform.architecture()
-        if architecture == 'WindowsPE':
-            caspr = os.path.join(rfjuice_folder,'caspr.exe')
-        elif (bits, architecture) == ('64bit', 'ELF'):
-            caspr = os.path.join(rfjuice_folder,'caspr_linux64')
-        else:
-            raise LabscriptError('The RFBlaster\'s compiler (caspr) has not been compiled for this platform')
         # Generate clock and save raw instructions to the h5 file:
         PseudoClock.generate_code(self, hdf5_file)
         dtypes = [('time',float),('amp0',float),('freq0',float),('phase0',float),('amp1',float),('freq1',float),('phase1',float)]
@@ -1219,7 +1211,7 @@ class RFBlaster(PseudoClock):
             try:
                 # Compile to assembly:
                 with open(temp_assembly_filepath,'w') as assembly_file:
-                    cp.compileD(diff_table, assembly_file, set_defaults = False)
+                    compileD(diff_table, assembly_file, set_defaults = False)
                 # Save the assembly to the h5 file:
                 with open(temp_assembly_filepath,) as assembly_file:
                     assembly_code = assembly_file.read()
@@ -1238,8 +1230,7 @@ class RFBlaster(PseudoClock):
                 binary_group.create_dataset('DDS%d'%dds, data=binary_data)
             finally:
                 # Delete the temporary files:
-                print temp_assembly_filepath
-#                os.remove(temp_assembly_filepath)
+                os.remove(temp_assembly_filepath)
                 os.remove(temp_binary_filepath)
         
                             
