@@ -1195,14 +1195,13 @@ class RFBlaster(PseudoClock):
         assembly_group = group.create_group('ASSEMBLY_CODE')
         binary_group = group.create_group('BINARY_CODE')
         for dds in range(2):
-            abs_table = zeros((len(self.times), 4),dtype=int32)
+            abs_table = zeros((len(self.times), 4),dtype=int)
             abs_table[:,0] = quantised_data['time']
             abs_table[:,1] = quantised_data['amp%d'%dds]
             abs_table[:,2] = quantised_data['freq%d'%dds]
             abs_table[:,3] = quantised_data['phase%d'%dds]
             # convert to diff table:
             diff_table = make_diff_table(abs_table)
-            
             # Create temporary files, get their paths, and close them:
             with tempfile.NamedTemporaryFile(delete=False) as f:
                 temp_assembly_filepath = f.name
