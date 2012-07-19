@@ -1180,10 +1180,11 @@ class RFBlaster(PseudoClock):
         group.create_dataset('TABLE_DATA',data=data)
         
         # Quantise the data and save it to the h5 file:
-        quantised_dtypes = [('time',int32),('amp0',int32),('freq0',int32),('phase0',int32),('amp1',int32),('freq1',int32),('phase1',int32)]
+        quantised_dtypes = [('time',int),('amp0',int),('freq0',int),('phase0',int),('amp1',int),('freq1',int),('phase1',int)]
         quantised_data = zeros(len(self.times),dtype=quantised_dtypes)
         quantised_data['time'] = array(c.tT*1e6*data['time']+0.5)
         for dds in range(2):
+            # TODO: bounds checking
             # Adding 0.5 to each so that casting to integer rounds:
             quantised_data['freq%d'%dds] = array(c.fF*1e-6*data['freq%d'%dds] + 0.5)
             quantised_data['amp%d'%dds]  = array((2**c.bitsA - 1)*data['amp%d'%dds] + 0.5)
