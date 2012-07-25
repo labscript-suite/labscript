@@ -636,6 +636,8 @@ class Output(Device):
             # Check that start time is before end time:
             if time > instruction['end time']:
                 raise LabscriptError('%s %s has been passed a function ramp %s with a negative duration.'%(self.description, self.name, self.instruction_to_string(instruction)))
+            if instruction['clock rate'] == 0:
+                raise LabscriptError('A nonzero sample rate is required.')
             # Else we have a "constant", single valued instruction
         else:
             # If we have units specified, convert the value
