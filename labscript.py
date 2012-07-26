@@ -761,20 +761,23 @@ class AnalogQuantity(Output):
     def ramp(self,t,duration,initial,final,samplerate,units=None):
         self.add_instruction(t, {'function': functions.ramp(t,duration,initial,final), 'description':'linear ramp',
                                  'end time': t + duration, 'clock rate': samplerate, 'units': units})
+        
         return duration
                                  
     def sine(self,t,duration,amplitude,angfreq,phase,dc_offset,samplerate,units=None):
         self.add_instruction(t, {'function': functions.sine(t,duration,amplitude,angfreq,phase,dc_offset), 'description':'sine wave',
                                  'end time': t + duration, 'clock rate': samplerate, 'units': units})
+       
         return duration
         
     def sine_ramp(self,t,duration,initial,final,samplerate,units=None):
         self.add_instruction(t, {'function': functions.sine_ramp(t,duration,initial,final), 'description':'sinusoidal ramp',
                                  'end time': t + duration, 'clock rate': samplerate, 'units': units})   
+                
         return duration
     
     def exp_ramp(self, t, duration, initial, final, samplerate, zero=0, trunc=False, trunc_type='linear', units=None):
-        if trunc:
+        if trunc is not False:
             if trunc_type == 'linear':
                 trunc_duration = duration*log((initial-zero)/(trunc-zero))/log((initial-zero)/(final-zero))
             if trunc_type == 'exponential':
@@ -786,27 +789,30 @@ class AnalogQuantity(Output):
             trunc_duration = duration
         self.add_instruction(t, {'function': functions.exp_ramp(t,duration,initial,final,zero), 'description':'exponential ramp',
                              'end time': t + trunc_duration, 'clock rate': samplerate, 'units': units})
+        
         return trunc_duration
      
     def exp_ramp_t(self, t, duration, initial, final, time_constant, samplerate, trunc=False, units=None):
         # Exponential ramp set by the time constant. No truncation yet!
         zero = (final-initial*exp(-duration/time_constant)) / (1-exp(-duration/time_constant))
-        if trunc:
+        if trunc is not False:
             trunc_duration = time_constant * log((initial-zero)/(trunc-zero))
         else:
             trunc_duration = duration
         self.add_instruction(t, {'function': functions.exp_ramp_t(t, duration, initial, final, time_constant), 'description':'exponential ramp with time consntant',
                              'end time': t + trunc_duration, 'clock rate': samplerate, 'units': units})
+                
         return trunc_duration
                              
     def constant(self,t,value,units=None):
         # verify that value can be converted to float
         val = float(value)
         self.add_instruction(t,value,units)
-
+        
+      
 class AnalogOut(AnalogQuantity):
     description = 'analog output'
-        
+    
 class StaticAnalogQuantity(Output):
     description = 'static analog quantity'
     default_value = 0
@@ -819,7 +825,7 @@ class StaticAnalogQuantity(Output):
             self.add_instruction(0.0,value,units)
             self.value_set = True
         else:
-            raise LabscriptError('%s %s %s has already been set to %s (base units). It cannot also be set to %s (%s).'%(self.description, self.name, parameter, str(self.instructions[0]), str(value),units if units is not None else "base units"))
+            raise LabscriptError('%s %s has already been set to %s (base units). It cannot also be set to %s (%s).'%(self.description, self.name, str(self.instructions[0]), str(value),units if units is not None else "base units"))
                         
     def expand_timeseries(self,*args,**kwargs):
         self.raw_output = array([self.instructions[0.0]])
@@ -1475,6 +1481,11 @@ def save_labscripts(hdf5_file):
                 if path.startswith(prefix) and (path.endswith('.pyc') or path.endswith('.py')):
                     path = path.replace('.pyc','.py')
                     save_path = 'labscriptlib/' + path.replace(prefix,'').replace('\\','/')
+                    if save_path in hdf5_file:
+                        # Don't try to save the same module script twice! 
+                        # (seems to at least double count __init__.py when you import an entire module as in from labscriptlib.stages import * where stages is a folder with an __init__.py file.
+                        # Doesn't seem to want to double count files if you just import the contents of a file within a module
+                        continue
                     hdf5_file.create_dataset(save_path, compression=config.compression, data=open(path).read())
                     process = subprocess.Popen(['svn', 'info', path], stdout=subprocess.PIPE,stderr=subprocess.PIPE,startupinfo=startupinfo)
                     info, err = process.communicate()
@@ -1524,6 +1535,12 @@ def load_globals(hdf5_filename):
                 raise LabscriptError('ERROR whilst parsing globals from %s. \'%s\''%(sys.argv[1],name) +
                                      'is not a valid Python variable name.' +
                                      ' Please choose a different variable name.')
+                                     
+            # Workaround for the fact that numpy.bool_ objects dont 
+            # match python's builtin True and False when compared with 'is':
+            if type(params[name]) == bool_: # bool_ is numpy.bool_, imported from pylab
+                params[name] = bool(params[name])                         
+            
             __builtins__[name] = params[name]
             
             
