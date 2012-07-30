@@ -737,7 +737,10 @@ class Output(Device):
                     # by another ramp or not:
                     next_time = all_times[i+1][0] if iterable(all_times[i+1]) else all_times[i+1]
                     midpoints[-1] = time[-1] + 0.5*(next_time - time[-1])
-                    outarray = self.timeseries[i]['function'](midpoints)
+                    # Finally, we convert to relative times for the function-ramp evaluation, since
+                    # function ramps take times as measured from the start of their ramp, rather than
+                    # absolute times measured from the start of the experiment:
+                    outarray = self.timeseries[i]['function'](midpoints-time[0])
                     # Now that we have the list of output points, pass them through the unit calibration
                     if self.timeseries[i]['units'] is not None:
                         outarray = self.apply_calibration(outarray,self.timeseries[i]['units'])
@@ -759,19 +762,19 @@ class AnalogQuantity(Output):
     description = 'analog quantity'
     default_value = 0
     def ramp(self,t,duration,initial,final,samplerate,units=None):
-        self.add_instruction(t, {'function': functions.ramp(t,duration,initial,final), 'description':'linear ramp',
+        self.add_instruction(t, {'function': functions.ramp(duration,initial,final), 'description':'linear ramp',
                                  'end time': t + duration, 'clock rate': samplerate, 'units': units})
         
         return duration
                                  
     def sine(self,t,duration,amplitude,angfreq,phase,dc_offset,samplerate,units=None):
-        self.add_instruction(t, {'function': functions.sine(t,duration,amplitude,angfreq,phase,dc_offset), 'description':'sine wave',
+        self.add_instruction(t, {'function': functions.sine(duration,amplitude,angfreq,phase,dc_offset), 'description':'sine wave',
                                  'end time': t + duration, 'clock rate': samplerate, 'units': units})
        
         return duration
         
     def sine_ramp(self,t,duration,initial,final,samplerate,units=None):
-        self.add_instruction(t, {'function': functions.sine_ramp(t,duration,initial,final), 'description':'sinusoidal ramp',
+        self.add_instruction(t, {'function': functions.sine_ramp(duration,initial,final), 'description':'sinusoidal ramp',
                                  'end time': t + duration, 'clock rate': samplerate, 'units': units})   
                 
         return duration
@@ -787,7 +790,7 @@ class AnalogQuantity(Output):
                 raise LabscriptError('Truncation type for exp_ramp not supported. Must be either linear or exponential.')
         else:
             trunc_duration = duration
-        self.add_instruction(t, {'function': functions.exp_ramp(t,duration,initial,final,zero), 'description':'exponential ramp',
+        self.add_instruction(t, {'function': functions.exp_ramp(duration,initial,final,zero), 'description':'exponential ramp',
                              'end time': t + trunc_duration, 'clock rate': samplerate, 'units': units})
         
         return trunc_duration
