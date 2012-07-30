@@ -1194,7 +1194,7 @@ class RFBlaster(PseudoClock):
         group.create_dataset('TABLE_DATA',data=data)
         
         # Quantise the data and save it to the h5 file:
-        quantised_dtypes = [('time',int),('amp0',int),('freq0',int),('phase0',int),('amp1',int),('freq1',int),('phase1',int)]
+        quantised_dtypes = [('time',int32),('amp0',int32),('freq0',int32),('phase0',int32),('amp1',int32),('freq1',int32),('phase1',int32)]
         quantised_data = zeros(len(self.times),dtype=quantised_dtypes)
         quantised_data['time'] = array(c.tT*1e6*data['time']+0.5)
         for dds in range(2):
@@ -1209,13 +1209,36 @@ class RFBlaster(PseudoClock):
         assembly_group = group.create_group('ASSEMBLY_CODE')
         binary_group = group.create_group('BINARY_CODE')
         for dds in range(2):
-            abs_table = zeros((len(self.times), 4),dtype=int)
+            abs_table = zeros((len(self.times), 4),dtype=int32)
             abs_table[:,0] = quantised_data['time']
             abs_table[:,1] = quantised_data['amp%d'%dds]
             abs_table[:,2] = quantised_data['freq%d'%dds]
             abs_table[:,3] = quantised_data['phase%d'%dds]
+            
+            # Split abs table into bits
+            
+#            test_table = array([
+#                [600,8192,4294967,0],
+#                [1200,8192/2,4294967*2,0],
+#                [1800,8192,4294967/2,0],
+#                [1950,0,4294967,0]
+#                ], dtype=int)
+#                
+#            test_table2 = array([
+#                [600,8192,4290967,0],
+#                [1200,0,4290967*2,0],
+#                [1800,8192,4290967/2,0],
+#                [1950,4096,4290967,0]
+#                ], dtype=int)
+            
+#            abs_tables = [
+#            test_table,
+#            test_table2]
+            
+            abs_tables = [abs_table]
             # convert to diff table:
-            diff_table = make_diff_table(abs_table)
+#            diff_table = make_diff_table(abs_table)
+            diff_tables = [make_diff_table(tab) for tab in abs_tables]
             # Create temporary files, get their paths, and close them:
             with tempfile.NamedTemporaryFile(delete=False) as f:
                 temp_assembly_filepath = f.name
@@ -1225,7 +1248,12 @@ class RFBlaster(PseudoClock):
             try:
                 # Compile to assembly:
                 with open(temp_assembly_filepath,'w') as assembly_file:
-                    compileD(diff_table, assembly_file, set_defaults = False)
+                    for i, dtab in enumerate(diff_tables):
+                        compileD(dtab, assembly_file, init=(i == 0),
+                                 jump_to_start=(i == 0),
+                                 jump_from_end=(i == len(diff_tables) - 1),
+                                 local_loop_pre = str(i),
+                                 set_defaults = False)
                 # Save the assembly to the h5 file:
                 with open(temp_assembly_filepath,) as assembly_file:
                     assembly_code = assembly_file.read()
@@ -1246,6 +1274,8 @@ class RFBlaster(PseudoClock):
                 # Delete the temporary files:
                 os.remove(temp_assembly_filepath)
                 os.remove(temp_binary_filepath)
+#                print 'assembly:', temp_assembly_filepath
+#                print 'binary:', temp_binary_filepath
         
                             
 class NovaTechDDS9M(IntermediateDevice):
