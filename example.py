@@ -27,6 +27,11 @@ Camera('andor_ixon_0', pulseblaster_0,   'flag 3',BIAS_port = 42520,serial_numbe
 scale = 1.0
 rate = 1e4
 t = 0
+pulseblaster_0.trigger(t,'software')
+# if you wish to hardware trigger a pulseblaster,
+# pass the following method a trigger time and digital channel 
+# (connected to the HW trig input of the pulseblaster)
+#pulseblaster_1.trigger(t,pb_1_trigger)
 
 dds6.frequency.ramp(t,duration=3,initial=50,final=100,samplerate=10)
 
