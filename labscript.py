@@ -286,6 +286,28 @@ class PulseBlaster(PseudoClock):
     def __init__(self,name,board_number):
         PseudoClock.__init__(self,name,None,None)
         self.BLACS_connection = board_number
+        
+        self.trigger_data = {}
+    
+    def trigger(self,t,channel):
+        if self.trigger_data:
+            raise LabscriptError('You can only trigger the PulseBlaster %s once. If you require more than one trigger, please file a feature request for experiment WAITS on redmine'%self.name)
+    
+        if channel == 'software':    
+            if t != 0:
+                raise LabscriptError('You can only software trigger %s at t=0'%self.name)
+            else:
+                self.trigger_data[t] = {'type':'software'}
+        else:
+            # if we are not triggering at the start, make sure the channel stays high otherwise it will be set to 0 as default, which would be bad
+            if t != 0:
+                channel.go_high(0)
+                # Just make sure that the time to trigger is not
+                if t < 1.0/channel.clock_limit:
+                    raise LabscriptError('The trigger %s used to trigger %s is too close to t=0 to change state. Please trigger %s at either t=0 or t>=%s'%(channel.name,self.name,self.name,1.0/channel.clock_limit))
+            channel.go_low(t)
+            channel.go_high(t+1.0/channel.clock_limit)
+            self.trigger_data[t] = {'type':'hardware', 'channel':channel.name, 'device':channel.parent_device.name}
     
     def get_direct_outputs(self):
         """Finds out which outputs are directly attached to the PulseBlaster"""
@@ -535,11 +557,56 @@ class PulseBlaster(PseudoClock):
         group.attrs['stop_time'] = self.stop_time       
                               
     def generate_code(self, hdf5_file):
+        # since we only have one trigger point at the moment (because WAITS are not implemented)
+        # let's get the trigger time
+        first_trigger_time, first_trigger_data = self.trigger_data.items()[0]
+        
+        #eventually this will be put in a loop, that iterates over the entries in the trigger_data dictionary!
+        trigger_time = first_trigger_time
+    
+        # Get all outputs (on pseudo clock and direct)        
+        # Iterate over outputs
+        for output in self.get_all_outputs():
+            offset_instructions = {}
+            for time,instruction in output.instructions.items()    :            
+                # Check that no instruction is before the first trigger
+                if time < first_trigger_time:
+                    raise LabscriptError('You cannot command output %s (at t=%s) before triggering it\'s clock (device %s at t=%s)'%(output.name,str(time),self.name,str(trigger_time)))
+            
+                # check that no loop bridges a trigger
+                if isinstance(instruction,dict):
+                    if time < trigger_time and instruction['end time'] >= trigger_time:
+                        raise LabscriptError('You cannot trigger %s at t=%s during a ramp from t=%s to t=%s on %s'%(self.name,str(trigger_time),str(time),str(instruction['end time']),output.name))
+                
+                # check that no instruction is too close to the trigger (both before and after)
+                
+                
+                # Offset the times in the instruction list from the trigger.
+                if isinstance(instruction,dict):
+                    # Note that this will actually modify output.instructions. Not that it matters,
+                    # But if you change the code, it might!
+                    instruction['end time'] = instruction['end time'] - trigger_time
+                    instruction['initial time'] = instruction['initial time'] - trigger_time
+                
+                offset_instructions[time-trigger_time] = instruction
+            output.instructions = offset_instructions
+    
+        # Adjust the stop time relative to the last trigger time
+        self.stop_time = self.stop_time-trigger_time
+    
+        # Generate the hardware instructions
         PseudoClock.generate_code(self, hdf5_file)
         dig_outputs, dds_outputs = self.get_direct_outputs()
         freqs, amps, phases = self.generate_registers(hdf5_file, dds_outputs)
         self.convert_to_pb_inst(hdf5_file, dig_outputs, dds_outputs, freqs, amps, phases)
-
+        
+        # Make sure the device has been triggered, and save the data in the HDF5 file
+        if self.trigger_data:
+            group = hdf5_file['/devices/'+self.name]
+            group.attrs['trigger'] = repr(self.trigger_data)
+        else:
+            raise LabscriptError('You must trigger %s sometime during the experiment'%self.name)
+        
 
             
 class Output(Device):
@@ -581,6 +648,20 @@ class Output(Device):
         # Save limits even if they are None        
         self.limits = limits
     
+    def triger(self,t,*args,**kwargs):
+        raise LabscriptError('You cannot trigger the channel %s at time %s. Did you mean to trigger its parent %s?'%(self.name,str(t),self.parent_device.name))
+    
+    @property
+    def clock_limit(self):
+        parent = self.parent_device
+        while parent.parent_device != None:
+            parent = parent.parent_device
+            
+        if isinstance(parent,PseudoClock):
+            return parent.clock_limit
+        else:
+            raise LabscriptError('Trying to find the clock limit of a toplevel device not based on pseudoclock. This part of the code will need rethinking if we ever have toplevel devices not based on pseudoclock!')
+    
     def apply_calibration(self,value,units):
         # Is a calibration in use?
         if self.unit_conversion_class is None:
@@ -609,6 +690,7 @@ class Output(Device):
         # Also round end time of ramps to the nearest 0.1 ns:
         if isinstance(instruction,dict):
             instruction['end time'] = round(instruction['end time'],10)
+            instruction['initial time'] = round(instruction['initial time'],10)
         #Check that time is not negative:
         if time < 0:
             err = ' '.join([self.description, self.name, 'has an instruction at t=%ss.'%str(time),
@@ -672,7 +754,7 @@ class Output(Device):
         # If they don't, insert an instruction telling them to hold their final value.
         for instruction in self.instructions.values():
             if isinstance(instruction, dict) and instruction['end time'] not in self.instructions.keys():
-                self.add_instruction(instruction['end time'], instruction['function'](instruction['end time']),instruction['units'])
+                self.add_instruction(instruction['end time'], instruction['function'](instruction['end time']-instruction['initial time']),instruction['units'])
         times = self.instructions.keys()
         times.sort()
         self.times = times
@@ -737,7 +819,7 @@ class Output(Device):
                     # by another ramp or not:
                     next_time = all_times[i+1][0] if iterable(all_times[i+1]) else all_times[i+1]
                     midpoints[-1] = time[-1] + 0.5*(next_time - time[-1])
-                    outarray = self.timeseries[i]['function'](midpoints)
+                    outarray = self.timeseries[i]['function'](midpoints-self.timeseries[i]['initial time'])
                     # Now that we have the list of output points, pass them through the unit calibration
                     if self.timeseries[i]['units'] is not None:
                         outarray = self.apply_calibration(outarray,self.timeseries[i]['units'])
@@ -759,20 +841,20 @@ class AnalogQuantity(Output):
     description = 'analog quantity'
     default_value = 0
     def ramp(self,t,duration,initial,final,samplerate,units=None):
-        self.add_instruction(t, {'function': functions.ramp(t,duration,initial,final), 'description':'linear ramp',
-                                 'end time': t + duration, 'clock rate': samplerate, 'units': units})
+        self.add_instruction(t, {'function': functions.ramp(duration,initial,final), 'description':'linear ramp',
+                                 'initial time':t, 'end time': t + duration, 'clock rate': samplerate, 'units': units})
         
         return duration
                                  
     def sine(self,t,duration,amplitude,angfreq,phase,dc_offset,samplerate,units=None):
-        self.add_instruction(t, {'function': functions.sine(t,duration,amplitude,angfreq,phase,dc_offset), 'description':'sine wave',
-                                 'end time': t + duration, 'clock rate': samplerate, 'units': units})
+        self.add_instruction(t, {'function': functions.sine(duration,amplitude,angfreq,phase,dc_offset), 'description':'sine wave',
+                                 'initial time':t, 'end time': t + duration, 'clock rate': samplerate, 'units': units})
        
         return duration
         
     def sine_ramp(self,t,duration,initial,final,samplerate,units=None):
-        self.add_instruction(t, {'function': functions.sine_ramp(t,duration,initial,final), 'description':'sinusoidal ramp',
-                                 'end time': t + duration, 'clock rate': samplerate, 'units': units})   
+        self.add_instruction(t, {'function': functions.sine_ramp(duration,initial,final), 'description':'sinusoidal ramp',
+                                 'initial time':t, 'end time': t + duration, 'clock rate': samplerate, 'units': units})   
                 
         return duration
     
@@ -787,8 +869,8 @@ class AnalogQuantity(Output):
                 raise LabscriptError('Truncation type for exp_ramp not supported. Must be either linear or exponential.')
         else:
             trunc_duration = duration
-        self.add_instruction(t, {'function': functions.exp_ramp(t,duration,initial,final,zero), 'description':'exponential ramp',
-                             'end time': t + trunc_duration, 'clock rate': samplerate, 'units': units})
+        self.add_instruction(t, {'function': functions.exp_ramp(duration,initial,final,zero), 'description':'exponential ramp',
+                             'initial time':t, 'end time': t + trunc_duration, 'clock rate': samplerate, 'units': units})
         
         return trunc_duration
      
@@ -799,8 +881,8 @@ class AnalogQuantity(Output):
             trunc_duration = time_constant * log((initial-zero)/(trunc-zero))
         else:
             trunc_duration = duration
-        self.add_instruction(t, {'function': functions.exp_ramp_t(t, duration, initial, final, time_constant), 'description':'exponential ramp with time consntant',
-                             'end time': t + trunc_duration, 'clock rate': samplerate, 'units': units})
+        self.add_instruction(t, {'function': functions.exp_ramp_t(duration, initial, final, time_constant), 'description':'exponential ramp with time consntant',
+                             'initial time':t, 'end time': t + trunc_duration, 'clock rate': samplerate, 'units': units})
                 
         return trunc_duration
                              
@@ -1522,6 +1604,9 @@ def save_labscripts(hdf5_file):
                     hdf5_file[save_path].attrs['svn info'] = info + '\n' + err
     except ImportError:
         pass
+    except WindowsError if os.name == 'nt' else None:
+        sys.stderr.write('Warning: Cannot save SVN data for imported scripts. Check that the svn command can be run from the command line')
+        
       
 def generate_code():
     if compiler.hdf5_filename is None:
