@@ -283,6 +283,13 @@ class PulseBlaster(PseudoClock):
     slow_clock_flag = 1
     clock_type = 'slow clock'
     
+    # This value is coupled to a value in the PulseBlaster worker process of BLACS
+    # This number was found experimentally but is determined theoretically by the
+    # instruction lengths in BLACS, and a finite delay in the PulseBlaster
+    #
+    # IF YOU CHANGE ONE, YOU MUST CHANGE THE OTHER!
+    trigger_delay = 250e-9 
+    
     def __init__(self,name,board_number):
         PseudoClock.__init__(self,name,None,None)
         self.BLACS_connection = board_number
@@ -298,6 +305,8 @@ class PulseBlaster(PseudoClock):
                 raise LabscriptError('You can only software trigger %s at t=0'%self.name)
             else:
                 self.trigger_data[t] = {'type':'software'}
+            
+            return 0 # software triggers take no time
         else:
             # if we are not triggering at the start, make sure the channel stays high otherwise it will be set to 0 as default, which would be bad
             if t != 0:
@@ -308,6 +317,8 @@ class PulseBlaster(PseudoClock):
             channel.go_low(t)
             channel.go_high(t+1.0/channel.clock_limit)
             self.trigger_data[t] = {'type':'hardware', 'channel':channel.name, 'device':channel.parent_device.name}
+            
+            return 2.0/channel.clock_limit # return the time this trigger will take (2 clock ticks)
     
     def get_direct_outputs(self):
         """Finds out which outputs are directly attached to the PulseBlaster"""
@@ -562,17 +573,23 @@ class PulseBlaster(PseudoClock):
         first_trigger_time, first_trigger_data = self.trigger_data.items()[0]
         
         #eventually this will be put in a loop, that iterates over the entries in the trigger_data dictionary!
-        trigger_time = first_trigger_time
+        # We add on the trigger delay here to remove the time offset introduced by the length of the WAIT
+        # instructions BLACS adds at the start of the pulse program, and the finite trigger time inherent in the pulseBlaster
+        trigger_time = first_trigger_time + (self.trigger_delay if first_trigger_data['type'] != 'software' else 0)
     
         # Get all outputs (on pseudo clock and direct)        
         # Iterate over outputs
         for output in self.get_all_outputs():
             offset_instructions = {}
-            for time,instruction in output.instructions.items()    :            
+            for time,instruction in output.instructions.items():            
                 # Check that no instruction is before the first trigger
-                if time < first_trigger_time:
-                    raise LabscriptError('You cannot command output %s (at t=%s) before triggering it\'s clock (device %s at t=%s)'%(output.name,str(time),self.name,str(trigger_time)))
-            
+                if time < (first_trigger_time + (self.trigger_delay if first_trigger_data['type'] != 'software' else 0)):
+                    if time < first_trigger_time:   
+                        raise LabscriptError('You cannot command output %s (at t=%s) before triggering it\'s clock (device %s at t=%s)'%(output.name,str(time),self.name,str(first_trigger_time+self.trigger_delay)))
+                    else:
+                        raise LabscriptError('Triggering %s takes %ss. Thus, you cannot command %s before t=%ss (you have attempted to command it at t=%ss)'%(self.name,str(self.trigger_delay),output.name,str(first_trigger_time+self.trigger_delay),str(time)))
+                
+                        
                 # check that no loop bridges a trigger
                 if isinstance(instruction,dict):
                     if time < trigger_time and instruction['end time'] >= trigger_time:
@@ -1286,7 +1303,6 @@ class RFBlaster(PseudoClock):
             quantised_data['amp%d'%dds]  = array((2**c.bitsA - 1)*data['amp%d'%dds] + 0.5)
             quantised_data['phase%d'%dds] = array(c.pP*data['amp%d'%dds] + 0.5)
         group.create_dataset('QUANTISED_DATA',data=quantised_data)
-        
         # Generate some assembly code and compile it to machine code:
         assembly_group = group.create_group('ASSEMBLY_CODE')
         binary_group = group.create_group('BINARY_CODE')
