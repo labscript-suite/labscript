@@ -1313,29 +1313,12 @@ class RFBlaster(PseudoClock):
             abs_table[:,2] = quantised_data['freq%d'%dds]
             abs_table[:,3] = quantised_data['phase%d'%dds]
             
-            # Split abs table into bits
-            
-#            test_table = array([
-#                [600,8192,4294967,0],
-#                [1200,8192/2,4294967*2,0],
-#                [1800,8192,4294967/2,0],
-#                [1950,0,4294967,0]
-#                ], dtype=int)
-#                
-#            test_table2 = array([
-#                [600,8192,4290967,0],
-#                [1200,0,4290967*2,0],
-#                [1800,8192,4290967/2,0],
-#                [1950,4096,4290967,0]
-#                ], dtype=int)
-            
-#            abs_tables = [
-#            test_table,
-#            test_table2]
+            abs_table_1 = abs_table.copy()
+            abs_table_2 = abs_table.copy()
+#            abs_tables = [abs_table, abs_table_1, abs_table_2]
             
             abs_tables = [abs_table]
-            # convert to diff table:
-#            diff_table = make_diff_table(abs_table)
+            # convert to diff tables:
             diff_tables = [make_diff_table(tab) for tab in abs_tables]
             # Create temporary files, get their paths, and close them:
             with tempfile.NamedTemporaryFile(delete=False) as f:
