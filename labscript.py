@@ -569,7 +569,9 @@ class PulseBlaster(PseudoClock):
                               
     def generate_code(self, hdf5_file):
         # since we only have one trigger point at the moment (because WAITS are not implemented)
-        # let's get the trigger time
+        # let's get the trigger time:
+        if not self.trigger_data:
+            raise LabscriptError('%s %s has not been triggered. Please provide a trigger instruction.'%(self.description, self.name))
         first_trigger_time, first_trigger_data = self.trigger_data.items()[0]
         
         #eventually this will be put in a loop, that iterates over the entries in the trigger_data dictionary!
@@ -1313,9 +1315,10 @@ class RFBlaster(PseudoClock):
             abs_table[:,2] = quantised_data['freq%d'%dds]
             abs_table[:,3] = quantised_data['phase%d'%dds]
             
-            abs_table_1 = abs_table.copy()
-            abs_table_2 = abs_table.copy()
-#            abs_tables = [abs_table, abs_table_1, abs_table_2]
+#            abs_table_0 = abs_table.copy()[:-1]
+#            abs_table_1 = abs_table.copy()[:-1]
+#            abs_table_2 = abs_table.copy()[:-1]
+#            abs_tables = [abs_table_0, abs_table_1, abs_table_2]
             
             abs_tables = [abs_table]
             # convert to diff tables:
