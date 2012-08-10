@@ -185,7 +185,7 @@ class PseudoClock(Device):
             for output in outputs:
                 # Check if output is sweeping and has highest clock rate
                 # so far. If so, store its clock rate to max_rate:
-                if isinstance(output.timeseries[i],dict) and output.timeseries[i]['clock rate'] > maxrate:
+                if hasattr(output,'timeseries') and isinstance(output.timeseries[i],dict) and output.timeseries[i]['clock rate'] > maxrate:
                     # It does have the highest clock rate? Then store that rate to max_rate:
                     maxrate = output.timeseries[i]['clock rate']
             if maxrate > self.clock_limit:
@@ -578,6 +578,8 @@ class PulseBlaster(PseudoClock):
         # We add on the trigger delay here to remove the time offset introduced by the length of the WAIT
         # instructions BLACS adds at the start of the pulse program, and the finite trigger time inherent in the pulseBlaster
         trigger_time = first_trigger_time + (self.trigger_delay if first_trigger_data['type'] != 'software' else 0)
+        # This is stored so that child devices know what time to add an initial instruction in at, if none was specified by the user
+        self.trigger_time = trigger_time
     
         # Get all outputs (on pseudo clock and direct)        
         # Iterate over outputs
@@ -672,14 +674,19 @@ class Output(Device):
     
     @property
     def clock_limit(self):
+        parent = self.find_pseudoclock()
+        return parent.clock_limit
+    
+    def find_pseudoclock(self):
         parent = self.parent_device
         while parent.parent_device != None:
             parent = parent.parent_device
             
         if isinstance(parent,PseudoClock):
-            return parent.clock_limit
+            return parent
         else:
-            raise LabscriptError('Trying to find the clock limit of a toplevel device not based on pseudoclock. This part of the code will need rethinking if we ever have toplevel devices not based on pseudoclock!')
+            raise LabscriptError('The parent of %s is not a pseudoclock. Labscript requires that toplevel devices (with no parent) are a pseudoclock.'%self.name)
+    
     
     def apply_calibration(self,value,units):
         # Is a calibration in use?
@@ -756,7 +763,7 @@ class Output(Device):
         Pseudoclock has requested a list of times that this output changes
         state. First we'll need to perform some checks to make sure that
         the instructions the user has entered make sense. Then the list
-        of times is returned."""
+        of times is returned."""        
         # Check if there are no instructions. Generate a warning and insert an
         # instruction telling the output to remain at zero.
         if not self.instructions:
@@ -916,20 +923,41 @@ class AnalogOut(AnalogQuantity):
     
 class StaticAnalogQuantity(Output):
     description = 'static analog quantity'
-    default_value = 0
+    default_value = 0.0
     
     value_set = False
     
     def constant(self,value,units=None):
         if not self.value_set:
             # Since this is a StaticAnalogOut, we set the instruction to be at t=0.0
-            self.add_instruction(0.0,value,units)
+            #self.add_instruction(0.0,value,units)
+            
+            # If we have units specified, convert the value
+            if units is not None:
+                # Apply the unit calibration now
+                value = self.apply_calibration(value,units)
+            # if we have limits, check the value is valid
+            if self.limits:
+                if self.limits[0] <= value <= self.limits[1]:
+                    raise LabscriptError('You cannot program the value %d (base units) to %s as it falls outside the limits (%d to %d)'%(value,self.name,limits[0],limits[1]))
+        
+            
             self.value_set = True
+            self.static_value = value
         else:
             raise LabscriptError('%s %s has already been set to %s (base units). It cannot also be set to %s (%s).'%(self.description, self.name, str(self.instructions[0]), str(value),units if units is not None else "base units"))
-                        
+    
+    def get_change_times(self):
+        if not hasattr(self,'static_value'):
+            self.static_value = self.default_value
+            
+        return [] # Return an empty list as the calling function at the pseudoclock level expects a list
+    
+    def make_timeseries(self,change_times):
+        pass
+    
     def expand_timeseries(self,*args,**kwargs):
-        self.raw_output = array([self.instructions[0.0]])
+        self.raw_output = array([self.static_value])
 
 class StaticAnalogOut(StaticAnalogQuantity):
     description = 'static analog output'
@@ -1266,6 +1294,9 @@ class RFBlaster(PseudoClock):
     clock_type = 'fast clock'
     allowed_children = [DDS]
     
+    # This will be replaced when we code up arbitrary triggering of RFblasters
+    trigger_time = 0.0
+    
     def __init__(self,name,ip_address):
         PseudoClock.__init__(self,name,None,None)
         self.BLACS_connection = ip_address
@@ -1418,10 +1449,10 @@ class NovaTechDDS9M(IntermediateDevice):
             DDSs[channel] = output
         for connection in DDSs:
             if connection in range(4):
-                dds = DDSs[connection]
+                dds = DDSs[connection]   
                 dds.frequency.raw_output, dds.frequency.scale_factor = self.quantise_freq(dds.frequency.raw_output, dds)
                 dds.phase.raw_output, dds.phase.scale_factor = self.quantise_phase(dds.phase.raw_output, dds)
-                dds.amplitude.raw_output, dds.amplitude.scale_factor = self.quantise_amp(dds.amplitude.raw_output, dds)
+                dds.amplitude.raw_output, dds.amplitude.scale_factor = self.quantise_amp(dds.amplitude.raw_output, dds)                   
             else:
                 raise LabscriptError('%s %s has invalid connection string: \'%s\'. '%(dds.description,dds.name,str(dds.connection)) + 
                                      'Format must be \'channel n\' with n from 0 to 4.')
