@@ -1309,6 +1309,7 @@ class RFBlaster(PseudoClock):
         import rfblaster.rfjuice.const as c
         from rfblaster.rfjuice.cython.make_diff_table import make_diff_table
         from rfblaster.rfjuice.cython.compile import compileD
+        # from rfblaster.rfjuice.compile import compileD
         import tempfile
         from subprocess import Popen, PIPE
         
@@ -1339,6 +1340,7 @@ class RFBlaster(PseudoClock):
         # Generate some assembly code and compile it to machine code:
         assembly_group = group.create_group('ASSEMBLY_CODE')
         binary_group = group.create_group('BINARY_CODE')
+        diff_group = group.create_group('DIFF_TABLES')
         for dds in range(2):
             abs_table = zeros((len(self.times), 4),dtype=int32)
             abs_table[:,0] = quantised_data['time']
@@ -1373,6 +1375,8 @@ class RFBlaster(PseudoClock):
                 with open(temp_assembly_filepath,) as assembly_file:
                     assembly_code = assembly_file.read()
                     assembly_group.create_dataset('DDS%d'%dds, data=assembly_code)
+                    for i, diff_table in enumerate(diff_tables):
+                        diff_group.create_dataset('DDS%d_difftable%d'%(dds,i), data=diff_table)
                 # compile to binary:
                 compilation = Popen([caspr,temp_assembly_filepath,temp_binary_filepath],
                                      stdout=PIPE, stderr=PIPE, cwd=rfjuice_folder,startupinfo=startupinfo)
@@ -1389,8 +1393,8 @@ class RFBlaster(PseudoClock):
                 # Delete the temporary files:
                 os.remove(temp_assembly_filepath)
                 os.remove(temp_binary_filepath)
-#                print 'assembly:', temp_assembly_filepath
-#                print 'binary:', temp_binary_filepath
+                # print 'assembly:', temp_assembly_filepath
+                # print 'binary for dds %d on %s:'%(dds,self.name), temp_binary_filepath
         
                             
 class NovaTechDDS9M(IntermediateDevice):
