@@ -726,7 +726,7 @@ class Output(Device):
         if time in self.instructions.keys():
             message = ' '.join(['WARNING: State of', self.description, self.name, 'at t=%ss'%str(time),
                       'has already been set to %s.'%self.instruction_to_string(self.instructions[time]),
-                      'Overwriting to %s.'%self.instruction_to_string(instruction)])
+                      'Overwriting to %s. (note: all values in base units where relevant)'%self.instruction_to_string(self.apply_calibration(instruction,units) if units and not isinstance(instruction,dict) else instruction)])
             sys.stderr.write(message+'\n')
         # Check that ramps don't collide
         if isinstance(instruction,dict):
