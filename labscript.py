@@ -945,7 +945,7 @@ class StaticAnalogQuantity(Output):
             self.value_set = True
             self.static_value = value
         else:
-            raise LabscriptError('%s %s has already been set to %s (base units). It cannot also be set to %s (%s).'%(self.description, self.name, str(self.instructions[0]), str(value),units if units is not None else "base units"))
+            raise LabscriptError('%s %s has already been set to %s (base units). It cannot also be set to %s (%s).'%(self.description, self.name, str(self.static_value), str(value),units if units is not None else "base units"))
     
     def get_change_times(self):
         if not hasattr(self,'static_value'):
