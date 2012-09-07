@@ -2,6 +2,7 @@ import os
 import sys
 import subprocess
 import keyword
+from contextlib import contextmanager
 
 import h5py
 from pylab import *
@@ -19,8 +20,14 @@ kHz = 1e3
 MHz = 1e6
 GHz = 1e9
 
-# The existing builtins, so they can be restored when deinit() is called:
-module = type(os)
+# We need to backup the builtins as they are now, as well as have a
+# reference to the actual builtins dictionary (which will change as we
+# add globals and devices to it), so that we can restore the builtins
+# when labscript_cleanup() is called. The if statement here is because
+# __builtins__ is either a dictionary, or a module, depending on whether
+# we are the __main__ module or not. We're usually not, but just in case
+# we'll handle both cases.
+module = type(__main__)
 if isinstance(__builtins__, module):
     _builtins_dict = __builtins__.__dict__
     _existing_builtins_dict = __builtins__.__dict__.copy()
@@ -30,17 +37,33 @@ elif isinstance(__builtins__, dict):
 else:
     raise ImportError('Can\'t get __builtins__ dictionary, what\'s going on?')
     
-class config:
-    supress_mild_warnings = True
-    compression = None # set to 'gzip' for compression 
-    
 # Startupinfo, for ensuring subprocesses don't launch with a visible command window:
 if os.name=='nt':
     startupinfo = subprocess.STARTUPINFO()
     startupinfo.dwFlags |= 1 #subprocess.STARTF_USESHOWWINDOW # This variable isn't defined, but apparently it's equal to one.
 else:
     startupinfo = None
-                        
+        
+        
+class config:
+    supress_mild_warnings = True
+    supress_all_warnings = False
+    compression = None # set to 'gzip' for compression 
+   
+    
+class NoWarnings(object):
+    """A context manager which sets config.supress_mild_warnings to True
+    whilst in use.  Allows the user to supress warnings for specific
+    lines when they know that the warning does not indicate a problem."""
+    def __enter__(self):
+        self.existing_warning_setting = config.supress_all_warnings
+        config.supress_all_warnings = True
+    def __exit__(self, *args):
+        config.supress_all_warnings = self.existing_warning_setting
+    
+no_warnings = NoWarnings() # This is the object that should be used, not the class above
+
+
 def bitfield(arrays,dtype):
     """converts a list of arrays of ones and zeros into a single
     array of unsigned ints of the given datatype."""
@@ -737,10 +760,11 @@ class Output(Device):
             raise LabscriptError(err)
         #Check that this doesn't collide with previous instructions:
         if time in self.instructions.keys():
-            message = ' '.join(['WARNING: State of', self.description, self.name, 'at t=%ss'%str(time),
-                      'has already been set to %s.'%self.instruction_to_string(self.instructions[time]),
-                      'Overwriting to %s. (note: all values in base units where relevant)'%self.instruction_to_string(self.apply_calibration(instruction,units) if units and not isinstance(instruction,dict) else instruction)])
-            sys.stderr.write(message+'\n')
+            if not config.supress_all_warnings:
+                message = ' '.join(['WARNING: State of', self.description, self.name, 'at t=%ss'%str(time),
+                          'has already been set to %s.'%self.instruction_to_string(self.instructions[time]),
+                          'Overwriting to %s. (note: all values in base units where relevant)'%self.instruction_to_string(self.apply_calibration(instruction,units) if units and not isinstance(instruction,dict) else instruction)])
+                sys.stderr.write(message+'\n')
         # Check that ramps don't collide
         if isinstance(instruction,dict):
             # No ramps allowed if this output is on a slow clock:
@@ -780,13 +804,13 @@ class Output(Device):
         # Check if there are no instructions. Generate a warning and insert an
         # instruction telling the output to remain at zero.
         if not self.instructions:
-            if not config.supress_mild_warnings:
+            if not config.supress_mild_warnings and not config.supress_all_warnings:
                 sys.stderr.write(' '.join(['WARNING:', self.name, 'has no instructions. It will be set to %s for all time.\n'%self.instruction_to_string(self.default_value)]))
             self.add_instruction(0,self.default_value)  
         # Check if there are no instructions at t=0. Generate a warning and insert an
         # instruction telling the output to start at zero.
         if 0 not in self.instructions.keys():
-            if not config.supress_mild_warnings:
+            if not config.supress_mild_warnings and not config.supress_all_warnings:
                sys.stderr.write(' '.join(['WARNING:', self.name, 'has no instructions at t=0. It will initially be set to %s.\n'%self.instruction_to_string(0)]))
             self.add_instruction(0,self.default_value) 
         # Check that ramps have instructions following them.
