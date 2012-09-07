@@ -2,7 +2,6 @@ import os
 import sys
 import subprocess
 import keyword
-from contextlib import contextmanager
 
 import h5py
 from pylab import *
