@@ -8,6 +8,8 @@ from pylab import *
 
 import functions
 
+import __main__
+
 ns = 1e-9
 us = 1e-6
 ms = 1e-3
@@ -17,6 +19,17 @@ kHz = 1e3
 MHz = 1e6
 GHz = 1e9
 
+# The existing builtins, so they can be restored when deinit() is called:
+module = type(os)
+if isinstance(__builtins__, module):
+    _builtins_dict = __builtins__.__dict__
+    _existing_builtins_dict = __builtins__.__dict__.copy()
+elif isinstance(__builtins__, dict):
+    _builtins_dict = __builtins__
+    _existing_builtins_dict = __builtins__.copy()
+else:
+    raise ImportError('Can\'t get __builtins__ dictionary, what\'s going on?')
+    
 class config:
     supress_mild_warnings = True
     compression = None # set to 'gzip' for compression 
@@ -1613,14 +1626,13 @@ def generate_connection_table(hdf5_file):
   
   
 def save_labscripts(hdf5_file):
-    labscriptfile = os.path.join(sys.path[0],sys.argv[0])
-    if labscriptfile:
-        script_text = open(labscriptfile).read()
+    if compiler.labscript_file is not None:
+        script_text = open(compiler.labscript_file).read()
     else:
         script_text = ''
     script = hdf5_file.create_dataset('script',compression=config.compression,data=script_text)
-    script.attrs['name'] = os.path.basename(sys.argv[0])
-    script.attrs['path'] = sys.path[0]
+    script.attrs['name'] = os.path.basename(compiler.labscript_file) if compiler.labscript_file is not None else ''
+    script.attrs['path'] = os.path.dirname(compiler.labscript_file) if compiler.labscript_file is not None else sys.path[0]
     try:
         import labscriptlib
         prefix = os.path.dirname(labscriptlib.__file__)
@@ -1672,11 +1684,11 @@ def load_globals(hdf5_filename):
         params = dict(hdf5_file['globals'].attrs)
         for name in params.keys():
             if name in globals().keys() or name in locals().keys() or name in dir(__builtins__):
-                raise LabscriptError('Error whilst parsing globals from %s. \'%s\''%(sys.argv[1],name) +
+                raise LabscriptError('Error whilst parsing globals from %s. \'%s\''%(hdf5_filename,name) +
                                      ' is already a name used by Python, labscript, or Pylab.'+
                                      ' Please choose a different variable name to avoid a conflict.')
             if name in keyword.kwlist:
-                raise LabscriptError('Error whilst parsing globals from %s. \'%s\''%(sys.argv[1],name) +
+                raise LabscriptError('Error whilst parsing globals from %s. \'%s\''%(hdf5_filename,name) +
                                      ' is a reserved Python keyword.' +
                                      ' Please choose a different variable name.')
             try:
@@ -1684,7 +1696,7 @@ def load_globals(hdf5_filename):
                 exec(name + ' = 0')
                 exec('del ' + name )
             except:
-                raise LabscriptError('ERROR whilst parsing globals from %s. \'%s\''%(sys.argv[1],name) +
+                raise LabscriptError('ERROR whilst parsing globals from %s. \'%s\''%(hdf5_filename,name) +
                                      'is not a valid Python variable name.' +
                                      ' Please choose a different variable name.')
                                      
@@ -1696,7 +1708,8 @@ def load_globals(hdf5_filename):
             __builtins__[name] = params[name]
             
             
-def labscript_init(hdf5_filename, new=False):
+def labscript_init(hdf5_filename, labscript_file=None, new=False):
+    # Backup builtins so they can be restored at deinit:
     if new:
         with h5py.File(hdf5_filename ,'w') as hdf5_file:
             hdf5_file.create_group('globals')
@@ -1704,16 +1717,35 @@ def labscript_init(hdf5_filename, new=False):
         raise LabscriptError('Provided hdf5 filename %s doesn\'t exist.'%hdf5_filename)
     load_globals(hdf5_filename)
     compiler.hdf5_filename = hdf5_filename
+    compiler.labscript_file = os.path.abspath(labscript_file)
+
+def labscript_cleanup():
+    """restores builtins and the labscript module to its state before
+    labscript_init() was called"""
+    for name in _builtins_dict.copy():
+        if name not in _existing_builtins_dict:
+            del _builtins_dict[name]
+        else:
+            _builtins_dict[name] = _existing_builtins_dict[name]
+    compiler.inventory = []
+    compiler.hdf5_filename = None
+    compiler.labscript_file = None
     
 class compiler:
+    # The labscript file being compiled:
+    labscript_file = None
     # All defined devices:
     inventory = []
     # The filepath of the h5 file containing globals and which will
     # contain compilation output:
     hdf5_filename = None
- 
-# Initialisation, runs at import:
-if len(sys.argv) > 1:
-    labscript_init(sys.argv[1])
-elif sys.argv[0]:
-    labscript_init(sys.argv[0].replace('.py','.h5'),new=True)
+
+   
+# Initialisation, runs at import. Can be suppressed by setting
+# labscript_auto_init = False in your __main__ module before importing
+# labscript. If you do this, you'll need to call labscript_init() yourself:
+if not hasattr(__main__, 'labscript_auto_init') or __main__.labscript_auto_init == True:
+    if len(sys.argv) > 1:
+        labscript_init(sys.argv[1],labscript_file=sys.argv[0])
+    elif sys.argv[0]:
+        labscript_init(sys.argv[0].replace('.py','.h5'), labscript_file=sys.argv[0], new=True)
