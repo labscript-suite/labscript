@@ -527,12 +527,11 @@ class PulseBlaster(PseudoClock):
             # to be inserted. How many times does the delay of the
             # loop/endloop instructions go into 55 secs?
             quotient, remainder = divmod(instruction['step']/2.0,55.0)
-            if remainder < 100e-9:
+            if quotient and remainder < 100e-9:
                 # The remainder will be used for the total duration of the LOOP and END_LOOP instructions. 
                 # It must not be too short for this, if it is, take one LONG_DELAY iteration and give 
                 # its duration to the loop instructions:
                 quotient, remainder = quotient - 1, remainder + 55.0
-                assert quotient >= 0 # Something is wrong if this is not the case
                 
             # The loop and endloop instructions will only use the remainder:
             pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs, 'enables':dds_enables,
