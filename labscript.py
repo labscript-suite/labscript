@@ -1423,7 +1423,13 @@ class RFBlaster(PseudoClock):
                 # Save the binary to the h5 file:
                 with open(temp_binary_filepath,'rb') as binary_file:
                     binary_data = binary_file.read()
-                binary_group.create_dataset('DDS%d'%dds, data=binary_data)
+                # has to be numpy.string_ (string_ in this namespace,
+                # imported from pylab) as python strings get stored
+                # as h5py as 'variable length' strings, which 'cannot
+                # contain embedded nulls'. Presumably our binary data
+                # must contain nulls sometimes. So this crashes if we
+                # don't convert to a numpy 'fixes length' string:
+                binary_group.create_dataset('DDS%d'%dds, data=string_(binary_data))
             finally:
                 # Delete the temporary files:
                 os.remove(temp_assembly_filepath)
