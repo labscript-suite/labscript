@@ -3,7 +3,7 @@ import sys
 import subprocess
 import keyword
 
-import h5py
+import h5_lock, h5py
 from pylab import *
 
 import functions
