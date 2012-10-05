@@ -1406,7 +1406,7 @@ class RFBlaster(PseudoClock):
                                  jump_to_start=(i == 0),
                                  jump_from_end=(i == len(diff_tables) - 1),
                                  local_loop_pre = str(i),
-                                 set_defaults = False)
+                                 set_defaults = True)
                 # Save the assembly to the h5 file:
                 with open(temp_assembly_filepath,) as assembly_file:
                     assembly_code = assembly_file.read()
