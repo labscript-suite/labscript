@@ -1,3 +1,4 @@
+from __future__ import division
 import os
 import sys
 import subprocess
@@ -1341,7 +1342,7 @@ class StaticDDS(Device):
 class RFBlaster(PseudoClock):
     description = 'RF Blaster Rev1.1'
     clock_limit = 500e3
-    clock_resolution = 13.33333333333333333333e9
+    clock_resolution = 13.33333333333333333333e-9
     clock_type = 'fast clock'
     allowed_children = [DDS]
     
@@ -1453,7 +1454,44 @@ class RFBlaster(PseudoClock):
                 # print 'assembly:', temp_assembly_filepath
                 # print 'binary for dds %d on %s:'%(dds,self.name), temp_binary_filepath
         
-                
+
+class PineBlaster(PseudoClock):
+    description = 'PineBlaster'
+    clock_limit = 10e6
+    clock_resolution = 25e-9
+    clock_type = 'fast clock'
+    
+    def __init__(self, name, usbport):
+        PseudoClock.__init__(self,name,None,None)
+        self.BLACS_connection = usbport
+    
+    def generate_code(self, hdf5_file):
+        PseudoClock.generate_code(self, hdf5_file)
+        group = hdf5_file['devices'].create_group(self.name)     
+        # Store the clock tick times:
+        group.create_dataset('FAST_CLOCK',compression=config.compression, data=self.times)
+        
+        # compress clock instructions with the same period: This will
+        # halve the number of instructions roughly, since the PineBlaster
+        # does not have a 'slow clock':
+        reduced_instructions = []
+        for instruction in self.clock:
+            reps = instruction['reps']
+            # period is in quantised units:
+            period = int(round(instruction['step']/self.clock_resolution))
+            if reduced_instructions and reduced_instructions[-1]['period'] == period:
+                reduced_instructions[-1]['reps'] += reps
+            else:
+                reduced_instructions.append({'period': period, 'reps': reps})
+        # Store these instructions to the h5 file:
+        dtypes = [('period',int),('reps',int)]
+        pulse_program = zeros(len(reduced_instructions),dtype=dtypes)
+        for i, instruction in enumerate(reduced_instructions):
+            pulse_program[i]['period'] = instruction['period']
+            pulse_program[i]['reps'] = instruction['reps']
+        group.create_dataset('PULSE_PROGRAM', compression = config.compression, data=pulse_program)
+
+                            
 class NovaTechDDS9M(IntermediateDevice):
     description = 'NT-DDS9M'
     allowed_children = [DDS, StaticDDS]
