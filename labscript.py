@@ -223,6 +223,13 @@ class PseudoClock(Device):
                 if hasattr(output,'timeseries') and isinstance(output.timeseries[i],dict) and output.timeseries[i]['clock rate'] > maxrate:
                     # It does have the highest clock rate? Then store that rate to max_rate:
                     maxrate = output.timeseries[i]['clock rate']
+            if maxrate:
+                # round to the nearest clock rate that the pseudoclock can actually support:
+                period = 1/maxrate
+                quantised_period = period/self.clock_resolution
+                quantised_period = round(quantised_period)
+                period = quantised_period*self.clock_resolution
+                maxrate = 1/period
             if maxrate > self.clock_limit:
                 raise LabscriptError('At t = %s sec, a clock rate of %s Hz was requested. '%(str(time),str(maxrate)) + 
                                     'One or more devices connected to %s cannot support clock rates higher than %sHz.'%(str(self.name),str(self.clock_limit)))
@@ -314,6 +321,7 @@ class PulseBlaster(PseudoClock):
                        
     description = 'PB-DDSII-300'
     clock_limit = 8.3e6 # Slight underestimate I think.
+    clock_resolution = 26.6666666666666666e-9
     fast_clock_flag = 0
     slow_clock_flag = 1
     clock_type = 'slow clock'
@@ -1333,6 +1341,7 @@ class StaticDDS(Device):
 class RFBlaster(PseudoClock):
     description = 'RF Blaster Rev1.1'
     clock_limit = 500e3
+    clock_resolution = 13.33333333333333333333e9
     clock_type = 'fast clock'
     allowed_children = [DDS]
     
@@ -1444,7 +1453,7 @@ class RFBlaster(PseudoClock):
                 # print 'assembly:', temp_assembly_filepath
                 # print 'binary for dds %d on %s:'%(dds,self.name), temp_binary_filepath
         
-                            
+                
 class NovaTechDDS9M(IntermediateDevice):
     description = 'NT-DDS9M'
     allowed_children = [DDS, StaticDDS]
