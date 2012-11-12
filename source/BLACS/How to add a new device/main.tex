@@ -488,6 +488,6 @@ self.timeouts.remove(self.some_function)
 
 Do to the nature of state machines (callbacks are processed one at a time based on the order in the queue), your method is not guaranteed to run as often as you have requested. Initially, because your method is a state machine method, BLACS will add your method to the state machine queue. Once your method has run, it will add a GTK callback to run in \texttt{delay} milliseconds. This GTK callback will queue up your function in the state machine again, and, depending on the length of the queue at that time, may not run immediately. 
 
-\textbf{Also note that you can only have one timeout in your device class!}
+\textbf{Also note that you can only have one timeout for a given method. Creating a timeout for the same method will replace the existing timeout.}
 
 \end{document}
