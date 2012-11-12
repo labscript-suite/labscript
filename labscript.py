@@ -1366,7 +1366,7 @@ class RFBlaster(PseudoClock):
             data['amp%s'%connection] = dds.amplitude.raw_output
             data['phase%s'%connection] = dds.phase.raw_output
         group = hdf5_file['devices'].create_group(self.name)
-        group.create_dataset('TABLE_DATA',data=data)
+        group.create_dataset('TABLE_DATA',compression=config.compression, data=data)
         
         # Quantise the data and save it to the h5 file:
         quantised_dtypes = [('time',int32),('amp0',int32),('freq0',int32),('phase0',int32),('amp1',int32),('freq1',int32),('phase1',int32)]
@@ -1378,7 +1378,7 @@ class RFBlaster(PseudoClock):
             quantised_data['freq%d'%dds] = array(c.fF*1e-6*data['freq%d'%dds] + 0.5)
             quantised_data['amp%d'%dds]  = array((2**c.bitsA - 1)*data['amp%d'%dds] + 0.5)
             quantised_data['phase%d'%dds] = array(c.pP*data['phase%d'%dds] + 0.5)
-        group.create_dataset('QUANTISED_DATA',data=quantised_data)
+        group.create_dataset('QUANTISED_DATA',compression=config.compression, data=quantised_data)
         # Generate some assembly code and compile it to machine code:
         assembly_group = group.create_group('ASSEMBLY_CODE')
         binary_group = group.create_group('BINARY_CODE')
@@ -1418,7 +1418,7 @@ class RFBlaster(PseudoClock):
                     assembly_code = assembly_file.read()
                     assembly_group.create_dataset('DDS%d'%dds, data=assembly_code)
                     for i, diff_table in enumerate(diff_tables):
-                        diff_group.create_dataset('DDS%d_difftable%d'%(dds,i), data=diff_table)
+                        diff_group.create_dataset('DDS%d_difftable%d'%(dds,i), compression=config.compression, data=diff_table)
                 # compile to binary:
                 compilation = Popen([caspr,temp_assembly_filepath,temp_binary_filepath],
                                      stdout=PIPE, stderr=PIPE, cwd=rfjuice_folder,startupinfo=startupinfo)
@@ -1665,7 +1665,7 @@ def save_labscripts(hdf5_file):
         script_text = open(compiler.labscript_file).read()
     else:
         script_text = ''
-    script = hdf5_file.create_dataset('script',compression=config.compression,data=script_text)
+    script = hdf5_file.create_dataset('script',data=script_text)
     script.attrs['name'] = os.path.basename(compiler.labscript_file) if compiler.labscript_file is not None else ''
     script.attrs['path'] = os.path.dirname(compiler.labscript_file) if compiler.labscript_file is not None else sys.path[0]
     try:
@@ -1682,7 +1682,7 @@ def save_labscripts(hdf5_file):
                         # (seems to at least double count __init__.py when you import an entire module as in from labscriptlib.stages import * where stages is a folder with an __init__.py file.
                         # Doesn't seem to want to double count files if you just import the contents of a file within a module
                         continue
-                    hdf5_file.create_dataset(save_path, compression=config.compression, data=open(path).read())
+                    hdf5_file.create_dataset(save_path, data=open(path).read())
                     process = subprocess.Popen(['svn', 'info', path], stdout=subprocess.PIPE,stderr=subprocess.PIPE,startupinfo=startupinfo)
                     info, err = process.communicate()
                     hdf5_file[save_path].attrs['svn info'] = info + '\n' + err
