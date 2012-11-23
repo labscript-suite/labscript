@@ -1073,6 +1073,7 @@ class NIBoard(IntermediateDevice):
         IntermediateDevice.__init__(self, name, parent_device,clock_type)
         self.acquisition_rate = acquisition_rate
         self.clock_terminal = clock_terminal
+        self.MAX_name = MAX_name
         self.BLACS_connection = MAX_name
         
     def add_device(self,output):
