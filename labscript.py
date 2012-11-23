@@ -333,6 +333,7 @@ class PulseBlaster(PseudoClock):
     #
     # IF YOU CHANGE ONE, YOU MUST CHANGE THE OTHER!
     trigger_delay = 250e-9 
+    trigger_type = 'falling'
     
     def __init__(self,name,board_number):
         PseudoClock.__init__(self,name,None,None)
@@ -1068,10 +1069,11 @@ class NIBoard(IntermediateDevice):
     clock_limit = 500e3 # underestimate I think.
     description = 'generic_NI_Board'
     
-    def __init__(self, name, parent_device, clock_type, clock_terminal, acquisition_rate=0):
+    def __init__(self, name, parent_device, clock_type, clock_terminal, MAX_name=None, acquisition_rate=0):
         IntermediateDevice.__init__(self, name, parent_device,clock_type)
         self.acquisition_rate = acquisition_rate
         self.clock_terminal = clock_terminal
+        self.BLACS_connection = MAX_name
         
     def add_device(self,output):
         # TODO: check there are no duplicates, check that connection
