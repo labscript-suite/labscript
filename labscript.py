@@ -1119,13 +1119,13 @@ class NIBoard(IntermediateDevice):
                                   'can only have values between -10 and 10 Volts, ' + 
                                   'the limit imposed by %s.'%self.name)
             analog_out_table[:,i] = output.raw_output
-            analog_out_attrs.append(self.name+'/'+connection)
+            analog_out_attrs.append(self.MAX_name +'/'+connection)
         input_connections = inputs.keys()
         input_connections.sort()
         input_attrs = []
         acquisitions = []
         for connection in input_connections:
-            input_attrs.append(self.name+'/'+connection)
+            input_attrs.append(self.MAX_name+'/'+connection)
             for acq in inputs[connection].acquisitions:
                 acquisitions.append((connection,acq['label'],acq['start_time'],acq['end_time'],acq['scale_factor'],acq['units']))
         # The 'a256' dtype below limits the string fields to 256
@@ -1146,7 +1146,7 @@ class NIBoard(IntermediateDevice):
             grp.attrs['analog_out_channels'] = ', '.join(analog_out_attrs)
         if len(digital_out_table): # Table must be non empty
             digital_dataset = grp.create_dataset('DIGITAL_OUTS',compression=config.compression,data=digital_out_table)
-            grp.attrs['digital_lines'] = '/'.join((self.name,'port0','line0:%d'%(self.n_digitals-1)))
+            grp.attrs['digital_lines'] = '/'.join((self.MAX_name,'port0','line0:%d'%(self.n_digitals-1)))
         if len(acquisition_table): # Table must be non empty
             input_dataset = grp.create_dataset('ACQUISITIONS',compression=config.compression,data=acquisition_table)
             grp.attrs['analog_in_channels'] = ', '.join(input_attrs)
