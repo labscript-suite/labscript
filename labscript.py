@@ -1825,12 +1825,3 @@ class compiler:
     # contain compilation output:
     hdf5_filename = None
 
-   
-# Initialisation, runs at import. Can be suppressed by setting
-# labscript_auto_init = False in your __main__ module before importing
-# labscript. If you do this, you'll need to call labscript_init() yourself:
-if not hasattr(__main__, 'labscript_auto_init') or __main__.labscript_auto_init == True:
-    if len(sys.argv) > 1:
-        labscript_init(sys.argv[1],labscript_file=sys.argv[0])
-    elif sys.argv[0]:
-        labscript_init(sys.argv[0].replace('.py','.h5'), labscript_file=sys.argv[0], new=True)
