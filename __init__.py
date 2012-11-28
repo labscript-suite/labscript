@@ -9,7 +9,6 @@ import inspect
 importing_frame = inspect.currentframe()
 importing_locals = importing_frame.f_back.f_locals
 if not 'labscript_auto_init' in importing_locals or importing_locals['labscript_auto_init']:
-    print 'auto init!'
     if len(sys.argv) > 1:
         labscript_init(sys.argv[1],labscript_file=sys.argv[0])
     elif sys.argv[0]:
