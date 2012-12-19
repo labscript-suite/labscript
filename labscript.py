@@ -1020,7 +1020,7 @@ class DigitalQuantity(Output):
     default_value = 0
     dtype = uint32
     
-    # Redefine __init__ so that you cannot define a limit of calibration for DO
+    # Redefine __init__ so that you cannot define a limit or calibration for DO
     def __init__(self,name,parent_device,connection):
         Output.__init__(self,name,parent_device,connection)
     def go_high(self,t):
@@ -1031,6 +1031,38 @@ class DigitalQuantity(Output):
 class DigitalOut(DigitalQuantity):
     description = 'digital output'
 
+class StaticDigitalQuantity(DigitalQuantity):
+    description = 'static digital quantity'
+    value_set = False
+    
+    def go_high(self):
+        if not self.value_set:
+            self.add_instruction(0,1)
+            self.value_set = True
+            self.static_value = 1
+    def go_low(self):
+        if not self.value_set:
+            self.add_instruction(0,0) 
+            self.value_set = True
+            self.static_value = 0
+        else:
+            raise LabscriptError('%s %s has already been set to %s. It cannot also be set to %s.'%(self.description, self.name, allowed_states[self.static_value], allowed_states[value]))
+    
+    def get_change_times(self):
+        if not hasattr(self,'static_value'):
+            self.static_value = self.default_value
+            
+        return [] # Return an empty list as the calling function at the pseudoclock level expects a list
+    
+    def make_timeseries(self,change_times):
+        pass
+    
+    def expand_timeseries(self,*args,**kwargs):
+        self.raw_output = array([self.static_value])
+
+class StaticDigitalOut(StaticDigitalQuantity):
+    description = 'static digital output'
+        
 class AnalogIn(Device):
     description = 'Analog Input'
     generation = 3
@@ -1304,14 +1336,20 @@ class DDS(Device):
                     
 class StaticDDS(Device):
     description = 'Static RF'
-    allowed_children = [StaticAnalogQuantity,DigitalOut]
+    allowed_children = [StaticAnalogQuantity,DigitalOut,StaticDigitalOut]
     generation = 2
     def __init__(self,name,parent_device,connection,digital_gate = {},freq_limits = None,freq_conv_class = None,freq_conv_params = {},amp_limits=None,amp_conv_class = None,amp_conv_params = {},phase_limits=None,phase_conv_class = None,phase_conv_params = {}):
         self.clock_type = parent_device.clock_type
         Device.__init__(self,name,parent_device,connection)
+        
         self.frequency = StaticAnalogQuantity(self.name+'_freq',self,'freq',freq_limits,freq_conv_class,freq_conv_params)
-        self.amplitude = StaticAnalogQuantity(self.name+'_amp',self,'amp',amp_limits,amp_conv_class,amp_conv_params)
-        self.phase = StaticAnalogQuantity(self.name+'_phase',self,'phase',phase_limits,phase_conv_class,phase_conv_params)        
+        
+        if not isinstance(self.parent_device,PhaseMatrixQuickSyn):
+            self.amplitude = StaticAnalogQuantity(self.name+'_amp',self,'amp',amp_limits,amp_conv_class,amp_conv_params)
+            self.phase = StaticAnalogQuantity(self.name+'_phase',self,'phase',phase_limits,phase_conv_class,phase_conv_params)        
+        
+        
+        
         if isinstance(self.parent_device,NovaTechDDS9M):
             self.frequency.default_value = 0.1
             if 'device' in digital_gate and 'connection' in digital_gate:            
@@ -1319,27 +1357,46 @@ class StaticDDS(Device):
             # Did they only put one key in the dictionary, or use the wrong keywords?
             elif len(digital_gate) > 0:
                 raise LabscriptError('You must specify the "device" and "connection" for the digital gate of %s.'%(self.name))
-                
+        
+        elif isinstance(self.parent_device,PhaseMatrixQuickSyn):
+            self.frequency.default_value = 0.5e9
+            self.gate = StaticDigitalOut(self.name+'_gate',self,'gate')
+            
+            
     def setamp(self,value,units=None):
-        self.amplitude.constant(value,units)
+        if isinstance(self.parent_device,PhaseMatrixQuickSyn):
+            raise LabscriptError('You cannot set the amplitude of the QuickSyn')
+        else:
+            self.amplitude.constant(value,units)
         
     def setfreq(self,value,units=None):
         self.frequency.constant(value,units)
         
     def setphase(self,value,units=None):
-        self.phase.constant(value,units) 
-               
-    def enable(self,t):
-        if self.gate:
-            self.gate.go_high(t)
+        if isinstance(self.parent_device,PhaseMatrixQuickSyn):
+            raise LabscriptError('You cannot set the phase of the QuickSyn')
         else:
-            raise LabscriptError('DDS %s does not have a digital gate, so you cannot use the enable(t) method.'%(self.name))
-                        
-    def disable(self,t):
-        if self.gate:
-            self.gate.go_low(t)
+            self.phase.constant(value,units) 
+            
+    def enable(self,t=None):        
+        if isinstance(self.parent_device,PhaseMatrixQuickSyn):
+            self.gate.go_high()
+        
         else:
-            raise LabscriptError('DDS %s does not have a digital gate, so you cannot use the disable(t) method.'%(self.name))
+            if self.gate:
+                self.gate.go_high(t)
+            else:
+                raise LabscriptError('DDS %s does not have a digital gate, so you cannot use the enable(t) method.'%(self.name))
+                            
+    def disable(self,t=None):
+        if isinstance(self.parent_device,PhaseMatrixQuickSyn):
+            self.gate.go_low()
+        
+        else:
+            if self.gate:
+                self.gate.go_low(t)
+            else:
+                raise LabscriptError('DDS %s does not have a digital gate, so you cannot use the disable(t) method.'%(self.name))
               
             
 class RFBlaster(PseudoClock):
@@ -1604,6 +1661,60 @@ class NovaTechDDS9M(IntermediateDevice):
         grp.create_dataset('STATIC_DATA',compression=config.compression,data=static_table) 
 
 
+class PhaseMatrixQuickSyn(Device):
+    description = 'QuickSyn Frequency Synthesiser'
+    allowed_children = [StaticDDS]
+    generation = 0
+    def __init__(self, name,com_port):
+        Device.__init__(self, name, None, None)
+        self.clock_type = None
+        self.BLACS_connection = com_port
+        
+    def quantise_freq(self,data, device):
+        # Ensure that frequencies are within bounds:
+        if any(data > 10e9 )  or any(data < 0.5e9 ):
+            raise LabscriptError('%s %s '%(device.description, device.name) +
+                              'can only have frequencies between 0.5GHz and 10GHz, ' + 
+                              'the limit imposed by %s.'%self.name)
+        # It's faster to add 0.5 then typecast than to round to integers first (device is programmed in mHz):
+        data = array((1000*data)+0.5,dtype=uint64)
+        scale_factor = 1000
+        return data, scale_factor
+    
+    
+    def generate_code(self, hdf5_file):
+        for output in self.child_devices:
+            try:
+                prefix, channel = output.connection.split()
+                channel = int(channel)
+            except:
+                raise LabscriptError('%s %s has invalid connection string: \'%s\'. '%(output.description,output.name,str(output.connection)) + 
+                                     'Format must be \'channel n\' with n equal 0.')
+            if channel != 0:
+                raise LabscriptError('%s %s has invalid connection string: \'%s\'. '%(output.description,output.name,str(output.connection)) + 
+                                     'Format must be \'channel n\' with n equal 0.')
+            dds = output
+        # Call these functions to finalise stuff:
+        ignore = dds.frequency.get_change_times()
+        dds.frequency.make_timeseries([])
+        dds.frequency.expand_timeseries()
+        
+        ignore = dds.gate.get_change_times()
+        dds.gate.make_timeseries([])
+        dds.gate.expand_timeseries()
+        
+        dds.frequency.raw_output, dds.frequency.scale_factor = self.quantise_freq(dds.frequency.raw_output, dds)
+        static_dtypes = [('freq0',uint64)] + \
+                        [('gate0',uint16)]
+        static_table = zeros(1, dtype=static_dtypes)   
+        static_table['freq0'].fill(1)
+        static_table['freq0'] = dds.frequency.raw_output[0]
+        static_table['gate0'] = dds.gate.raw_output[0]
+        grp = hdf5_file.create_group('/devices/'+self.name)
+        grp.attrs['frequency_scale_factor'] = 1000
+        grp.create_dataset('STATIC_DATA',compression=config.compression,data=static_table)    
+            
+        
 class ZaberStageTLSR150D(StaticAnalogQuantity):
     minval=0
     maxval=76346
