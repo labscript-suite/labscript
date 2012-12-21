@@ -883,7 +883,7 @@ class Output(Device):
                         # can't calculate the step size this way. That's
                         # ok, the final midpoint is determined differently
                         # anyway:
-                        midpoints = time
+                        midpoints = zeros(1)
                     # We need to know when the first clock tick is after
                     # this ramp ends. It's either an array element or a
                     # single number depending on if this ramp is followed
