@@ -1296,44 +1296,62 @@ class DDS(Device):
     description = 'DDS'
     allowed_children = [AnalogQuantity,DigitalOut,DigitalQuantity] # Adds its own children when initialised
     generation = 2
-    def __init__(self,name,parent_device,connection,digital_gate={},freq_limits = None,freq_conv_class = None,freq_conv_params = {},amp_limits=None,amp_conv_class = None,amp_conv_params = {},phase_limits=None,phase_conv_class = None,phase_conv_params = {}):
+    def __init__(self, name, parent_device, connection, digital_gate={}, freq_limits=None, freq_conv_class=None, freq_conv_params={},
+                 amp_limits=None, amp_conv_class=None, amp_conv_params={}, phase_limits=None, phase_conv_class=None, phase_conv_params = {}):
         self.clock_type = parent_device.clock_type
-        Device.__init__(self,name,parent_device,connection)
-        self.frequency = AnalogQuantity(self.name+'_freq',self,'freq',freq_limits,freq_conv_class,freq_conv_params)
-        self.amplitude = AnalogQuantity(self.name+'_amp',self,'amp',amp_limits,amp_conv_class,amp_conv_params)
-        self.phase = AnalogQuantity(self.name+'_phase',self,'phase',phase_limits,phase_conv_class,phase_conv_params)
+        Device.__init__(self, name, parent_device, connection)
+        self.frequency = AnalogQuantity(self.name + '_freq', self, 'freq', freq_limits, freq_conv_class, freq_conv_params)
+        self.amplitude = AnalogQuantity(self.name + '_amp', self, 'amp', amp_limits, amp_conv_class, amp_conv_params)
+        self.phase = AnalogQuantity(self.name + '_phase', self, 'phase', phase_limits, phase_conv_class, phase_conv_params)
         self.gate = None
-        if isinstance(self.parent_device,NovaTechDDS9M):
+        if isinstance(self.parent_device, NovaTechDDS9M):
             self.frequency.default_value = 0.1
             if 'device' in digital_gate and 'connection' in digital_gate:            
-                self.gate = DigitalOut(self.name+'_gate',digital_gate['device'],digital_gate['connection'])
+                self.gate = DigitalOut(self.name + '_gate', digital_gate['device'], digital_gate['connection'])
             # Did they only put one key in the dictionary, or use the wrong keywords?
             elif len(digital_gate) > 0:
-                raise LabscriptError('You must specify the "device" and "connection" for the digital gate of %s.'%(self.name))
-        elif isinstance(self.parent_device,PulseBlaster):
+                raise LabscriptError('You must specify the "device" and "connection" for the digital gate of %s.' % (self.name))
+        elif isinstance(self.parent_device, PulseBlaster):
             if 'device' in digital_gate and 'connection' in digital_gate: 
-                raise LabscriptError('You cannot specify a digital gate for a DDS connected to %s. The digital gate is always internal to the Pulseblaster.'%(self.parent_device.name))
-            self.gate = DigitalQuantity(self.name+'_gate',self,'gate')
+                raise LabscriptError('You cannot specify a digital gate for a DDS connected to %s. The digital gate is always internal to the Pulseblaster.' % (self.parent_device.name))
+            self.gate = DigitalQuantity(self.name + '_gate', self, 'gate')
             
-    def setamp(self,t,value,units=None):
-        self.amplitude.constant(t,value,units)
-    def setfreq(self,t,value,units=None):
-        self.frequency.constant(t,value,units)
-    def setphase(self,t,value,units=None):
-        self.phase.constant(t,value,units)
-    def enable(self,t):
+    def setamp(self, t, value, units=None):
+        self.amplitude.constant(t, value, units)
+        
+    def setfreq(self, t, value, units=None):
+        self.frequency.constant(t, value, units)
+        
+    def setphase(self, t, value, units=None):
+        self.phase.constant(t, value, units)
+        
+    def enable(self, t):
         if self.gate:
             self.gate.go_high(t)
         else:
-            raise LabscriptError('DDS %s does not have a digital gate, so you cannot use the enable(t) method.'%(self.name))
-                        
-    def disable(self,t):
+            raise LabscriptError('DDS %s does not have a digital gate, so you cannot use the enable(t) method.' % (self.name))
+            
+    def disable(self, t):
         if self.gate:
             self.gate.go_low(t)
         else:
-            raise LabscriptError('DDS %s does not have a digital gate, so you cannot use the disable(t) method.'%(self.name))
-                
-                    
+            raise LabscriptError('DDS %s does not have a digital gate, so you cannot use the disable(t) method.' % (self.name))
+            
+    def pulse(self, duration, amplitude, frequency, phase=None, print_summary=True):
+        if print_summary:
+            print_time(t, '%s pulse at %.4f MHz for %.3f ms' % (self.name, frequency/MHz, duration/ms))
+        self.setamp(t, amplitude)
+        if not frequency == None:
+            self.setfreq(t, frequency)
+        if not phase == None:
+            self.setphase(t, phase)
+        if amplitude != 0:
+            self.enable(t)
+        self.disable(t)
+        self.setamp(t, 0)
+        return duration
+
+        
 class StaticDDS(Device):
     description = 'Static RF'
     allowed_children = [StaticAnalogQuantity,DigitalOut,StaticDigitalOut]
