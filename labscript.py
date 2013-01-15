@@ -1101,7 +1101,7 @@ class NIBoard(IntermediateDevice):
     clock_limit = 500e3 # underestimate I think.
     description = 'generic_NI_Board'
     
-    def __init__(self, name, parent_device, clock_type, clock_terminal, MAX_name=None, acquisition_rate=0):
+    def __init__(self, name, parent_device, clock_type, clock_terminal, MAX_name, acquisition_rate=0):
         IntermediateDevice.__init__(self, name, parent_device,clock_type)
         self.acquisition_rate = acquisition_rate
         self.clock_terminal = clock_terminal
@@ -1923,7 +1923,7 @@ def load_globals(hdf5_filename):
             
             
 def labscript_init(hdf5_filename, labscript_file=None, new=False):
-    # Backup builtins so they can be restored at deinit:
+    # Backup builtins so they can be restored at cleanup:
     if new:
         with h5py.File(hdf5_filename ,'w') as hdf5_file:
             hdf5_file.create_group('globals')
