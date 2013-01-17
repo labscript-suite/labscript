@@ -1,11 +1,12 @@
+import __init__ # only have to do this because we're inside the labscript directory
 from labscript import *
 from unitconversions import *
 
 PulseBlaster(  'pulseblaster_0', board_number=0)
-RFBlaster('rfblaster_0','some.ip.address')
+RFBlaster('rfblaster_0','some.ip.address', pulseblaster_0, 'flag 4')
 
-NI_PCIe_6363(  'ni_pcie_6363_0',  pulseblaster_0, 'fast clock', 'ni_pcie_6363_0/PFI0')
-NI_PCI_6733(   'ni_pci_6733_0',  pulseblaster_0, 'fast clock', 'ni_pcie_6363_0/PFI0')
+NI_PCIe_6363(  'ni_pcie_6363_0',  pulseblaster_0, 'fast clock', 'ni_pcie_6363_0', 'ni_pcie_6363_0/PFI0')
+NI_PCI_6733(   'ni_pci_6733_0',  pulseblaster_0, 'fast clock', 'ni_pci_6733_0', 'ni_pcie_6363_0/PFI0')
 NovaTechDDS9M( 'novatechdds9m_0', pulseblaster_0, 'slow clock', com_port="com10")
 
 AnalogOut( 'analog0',  ni_pci_6733_0,         'ao0',unit_conversion_class=test)
@@ -26,14 +27,10 @@ Camera('andor_ixon_0', pulseblaster_0,   'flag 3',BIAS_port = 42520,serial_numbe
 
 scale = 1.0
 rate = 1e4
+rfblaster_0.set_initial_trigger_time(1)
+start()
 t = 0
-pulseblaster_0.trigger(t,'software')
-# if you wish to hardware trigger a pulseblaster,
-# pass the following method a trigger time and digital channel 
-# (connected to the HW trig input of the pulseblaster)
-#pulseblaster_1.trigger(t,pb_1_trigger)
-
-dds6.frequency.ramp(t,duration=3,initial=50,final=100,samplerate=10)
+t += dds6.frequency.ramp(dds6.t0,duration=3,initial=50,final=100,samplerate=10)
 
 input1.acquire('measurement1',0*scale,1*scale)
 input1.acquire('measurement2',3*scale,5*scale)
@@ -57,7 +54,7 @@ analog0.constant(t,2)
 
 analog2.constant(t,3)
 analog1.sine(t,duration=6*scale,amplitude=5,angfreq=2*pi,phase=0,dc_offset=0.0,samplerate=rate)
-t = 1*scale
+t += 1*scale
 shutter2.open(t)
 dds3.enable(t)
 analog0.ramp(t, duration=2*scale, initial=2, final=3, samplerate=rate)
@@ -71,7 +68,7 @@ analog2.constant(t=5.9*scale,value=5)
 analog2.constant(t=7*scale,value=4)
 analog2.constant(t=8*scale,value=5)
 
-stop(t=8*scale+2e-6)
+stop(20)
 
 
 

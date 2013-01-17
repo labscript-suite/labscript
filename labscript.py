@@ -46,7 +46,7 @@ else:
         
         
 class config:
-    supress_mild_warnings = False
+    supress_mild_warnings = True
     supress_all_warnings = False
     compression = None # set to 'gzip' for compression 
    
@@ -258,11 +258,12 @@ class PseudoClock(Device):
         if not change_times:
             change_times.append(0)
         # Also add the stop time as as change time. First check that it isn't too close to the time of the last instruction:
-        dt = self.stop_time - change_times[-1]
-        if abs(dt) < 1.0/self.clock_limit:
-            raise LabscriptError('The stop time of the experiment is t= %s s, but the last instruction for a device attached to %s is at t= %s s. '%( str(self.stop_time), self.name, str(change_times[-1])) +
-                                 'One or more connected devices cannot support update delays shorter than %s sec. Please set the stop_time a bit later.'%str(1.0/self.clock_limit))
-        change_times.append(self.stop_time)
+        if not self.stop_time in change_times:
+            dt = self.stop_time - change_times[-1]
+            if abs(dt) < 1.0/self.clock_limit:
+                raise LabscriptError('The stop time of the experiment is t= %s s, but the last instruction for a device attached to %s is at t= %s s. '%( str(self.stop_time), self.name, str(change_times[-1])) +
+                                     'One or more connected devices cannot support update delays shorter than %s sec. Please set the stop_time a bit later.'%str(1.0/self.clock_limit))
+            change_times.append(self.stop_time)
         # Sort change times so self.stop_time will be in the middle
         # somewhere if it is prior to the last actual instruction. Whilst
         # this means the user has set stop_time in error, not catching
@@ -1317,7 +1318,6 @@ class Camera(DigitalOut):
         self.exposuretime = exposuretime
         self.orientation = orientation
         self.exposures = []
-        self.go_low(0)
         self.BLACS_connection = BIAS_port
         if isinstance(serial_number,str):
             serial_number = int(serial_number,16)
