@@ -5,8 +5,8 @@ from unitconversions import *
 PulseBlaster(  'pulseblaster_0', board_number=0)
 RFBlaster('rfblaster_0','some.ip.address', pulseblaster_0, 'flag 4')
 
-NI_PCIe_6363(  'ni_pcie_6363_0',  pulseblaster_0, 'fast clock', 'ni_pcie_6363_0', 'ni_pcie_6363_0/PFI0')
-NI_PCI_6733(   'ni_pci_6733_0',  pulseblaster_0, 'fast clock', 'ni_pci_6733_0', 'ni_pcie_6363_0/PFI0')
+NI_PCIe_6363(  'ni_pcie_6363_0',  pulseblaster_0, 'fast clock', 'ni_pcie_6363_0/PFI0')
+NI_PCI_6733(   'ni_pci_6733_0',  pulseblaster_0, 'fast clock', 'ni_pcie_6363_0/PFI0')
 NovaTechDDS9M( 'novatechdds9m_0', pulseblaster_0, 'slow clock', com_port="com10")
 
 AnalogOut( 'analog0',  ni_pci_6733_0,         'ao0',unit_conversion_class=test)
@@ -68,7 +68,7 @@ analog2.constant(t=5.9*scale,value=5)
 analog2.constant(t=7*scale,value=4)
 analog2.constant(t=8*scale,value=5)
 
-stop(20)
+stop(10)
 
 
 

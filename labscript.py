@@ -1145,11 +1145,11 @@ class NIBoard(IntermediateDevice):
     clock_limit = 500e3 # underestimate I think.
     description = 'generic_NI_Board'
     
-    def __init__(self, name, parent_device, clock_type, clock_terminal, MAX_name, acquisition_rate=0):
+    def __init__(self, name, parent_device, clock_type, clock_terminal, MAX_name=None, acquisition_rate=0):
         IntermediateDevice.__init__(self, name, parent_device,clock_type)
         self.acquisition_rate = acquisition_rate
         self.clock_terminal = clock_terminal
-        self.MAX_name = MAX_name
+        self.MAX_name = name if MAX_name is None else MAX_name
         self.BLACS_connection = MAX_name
         
     def add_device(self,output):
