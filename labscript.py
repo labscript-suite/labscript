@@ -46,20 +46,20 @@ else:
         
         
 class config:
-    supress_mild_warnings = True
-    supress_all_warnings = False
+    suppress_mild_warnings = True
+    suppress_all_warnings = False
     compression = None # set to 'gzip' for compression 
    
     
 class NoWarnings(object):
-    """A context manager which sets config.supress_mild_warnings to True
-    whilst in use.  Allows the user to supress warnings for specific
+    """A context manager which sets config.suppress_mild_warnings to True
+    whilst in use.  Allows the user to suppress warnings for specific
     lines when they know that the warning does not indicate a problem."""
     def __enter__(self):
-        self.existing_warning_setting = config.supress_all_warnings
-        config.supress_all_warnings = True
+        self.existing_warning_setting = config.suppress_all_warnings
+        config.suppress_all_warnings = True
     def __exit__(self, *args):
-        config.supress_all_warnings = self.existing_warning_setting
+        config.suppress_all_warnings = self.existing_warning_setting
     
 no_warnings = NoWarnings() # This is the object that should be used, not the class above
 
@@ -773,7 +773,7 @@ class Output(Device):
             raise LabscriptError(err)
         # Check that this doesn't collide with previous instructions:
         if time in self.instructions.keys():
-            if not config.supress_all_warnings:
+            if not config.suppress_all_warnings:
                 message = ' '.join(['WARNING: State of', self.description, self.name, 'at t=%ss'%str(time),
                           'has already been set to %s.'%self.instruction_to_string(self.instructions[time]),
                           'Overwriting to %s. (note: all values in base units where relevant)'%self.instruction_to_string(self.apply_calibration(instruction,units) if units and not isinstance(instruction,dict) else instruction)])
@@ -813,13 +813,13 @@ class Output(Device):
         # Check if there are no instructions. Generate a warning and insert an
         # instruction telling the output to remain at its default value.
         if not self.instructions:
-            if not config.supress_mild_warnings and not config.supress_all_warnings:
+            if not config.suppress_mild_warnings and not config.suppress_all_warnings:
                 sys.stderr.write(' '.join(['WARNING:', self.name, 'has no instructions. It will be set to %s for all time.\n'%self.instruction_to_string(self.default_value)]))
             self.add_instruction(self.t0, self.default_value)  
         # Check if there are no instructions at the initial time. Generate a warning and insert an
         # instruction telling the output to start at its default value.
         if self.t0 not in self.instructions.keys():
-            if not config.supress_mild_warnings and not config.supress_all_warnings:
+            if not config.suppress_mild_warnings and not config.suppress_all_warnings:
                sys.stderr.write(' '.join(['WARNING:', self.name, 'has no initial instruction. It will initially be set to %s.\n'%self.instruction_to_string(self.default_value)]))
             self.add_instruction(self.t0, self.default_value) 
         # Check that ramps have instructions following them.
@@ -1346,7 +1346,12 @@ class Camera(DigitalOut):
             raise LabscriptError('%s is not a valid frame type for %s %s.'%(str(frametype), self.description, self.name) +\
                              'Allowed frame types are: \n%s'%'\n'.join(self.frame_types))
         self.exposures.append((name, t, frametype))
-        
+    
+    def do_checks(self, *args):
+        if not self.t0 in self.instructions:
+            self.go_low(self.t0)
+        DigitalOut.do_checks(self, *args) 
+           
     def generate_code(self, hdf5_file):
         table_dtypes = [('name','a256'), ('time',float), ('frametype','a256')]
         data = array(self.exposures,dtype=table_dtypes)
