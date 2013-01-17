@@ -46,7 +46,7 @@ else:
         
         
 class config:
-    supress_mild_warnings = True
+    supress_mild_warnings = False
     supress_all_warnings = False
     compression = None # set to 'gzip' for compression 
    
@@ -136,7 +136,29 @@ class Device(object):
             self.child_devices.append(device)
         else:
             raise LabscriptError('Devices of type %s cannot be attached to devices of type %s.'%(device.description,self.description))
-            
+    
+    @property    
+    def pseudoclock(self):
+        if isinstance(self, PseudoClock):
+            return self
+        parent = self.parent_device
+        try:
+            while not isinstance(parent,PseudoClock):
+                parent = parent.parent_device
+            return parent
+        except Exception as e:
+            raise LabscriptError('Couldn\'t find parent pseudoclock of %s, what\'s going on? Original error was %s.'%(self.name, str(e)))
+    
+    @property
+    def t0(self):
+        """The earliest time output can be commanded from this device at the start of the experiment.
+        This is nonzeo on secondary pseudoclocks due to triggering delays."""
+        parent = self.pseudoclock
+        if parent.is_master_pseudoclock:
+            return 0
+        else:
+            return parent.trigger_times[0] + parent.trigger_delay
+                            
     def get_all_outputs(self):
         all_outputs = []
         for device in self.child_devices:
@@ -162,9 +184,55 @@ class PseudoClock(Device):
     description = 'Generic Pseudoclock'
     allowed_children = [Device]
     generation = 0
-    def __init__(self,name,parent_device=None,connection=None):
-        Device.__init__(self,name,parent_device,connection)
+    trigger_edge_type = 'rising'
+    # How long after a trigger the next instruction is actually output"
+    trigger_delay = 0
+    # How long a trigger line must remain high/low in order to be detected
+    trigger_minimum_duration = 0 
     
+    def __init__(self,name,trigger_device=None,trigger_connection=None):
+        if trigger_device is None:
+            parent_device = None
+            connection = None
+            for device in compiler.inventory:
+                if isinstance(device,PseudoClock) and device.is_master_pseudoclock:
+                    raise LabscriptError('There is already a master pseudoclock: %s.'%device.name + 
+                                         'There cannot be multiple master pseudoclocks - please provide a trigger_device for one of them.')
+        else:
+            # Instantiate a Trigger object to handle the generation
+            # of edges for triggering this clock.  A trigger object is
+            # basically just a digital output:
+            self.trigger_device = Trigger(name + '_trigger', trigger_device, trigger_connection, self.trigger_edge_type)
+            parent_device = self.trigger_device
+            connection = 'trigger'
+            # Ensure that the parent pseudoclock is, in fact, the master pseudoclock.
+            if not trigger_device.pseudoclock.is_master_pseudoclock:
+                raise LabscriptError('All secondary pseudoclocks must be triggered by a device being clocked by the master pseudoclock.' +
+                                     'Pseudoclocks triggering each other in series is not supported.')
+        Device.__init__(self, name, parent_device, connection)
+        self.trigger_times= []
+        self.initial_trigger_time = 0
+    
+    @property    
+    def is_master_pseudoclock(self):
+        return self.parent_device is None
+    
+    def set_initial_trigger_time(self, t):
+        if compiler.start_called:
+            raise LabscriptError('Initial trigger times must be set prior to calling start()')
+        if self.is_master_pseudoclock:
+            raise LabscriptError('Initial trigger time of master clock is always zero, it cannot be changed.')
+        else:
+            self.initial_trigger_time = t
+            
+    def trigger(self, t, duration):
+        """Ask the trigger device to produce a digital pulse of a given duration to trigger this pseudoclock"""
+        if t == 'initial':
+            t = self.initial_trigger_time
+        if not self.is_master_pseudoclock:
+            self.trigger_device.trigger(t, duration)
+        self.trigger_times.append(t)
+            
     def collect_change_times(self, outputs):
         """Asks all connected outputs for a list of times that they
         change state. Takes the union of all of these times. Note
@@ -292,9 +360,26 @@ class PseudoClock(Device):
                     else:
                         clock.append({'start': time, 'reps': 1, 'step': 10.0/self.clock_limit,'slow_clock_tick':True})
         return all_times, clock
-                        
+    
+    def do_checks(self, outputs):
+        """Basic error checking te ensure the user's instructions make sense"""
+        for output in outputs:
+            output.do_checks(self.trigger_times)
+            
+    def offset_instructions_from_trigger(self, outputs):
+        for output in outputs:
+            output.offset_instructions_from_trigger(self.trigger_times)
+        
+        if not self.is_master_pseudoclock:
+            # Adjust the stop time relative to the last trigger time
+            self.stop_time = self.stop_time - self.trigger_delay * len(self.trigger_times)
+            # Modify the trigger times themselves so that we insert wait instructions at the right times:
+            self.trigger_times = [t - i*self.trigger_delay for i, t in enumerate(self.trigger_times)]
+                            
     def generate_clock(self):
         outputs = self.get_all_outputs()
+        self.do_checks(outputs)
+        self.offset_instructions_from_trigger(outputs)
         change_times = self.collect_change_times(outputs)
         for output in outputs:
             output.make_timeseries(change_times)
@@ -333,38 +418,12 @@ class PulseBlaster(PseudoClock):
     #
     # IF YOU CHANGE ONE, YOU MUST CHANGE THE OTHER!
     trigger_delay = 250e-9 
-    trigger_type = 'falling'
+    trigger_edge_type = 'falling'
     
     def __init__(self,name,board_number):
         PseudoClock.__init__(self,name,None,None)
         self.BLACS_connection = board_number
         
-        self.trigger_data = {}
-    
-    def trigger(self,t,channel):
-        if self.trigger_data:
-            raise LabscriptError('You can only trigger the PulseBlaster %s once. If you require more than one trigger, please file a feature request for experiment WAITS on redmine'%self.name)
-    
-        if channel == 'software':    
-            if t != 0:
-                raise LabscriptError('You can only software trigger %s at t=0'%self.name)
-            else:
-                self.trigger_data[t] = {'type':'software'}
-            
-            return 0 # software triggers take no time
-        else:
-            # if we are not triggering at the start, make sure the channel stays high otherwise it will be set to 0 as default, which would be bad
-            if t != 0:
-                channel.go_high(0)
-                # Just make sure that the time to trigger is not
-                if t < 1.0/channel.clock_limit:
-                    raise LabscriptError('The trigger %s used to trigger %s is too close to t=0 to change state. Please trigger %s at either t=0 or t>=%s'%(channel.name,self.name,self.name,1.0/channel.clock_limit))
-            channel.go_low(t)
-            channel.go_high(t+1.0/channel.clock_limit)
-            self.trigger_data[t] = {'type':'hardware', 'channel':channel.name, 'device':channel.parent_device.name}
-            
-            return 2.0/channel.clock_limit # return the time this trigger will take (2 clock ticks)
-    
     def get_direct_outputs(self):
         """Finds out which outputs are directly attached to the PulseBlaster"""
         dig_outputs = []
@@ -610,68 +669,15 @@ class PulseBlaster(PseudoClock):
         group.create_dataset('SLOW_CLOCK', compression=config.compression,data = self.change_times)   
         group.create_dataset('CLOCK_INDICES', compression=config.compression,data = slow_clock_indices)  
         group.attrs['stop_time'] = self.stop_time       
-                              
+    
     def generate_code(self, hdf5_file):
-        # since we only have one trigger point at the moment (because WAITS are not implemented)
-        # let's get the trigger time:
-        if not self.trigger_data:
-            raise LabscriptError('%s %s has not been triggered. Please provide a trigger instruction.'%(self.description, self.name))
-        first_trigger_time, first_trigger_data = self.trigger_data.items()[0]
-        
-        #eventually this will be put in a loop, that iterates over the entries in the trigger_data dictionary!
-        # We add on the trigger delay here to remove the time offset introduced by the length of the WAIT
-        # instructions BLACS adds at the start of the pulse program, and the finite trigger time inherent in the pulseBlaster
-        trigger_time = first_trigger_time + (self.trigger_delay if first_trigger_data['type'] != 'software' else 0)
-        # This is stored so that child devices know what time to add an initial instruction in at, if none was specified by the user
-        self.trigger_time = trigger_time
-    
-        # Get all outputs (on pseudo clock and direct)        
-        # Iterate over outputs
-        for output in self.get_all_outputs():
-            offset_instructions = {}
-            for time,instruction in output.instructions.items():            
-                # Check that no instruction is before the first trigger
-                if time < (first_trigger_time + (self.trigger_delay if first_trigger_data['type'] != 'software' else 0)):
-                    if time < first_trigger_time:   
-                        raise LabscriptError('You cannot command output %s (at t=%s) before triggering it\'s clock (device %s at t=%s)'%(output.name,str(time),self.name,str(first_trigger_time+self.trigger_delay)))
-                    else:
-                        raise LabscriptError('Triggering %s takes %ss. Thus, you cannot command %s before t=%ss (you have attempted to command it at t=%ss)'%(self.name,str(self.trigger_delay),output.name,str(first_trigger_time+self.trigger_delay),str(time)))
-                
-                        
-                # check that no loop bridges a trigger
-                if isinstance(instruction,dict):
-                    if time < trigger_time and instruction['end time'] >= trigger_time:
-                        raise LabscriptError('You cannot trigger %s at t=%s during a ramp from t=%s to t=%s on %s'%(self.name,str(trigger_time),str(time),str(instruction['end time']),output.name))
-                
-                # check that no instruction is too close to the trigger (both before and after)
-                
-                
-                # Offset the times in the instruction list from the trigger.
-                if isinstance(instruction,dict):
-                    # Note that this will actually modify output.instructions. Not that it matters,
-                    # But if you change the code, it might!
-                    instruction['end time'] = instruction['end time'] - trigger_time
-                    instruction['initial time'] = instruction['initial time'] - trigger_time
-                
-                offset_instructions[time-trigger_time] = instruction
-            output.instructions = offset_instructions
-    
-        # Adjust the stop time relative to the last trigger time
-        self.stop_time = self.stop_time-trigger_time
-    
         # Generate the hardware instructions
         PseudoClock.generate_code(self, hdf5_file)
         dig_outputs, dds_outputs = self.get_direct_outputs()
         freqs, amps, phases = self.generate_registers(hdf5_file, dds_outputs)
         self.convert_to_pb_inst(hdf5_file, dig_outputs, dds_outputs, freqs, amps, phases)
         
-        # Make sure the device has been triggered, and save the data in the HDF5 file
-        if self.trigger_data:
-            group = hdf5_file['/devices/'+self.name]
-            group.attrs['trigger'] = repr(self.trigger_data)
-        else:
-            raise LabscriptError('You must trigger %s sometime during the experiment'%self.name)
-        
+       
 
             
 class Output(Device):
@@ -713,25 +719,21 @@ class Output(Device):
         # Save limits even if they are None        
         self.limits = limits
     
-    def triger(self,t,*args,**kwargs):
-        raise LabscriptError('You cannot trigger the channel %s at time %s. Did you mean to trigger its parent %s?'%(self.name,str(t),self.parent_device.name))
-    
     @property
     def clock_limit(self):
-        parent = self.find_pseudoclock()
+        parent = self.pseudoclock
         return parent.clock_limit
     
-    def find_pseudoclock(self):
-        parent = self.parent_device
-        while parent.parent_device != None:
-            parent = parent.parent_device
-            
-        if isinstance(parent,PseudoClock):
-            return parent
+    @property
+    def trigger_delay(self):
+        """The earliest time output can be commanded from this device after a wait.
+        This is nonzeo on secondary pseudoclocks due to triggering delays."""
+        parent = self.pseudoclock
+        if parent.is_master_pseudoclock:
+            return 0
         else:
-            raise LabscriptError('The parent of %s is not a pseudoclock. Labscript requires that toplevel devices (with no parent) are a pseudoclock.'%self.name)
-    
-    
+            return parent.trigger_delay
+            
     def apply_calibration(self,value,units):
         # Is a calibration in use?
         if self.unit_conversion_class is None:
@@ -754,6 +756,8 @@ class Output(Device):
             return str(instruction)
 
     def add_instruction(self,time,instruction,units=None):
+        if not compiler.start_called:
+            raise LabscriptError('Cannot add instructions prior to calling start()')
         # round to the nearest 0.1 nanoseconds, to prevent floating point
         # rounding errors from breaking our equality checks later on.
         time = round(time,10)
@@ -761,12 +765,12 @@ class Output(Device):
         if isinstance(instruction,dict):
             instruction['end time'] = round(instruction['end time'],10)
             instruction['initial time'] = round(instruction['initial time'],10)
-        #Check that time is not negative:
-        if time < 0:
-            err = ' '.join([self.description, self.name, 'has an instruction at t=%ss.'%str(time),
-                 'Labscript cannot handle instructions earlier than the experiment start time (t=0).'])
+        # Check that time is not negative or too soon after t=0:
+        if time < self.t0:
+            err = ' '.join([self.description, self.name, 'Has an instruction at t=%ss,'%str(time),
+                 'Due to the delay in triggering its pseudoclock, the earliest output possible is at t=%s.'%str(self.t0)])
             raise LabscriptError(err)
-        #Check that this doesn't collide with previous instructions:
+        # Check that this doesn't collide with previous instructions:
         if time in self.instructions.keys():
             if not config.supress_all_warnings:
                 message = ' '.join(['WARNING: State of', self.description, self.name, 'at t=%ss'%str(time),
@@ -802,36 +806,75 @@ class Output(Device):
                 if self.limits[0] <= instruction <= self.limits[1]:
                     raise LabscriptError('You cannot program the value %d (base units) to %s as it falls outside the limits (%d to %d)'%(instruction,self.name,limits[0],limits[1]))
         self.instructions[time] = instruction
-        
-    def get_change_times(self):
-        """If this function is being called, it means that the parent
-        Pseudoclock has requested a list of times that this output changes
-        state. First we'll need to perform some checks to make sure that
-        the instructions the user has entered make sense. Then the list
-        of times is returned."""        
+    
+    def do_checks(self, trigger_times):
+        """Basic error checking te ensure the user's instructions make sense"""
         # Check if there are no instructions. Generate a warning and insert an
-        # instruction telling the output to remain at zero.
+        # instruction telling the output to remain at its default value.
         if not self.instructions:
             if not config.supress_mild_warnings and not config.supress_all_warnings:
                 sys.stderr.write(' '.join(['WARNING:', self.name, 'has no instructions. It will be set to %s for all time.\n'%self.instruction_to_string(self.default_value)]))
-            self.add_instruction(0,self.default_value)  
-        # Check if there are no instructions at t=0. Generate a warning and insert an
-        # instruction telling the output to start at zero.
-        if 0 not in self.instructions.keys():
+            self.add_instruction(self.t0, self.default_value)  
+        # Check if there are no instructions at the initial time. Generate a warning and insert an
+        # instruction telling the output to start at its default value.
+        if self.t0 not in self.instructions.keys():
             if not config.supress_mild_warnings and not config.supress_all_warnings:
-               sys.stderr.write(' '.join(['WARNING:', self.name, 'has no instructions at t=0. It will initially be set to %s.\n'%self.instruction_to_string(0)]))
-            self.add_instruction(0,self.default_value) 
+               sys.stderr.write(' '.join(['WARNING:', self.name, 'has no initial instruction. It will initially be set to %s.\n'%self.instruction_to_string(self.default_value)]))
+            self.add_instruction(self.t0, self.default_value) 
         # Check that ramps have instructions following them.
         # If they don't, insert an instruction telling them to hold their final value.
         for instruction in self.instructions.values():
             if isinstance(instruction, dict) and instruction['end time'] not in self.instructions.keys():
-                self.add_instruction(instruction['end time'], instruction['function'](instruction['end time']-instruction['initial time']),instruction['units'])
+                self.add_instruction(instruction['end time'], instruction['function'](instruction['end time']-instruction['initial time']), instruction['units'])
+        # Checks for trigger times:
+        for trigger_time in trigger_times:
+            for t, instruction in self.instructions.items():
+                # Check no ramps are happening at the trigger time:
+                if isinstance(instruction, dict) and instruction['initial time'] < trigger_time and instruction['end time'] > trigger_time:
+                    err = (' %s %s has a ramp %s from t = %s to %s. ' % (self.description, 
+                            self.name, instruction.description, str(instruction['initial time']), str(instruction['end time'])) +
+                           'This overlaps with a trigger at t=%s, and so cannot be performed.' % str(trigger_time))
+                    raise LabscriptError(err)
+                # Check that nothing is happening during the delay time after the trigger:
+                if trigger_time < t < trigger_time + self.trigger_delay:
+                    err = (' %s %s has an instruction at t = %s. ' % (self.description, self.name, str(t)) + 
+                           'This is too soon after a trigger at t=%s, '%str(trigger_time) + 
+                           'the earliest output possible after this trigger is at t=%s'%str(trigger_time + self.trigger_delay))
+                    raise LabscriptError(err)
+                # Check that there are no instructions too soon before the trigger:
+                if 0 < trigger_time - t < self.clock_limit:
+                    err = (' %s %s has an instruction at t = %s. ' % (self.description, self.name, str(t)) + 
+                           'This is too soon before a trigger at t=%s, '%str(trigger_time) + 
+                           'the latest output possible before this trigger is at t=%s'%str(trigger_time - self.clock_limit))
+                           
+    def offset_instructions_from_trigger(self, trigger_times):
+        """Subtracts self.trigger_delay from all instructions at or after each trigger_time"""
+        offset_instructions = {}
+        for t, instruction in self.instructions.items():
+            # How much of a delay is there for this instruction? That depends how many triggers there are prior to it:
+            n_triggers_prior = len([time for time in trigger_times if time < t])
+            # The cumulative offset at this point in time:
+            offset = self.trigger_delay * n_triggers_prior + trigger_times[0]
+            if isinstance(instruction,dict):
+                offset_instruction = instruction.copy()
+                offset_instruction['end time'] = instruction['end time'] - offset
+                offset_instruction['initial time'] = instruction['initial time'] - offset
+            else:
+                offset_instruction = instruction
+                
+            offset_instructions[t - offset] = offset_instruction
+        self.instructions = offset_instructions
+                   
+    def get_change_times(self):
+        """If this function is being called, it means that the parent
+        Pseudoclock has requested a list of times that this output changes
+        state."""        
         times = self.instructions.keys()
         times.sort()
         self.times = times
         return times
-        
-    def make_timeseries(self,change_times):
+    
+    def make_timeseries(self, change_times):
         """If this is being called, then it means the parent Pseudoclock
         has asked for a list of this output's states at each time in
         change_times. (Which are the times that one or more connected
@@ -1239,6 +1282,31 @@ class Shutter(DigitalOut):
         dataset[len(dataset)-1] = metadata
         
         
+class Trigger(DigitalOut):
+    description = 'pseudoclock trigger'
+    allowed_states = {1:'high', 0:'low'}
+    allowed_children = [PseudoClock]
+    def __init__(self, name, parent_device, connection, trigger_edge_type='rising'):
+        DigitalOut.__init__(self,name,parent_device,connection)
+        self.trigger_edge_type = trigger_edge_type
+        if self.trigger_edge_type == 'rising':
+            self.enable = self.go_high
+            self.disable = self.go_low
+            self.allowed_states = {1:'enabled', 0:'disabled'}
+        elif self.trigger_edge_type == 'falling':
+            self.enable = self.go_low
+            self.disable = self.go_high
+            self.allowed_states = {1:'disabled', 0:'enabled'}
+        else:
+            raise ValueError('trigger_edge_type must be \'rising\' or \'falling\', not \'%s\'.'%trigger_edge_type)
+
+    def trigger(self, t, duration):
+        if t != self.t0:
+            self.disable(self.t0)
+        self.enable(t)
+        self.disable(t + duration)
+        
+        
 class Camera(DigitalOut):
     description = 'Generic Camera'
     frame_types = ['atoms','flat','dark','fluoro','clean']
@@ -1424,11 +1492,11 @@ class RFBlaster(PseudoClock):
     clock_type = 'fast clock'
     allowed_children = [DDS]
     
-    # This will be replaced when we code up arbitrary triggering of RFblasters
-    trigger_time = 0.0
+    # TODO: find out what this actually is!
+    trigger_delay = 1e-6
     
-    def __init__(self,name,ip_address):
-        PseudoClock.__init__(self,name,None,None)
+    def __init__(self, name, ip_address, trigger_device=None, trigger_connection=None):
+        PseudoClock.__init__(self, name, trigger_device, trigger_connection)
         self.BLACS_connection = ip_address
     
     def generate_code(self, hdf5_file):
@@ -1882,13 +1950,49 @@ def generate_code():
                 device.generate_code(hdf5_file)
         generate_connection_table(hdf5_file)
         save_labscripts(hdf5_file)
-                           
+
+
+def trigger_all_pseudoclocks(t='initial'):
+    all_pseudoclocks = [device for device in compiler.inventory if isinstance(device, PseudoClock)]
+    master_pseudoclock, = [pseudoclock for pseudoclock in all_pseudoclocks if pseudoclock.is_master_pseudoclock]
+    # Which pseudoclock requires the longest pulse in order to trigger it?
+    trigger_duration = max([pseudoclock.trigger_minimum_duration for pseudoclock in all_pseudoclocks if not pseudoclock.is_master_pseudoclock])
+    # Provide this, or the minimum possible pulse, whichever is longer:
+    trigger_duration = max(1.0/master_pseudoclock.clock_limit, trigger_duration)
+    # Trigger them all:
+    for pseudoclock in all_pseudoclocks:
+        pseudoclock.trigger(t, trigger_duration)
+    # How long until all devices can take instructions again? The user
+    # can command output from devices on the master clock immediately,
+    # but unless things are time critical, they can wait this long and
+    # know for sure all devices can receive instructions:
+    max_delay_time = max([pseudoclock.trigger_delay for pseudoclock in all_pseudoclocks if not pseudoclock.is_master_pseudoclock])
+    # On the other hand, perhaps the trigger duration and clock limit of the master clock is
+    # limiting when we can next give devices instructions:
+    max_delay = max(trigger_duration + 1.0/master_pseudoclock.clock_limit, max_delay_time)
+    return max_delay
+    
+    
+def wait(t, timeout, on_timeout='abort'):
+    all_pseudoclocks = [device for device in compiler.inventory if isinstance(device, PseudoClock)]
+    master_pseudoclock, = [pseudoclock for pseudoclock in all_pseudoclocks if pseudoclock.is_master_pseudoclock]
+    for pseudoclock in all_pseudoclocks:
+        pseudoclock.wait(t)
+    max_delay = trigger_all_pseudoclocks(t)
+    return max_delay
+
+def start():
+    # Have the master clock trigger pseudoclocks at t = 0:
+    max_delay = trigger_all_pseudoclocks()
+    compiler.start_called = True
+    return max_delay
+    
 def stop(t):
     # Indicate the end of an experiment and initiate compilation:
     if t == 0:
         raise LabscriptError('Stop time cannot be t=0. Please make your run a finite duration')
     for device in compiler.inventory:
-        if not device.parent_device:  
+        if isinstance(device, PseudoClock):
             device.stop_time = t
     generate_code()
 
@@ -1944,6 +2048,8 @@ def labscript_cleanup():
     compiler.inventory = []
     compiler.hdf5_filename = None
     compiler.labscript_file = None
+    compiler.waits = []
+    compiler.start_called = False
     
 class compiler:
     # The labscript file being compiled:
@@ -1953,4 +2059,6 @@ class compiler:
     # The filepath of the h5 file containing globals and which will
     # contain compilation output:
     hdf5_filename = None
+    waits = []
+    start_called = False
 
