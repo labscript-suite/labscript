@@ -1982,9 +1982,9 @@ def wait(t, timeout, on_timeout='abort'):
     return max_delay
 
 def start():
+    compiler.start_called = True
     # Have the master clock trigger pseudoclocks at t = 0:
     max_delay = trigger_all_pseudoclocks()
-    compiler.start_called = True
     return max_delay
     
 def stop(t):
