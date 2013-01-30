@@ -68,7 +68,9 @@ analog2.constant(t=5.9*scale,value=5)
 analog2.constant(t=7*scale,value=4)
 analog2.constant(t=8*scale,value=5)
 
-stop(10)
+wait(10)
+
+stop(14)
 
 
 

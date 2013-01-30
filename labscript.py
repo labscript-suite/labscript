@@ -210,7 +210,8 @@ class PseudoClock(Device):
                 raise LabscriptError('All secondary pseudoclocks must be triggered by a device being clocked by the master pseudoclock.' +
                                      'Pseudoclocks triggering each other in series is not supported.')
         Device.__init__(self, name, parent_device, connection)
-        self.trigger_times= []
+        self.trigger_times = []
+        self.wait_times = []
         self.initial_trigger_time = 0
     
     @property    
@@ -232,7 +233,7 @@ class PseudoClock(Device):
         if not self.is_master_pseudoclock:
             self.trigger_device.trigger(t, duration)
         self.trigger_times.append(t)
-            
+    
     def collect_change_times(self, outputs):
         """Asks all connected outputs for a list of times that they
         change state. Takes the union of all of these times. Note
@@ -264,6 +265,8 @@ class PseudoClock(Device):
                 raise LabscriptError('The stop time of the experiment is t= %s s, but the last instruction for a device attached to %s is at t= %s s. '%( str(self.stop_time), self.name, str(change_times[-1])) +
                                      'One or more connected devices cannot support update delays shorter than %s sec. Please set the stop_time a bit later.'%str(1.0/self.clock_limit))
             change_times.append(self.stop_time)
+        # include trigger times in change_times, so that pseudoclocks always have an instruction immediately following a wait:
+        change_times.extend(self.trigger_times)
         # Sort change times so self.stop_time will be in the middle
         # somewhere if it is prior to the last actual instruction. Whilst
         # this means the user has set stop_time in error, not catching
@@ -285,6 +288,9 @@ class PseudoClock(Device):
         all_times = []
         clock = []
         for i, time in enumerate(change_times):
+            if time in self.trigger_times[1:]:
+                # A wait instruction:
+                clock.append('WAIT')
             # what's the fastest clock rate?
             maxrate = 0
             for output in outputs:
@@ -563,6 +569,15 @@ class PulseBlaster(PseudoClock):
         j += 2
         flagstring = '000000000000' # So that this variable is still defined if the for loop has no iterations
         for k, instruction in enumerate(self.clock):
+            if instruction == 'WAIT':
+                # This is a wait instruction. Repeat the last instruction but with a 100ns delay and a WAIT op code:
+                wait_instruction = pb_inst[-1].copy()
+                wait_instruction['delay'] = 100
+                wait_instruction['instruction'] = 'WAIT'
+                wait_instruction['data'] = 0
+                pb_inst.append(wait_instruction)
+                j += 1
+                continue
             flags = [0]*12
             # The registers below are ones, not zeros, so that we don't
             # use the BLACS-inserted initial instructions. Instead
@@ -627,7 +642,7 @@ class PulseBlaster(PseudoClock):
             # to in the previous line still refers to the LOOP instruction.
             j += 3 if quotient else 2
             try:
-                if self.clock[k+1]['slow_clock_tick']:
+                if self.clock[k+1] == 'WAIT' or self.clock[k+1]['slow_clock_tick']:
                     i += 1
             except IndexError:
                 pass
@@ -1544,6 +1559,8 @@ class RFBlaster(PseudoClock):
         assembly_group = group.create_group('ASSEMBLY_CODE')
         binary_group = group.create_group('BINARY_CODE')
         diff_group = group.create_group('DIFF_TABLES')
+        # When should the RFBlaster wait for a trigger?
+        quantised_trigger_times = array([c.tT*1e6*t + 0.5 for t in self.trigger_times], dtype=int32)
         for dds in range(2):
             abs_table = zeros((len(self.times), 4),dtype=int32)
             abs_table[:,0] = quantised_data['time']
@@ -1551,12 +1568,25 @@ class RFBlaster(PseudoClock):
             abs_table[:,2] = quantised_data['freq%d'%dds]
             abs_table[:,3] = quantised_data['phase%d'%dds]
             
+            # split up the table into chunks delimited by trigger times:
+            abs_tables = []
+            for i, t in enumerate(quantised_trigger_times):
+                subtable = abs_table[abs_table[:,0] >= t]
+                try:
+                    next_trigger_time = quantised_trigger_times[i+1]
+                except IndexError:
+                    # No next trigger time
+                    pass
+                else:
+                    subtable = subtable[subtable[:,0] < next_trigger_time]
+                subtable[:,0] -= t
+                abs_tables.append(subtable)
 #            abs_table_0 = abs_table.copy()[:-1]
 #            abs_table_1 = abs_table.copy()[:-1]
 #            abs_table_2 = abs_table.copy()[:-1]
 #            abs_tables = [abs_table_0, abs_table_1, abs_table_2]
             
-            abs_tables = [abs_table]
+#            abs_tables = [abs_table]
             # convert to diff tables:
             diff_tables = [make_diff_table(tab) for tab in abs_tables]
             # Create temporary files, get their paths, and close them:
@@ -1977,12 +2007,7 @@ def trigger_all_pseudoclocks(t='initial'):
     max_delay = max(trigger_duration + 1.0/master_pseudoclock.clock_limit, max_delay_time)
     return max_delay
     
-    
-def wait(t, timeout, on_timeout='abort'):
-    all_pseudoclocks = [device for device in compiler.inventory if isinstance(device, PseudoClock)]
-    master_pseudoclock, = [pseudoclock for pseudoclock in all_pseudoclocks if pseudoclock.is_master_pseudoclock]
-    for pseudoclock in all_pseudoclocks:
-        pseudoclock.wait(t)
+def wait(t, timeout=5, on_timeout='abort'):
     max_delay = trigger_all_pseudoclocks(t)
     return max_delay
 
