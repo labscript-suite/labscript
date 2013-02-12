@@ -1581,12 +1581,7 @@ class RFBlaster(PseudoClock):
                     subtable = subtable[subtable[:,0] < next_trigger_time]
                 subtable[:,0] -= t
                 abs_tables.append(subtable)
-#            abs_table_0 = abs_table.copy()[:-1]
-#            abs_table_1 = abs_table.copy()[:-1]
-#            abs_table_2 = abs_table.copy()[:-1]
-#            abs_tables = [abs_table_0, abs_table_1, abs_table_2]
-            
-#            abs_tables = [abs_table]
+
             # convert to diff tables:
             diff_tables = [make_diff_table(tab) for tab in abs_tables]
             # Create temporary files, get their paths, and close them:
@@ -1973,7 +1968,14 @@ def save_labscripts(hdf5_file):
     except WindowsError if os.name == 'nt' else None:
         sys.stderr.write('Warning: Cannot save SVN data for imported scripts. Check that the svn command can be run from the command line')
         
-      
+def generate_wait_table(hdf5_file):
+    dtypes = [('time', float), ('timeout', float), ('on_timeout','a256')]
+    data_array = zeros(len(compiler.wait_table), dtype=dtypes)
+    for i, t in enumerate(compiler.wait_table):
+        timeout, on_timeout = compiler.wait_table[t]
+        data_array[i] = t, timeout, on_timeout
+    hdf5_file.create_dataset('waits', data = data_array)
+    
 def generate_code():
     if compiler.hdf5_filename is None:
         raise LabscriptError('hdf5 file for compilation not set. Please call labscript_init')
@@ -1984,6 +1986,7 @@ def generate_code():
             if not device.parent_device:
                 device.generate_code(hdf5_file)
         generate_connection_table(hdf5_file)
+        generate_wait_table(hdf5_file)
         save_labscripts(hdf5_file)
 
 
@@ -2009,6 +2012,7 @@ def trigger_all_pseudoclocks(t='initial'):
     
 def wait(t, timeout=5, on_timeout='abort'):
     max_delay = trigger_all_pseudoclocks(t)
+    compiler.wait_table[t] = timeout, on_timeout
     return max_delay
 
 def start():
@@ -2080,6 +2084,7 @@ def labscript_cleanup():
     compiler.labscript_file = None
     compiler.waits = []
     compiler.start_called = False
+    compiler.wait_table = {}
     
 class compiler:
     # The labscript file being compiled:
@@ -2091,4 +2096,5 @@ class compiler:
     hdf5_filename = None
     waits = []
     start_called = False
+    wait_table = {}
 
