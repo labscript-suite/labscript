@@ -230,7 +230,14 @@ class PseudoClock(Device):
         """Ask the trigger device to produce a digital pulse of a given duration to trigger this pseudoclock"""
         if t == 'initial':
             t = self.initial_trigger_time
-        if not self.is_master_pseudoclock:
+        if self.is_master_pseudoclock:
+            if compiler.wait_monitor is not None:
+                # Make the wait monitor pulse to signify starting or resumption of the experiment:
+                compiler.wait_monitor.trigger(t, duration)
+            elif t != 'initial':
+                raise LabscriptError("You cannot use waits in unless you have a wait monitor." +
+                                     "Please instantiate a WaitMonitor in your connection table.")
+        else:
             self.trigger_device.trigger(t, duration)
         self.trigger_times.append(t)
     
@@ -1299,7 +1306,7 @@ class Shutter(DigitalOut):
         
         
 class Trigger(DigitalOut):
-    description = 'pseudoclock trigger'
+    description = 'trigger device'
     allowed_states = {1:'high', 0:'low'}
     allowed_children = [PseudoClock]
     def __init__(self, name, parent_device, connection, trigger_edge_type='rising'):
@@ -1321,6 +1328,17 @@ class Trigger(DigitalOut):
             self.disable(self.t0)
         self.enable(t)
         self.disable(t + duration)
+
+class WaitMonitor(Trigger):
+     def __init__(self, name, parent_device, connection, acquisition_device, acquisition_connection):
+        if compiler.wait_monitor is not None:
+            raise LabscriptError("Cannot instantiate a second WaitMonitor: there can be only be one in the experiment")
+        compiler.wait_monitor = self
+        Trigger.__init__(self, name, parent_device, connection, trigger_edge_type='rising')
+        if not parent_device.pseudoclock.is_master_pseudoclock:
+            raise LabscriptError('The output device for monitoring wait durations must be clocked by the master pseudoclock')
+        self.acquisition_device = acquisition_device
+        self.acquisition_connection = acquisition_connection 
         
         
 class Camera(DigitalOut):
@@ -1969,12 +1987,14 @@ def save_labscripts(hdf5_file):
         sys.stderr.write('Warning: Cannot save SVN data for imported scripts. Check that the svn command can be run from the command line')
         
 def generate_wait_table(hdf5_file):
-    dtypes = [('time', float), ('timeout', float), ('on_timeout','a256')]
+    dtypes = [('time', float), ('timeout', float)]
     data_array = zeros(len(compiler.wait_table), dtype=dtypes)
-    for i, t in enumerate(compiler.wait_table):
-        timeout, on_timeout = compiler.wait_table[t]
-        data_array[i] = t, timeout, on_timeout
-    hdf5_file.create_dataset('waits', data = data_array)
+    for i, t in enumerate(sorted(compiler.wait_table)):
+        timeout = compiler.wait_table[t]
+        data_array[i] = t, timeout
+    dataset = hdf5_file.create_dataset('waits', data = data_array)
+    dataset.attrs['wait_monitor_acquisition_device'] = compiler.wait_monitor.acquisition_device.name
+    dataset.attrs['wait_monitor_acquisition_connection'] = compiler.wait_monitor.acquisition_connection
     
 def generate_code():
     if compiler.hdf5_filename is None:
@@ -1988,7 +2008,6 @@ def generate_code():
         generate_connection_table(hdf5_file)
         generate_wait_table(hdf5_file)
         save_labscripts(hdf5_file)
-
 
 def trigger_all_pseudoclocks(t='initial'):
     all_pseudoclocks = [device for device in compiler.inventory if isinstance(device, PseudoClock)]
@@ -2010,9 +2029,9 @@ def trigger_all_pseudoclocks(t='initial'):
     max_delay = max(trigger_duration + 1.0/master_pseudoclock.clock_limit, max_delay_time)
     return max_delay
     
-def wait(t, timeout=5, on_timeout='abort'):
+def wait(t, timeout=5):
     max_delay = trigger_all_pseudoclocks(t)
-    compiler.wait_table[t] = timeout, on_timeout
+    compiler.wait_table[t] = timeout
     return max_delay
 
 def start():
@@ -2082,9 +2101,9 @@ def labscript_cleanup():
     compiler.inventory = []
     compiler.hdf5_filename = None
     compiler.labscript_file = None
-    compiler.waits = []
     compiler.start_called = False
     compiler.wait_table = {}
+    compiler.wait_monitor = None
     
 class compiler:
     # The labscript file being compiled:
@@ -2094,7 +2113,7 @@ class compiler:
     # The filepath of the h5 file containing globals and which will
     # contain compilation output:
     hdf5_filename = None
-    waits = []
     start_called = False
     wait_table = {}
+    wait_monitor = None
 
