@@ -1713,7 +1713,7 @@ class PineBlaster(PseudoClock):
             pulse_program[i]['period'] = instruction['period']
             pulse_program[i]['reps'] = instruction['reps']
         group.create_dataset('PULSE_PROGRAM', compression = config.compression, data=pulse_program)
-
+        group.attrs['is_master_pseudoclock'] = self.is_master_pseudoclock
                             
 class NovaTechDDS9M(IntermediateDevice):
     description = 'NT-DDS9M'
