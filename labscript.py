@@ -1338,7 +1338,7 @@ class Trigger(DigitalOut):
             raise ValueError('trigger_edge_type must be \'rising\' or \'falling\', not \'%s\'.'%trigger_edge_type)
 
     def trigger(self, t, duration):
-        if t != self.t0:
+        if t != self.t0 and self.t0 not in self.instructions:
             self.disable(self.t0)
         self.enable(t)
         self.disable(t + duration)
@@ -1674,6 +1674,8 @@ class PineBlaster(PseudoClock):
     # Todo: find out what this actually is:
     wait_delay = 2.5e-6
     
+    max_instructions = 15000
+    
     def __init__(self, name, usbport):
         PseudoClock.__init__(self,name,None,None)
         self.BLACS_connection = usbport
@@ -1689,6 +1691,10 @@ class PineBlaster(PseudoClock):
         # does not have a 'slow clock':
         reduced_instructions = []
         for instruction in self.clock:
+            if instruction == 'WAIT':
+                # The following period and reps indicates a wait instruction
+                reduced_instructions.append({'period': 0, 'reps': 1})
+                continue
             reps = instruction['reps']
             # period is in quantised units:
             period = int(round(instruction['step']/self.clock_resolution))
@@ -1696,6 +1702,10 @@ class PineBlaster(PseudoClock):
                 reduced_instructions[-1]['reps'] += reps
             else:
                 reduced_instructions.append({'period': period, 'reps': reps})
+        # The following period and reps indicates a stop instruction:
+        reduced_instructions.append({'period': 0, 'reps': 0})
+        if len(reduced_instructions) > self.max_instructions:
+            raise LabscriptError("%s %s has too many instructions. It has %d and can only support %d"%(self.description, self.name, len(reduced_instructions), self.max_instructions))
         # Store these instructions to the h5 file:
         dtypes = [('period',int),('reps',int)]
         pulse_program = zeros(len(reduced_instructions),dtype=dtypes)
@@ -2062,7 +2072,7 @@ def start():
     # Which pseudoclock requires the longest pulse in order to trigger it?
     compiler.trigger_duration = max_or_zero([pseudoclock.trigger_minimum_duration for pseudoclock in all_pseudoclocks if not pseudoclock.is_master_pseudoclock])
     # Provide this, or the minimum possible pulse, whichever is longer:
-    compiler.trigger_duration = max(1.0/master_pseudoclock.clock_limit, compiler.trigger_duration)
+    compiler.trigger_duration = max(2.0/master_pseudoclock.clock_limit, compiler.trigger_duration)
     # Must wait this long before providing a trigger, in case child clocks aren't ready yet:
     compiler.wait_delay = max_or_zero([pseudoclock.wait_delay for pseudoclock in all_pseudoclocks if not pseudoclock.is_master_pseudoclock])
     
