@@ -244,10 +244,10 @@ class PseudoClock(Device):
             if compiler.wait_monitor is not None:
                 # Make the wait monitor pulse to signify starting or resumption of the experiment:
                 compiler.wait_monitor.trigger(t, duration)
-                self.trigger_times.append(t)
-            elif t != 'initial':
+            elif t != self.initial_trigger_time:
                 raise LabscriptError("You cannot use waits in unless you have a wait monitor." +
                                      "Please instantiate a WaitMonitor in your connection table.")
+            self.trigger_times.append(t)
         else:
             self.trigger_device.trigger(t, duration)
             self.trigger_times.append(t + wait_delay)
@@ -2022,8 +2022,13 @@ def generate_wait_table(hdf5_file):
         timeout = compiler.wait_table[t]
         data_array[i] = t, timeout
     dataset = hdf5_file.create_dataset('waits', data = data_array)
-    dataset.attrs['wait_monitor_acquisition_device'] = compiler.wait_monitor.acquisition_device.name
-    dataset.attrs['wait_monitor_acquisition_connection'] = compiler.wait_monitor.acquisition_connection
+    if compiler.wait_monitor is not None:
+        device = compiler.wait_monitor.acquisition_device.name 
+        connection = compiler.wait_monitor.acquisition_connection
+    else:
+        device, connection = '',''
+    dataset.attrs['wait_monitor_acquisition_device'] = device
+    dataset.attrs['wait_monitor_acquisition_connection'] = connection
     
 def generate_code():
     if compiler.hdf5_filename is None:
