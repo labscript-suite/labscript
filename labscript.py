@@ -1186,7 +1186,7 @@ class NIBoard(IntermediateDevice):
         self.acquisition_rate = acquisition_rate
         self.clock_terminal = clock_terminal
         self.MAX_name = name if MAX_name is None else MAX_name
-        self.BLACS_connection = MAX_name
+        self.BLACS_connection = self.MAX_name
         
     def add_device(self,output):
         # TODO: check there are no duplicates, check that connection
