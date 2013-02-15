@@ -63,7 +63,15 @@ class NoWarnings(object):
     
 no_warnings = NoWarnings() # This is the object that should be used, not the class above
 
-
+def max_or_zero(*args, **kwargs):
+    """returns max(*args) or zero if given an empty sequence (in which case max() would throw an error)"""
+    if not args:
+        return 0
+    if not args[0]:
+        return 0
+    else:
+        return max(*args, **kwargs)
+    
 def bitfield(arrays,dtype):
     """converts a list of arrays of ones and zeros into a single
     array of unsigned ints of the given datatype."""
@@ -185,10 +193,12 @@ class PseudoClock(Device):
     allowed_children = [Device]
     generation = 0
     trigger_edge_type = 'rising'
-    # How long after a trigger the next instruction is actually output"
+    # How long after a trigger the next instruction is actually output:
     trigger_delay = 0
-    # How long a trigger line must remain high/low in order to be detected
+    # How long a trigger line must remain high/low in order to be detected:
     trigger_minimum_duration = 0 
+    # How long after the start of a wait instruction the device is actually capable of resuming:
+    wait_delay = 0
     
     def __init__(self,name,trigger_device=None,trigger_connection=None):
         if trigger_device is None:
@@ -226,7 +236,7 @@ class PseudoClock(Device):
         else:
             self.initial_trigger_time = t
             
-    def trigger(self, t, duration):
+    def trigger(self, t, duration, wait_delay = 0):
         """Ask the trigger device to produce a digital pulse of a given duration to trigger this pseudoclock"""
         if t == 'initial':
             t = self.initial_trigger_time
@@ -234,12 +244,13 @@ class PseudoClock(Device):
             if compiler.wait_monitor is not None:
                 # Make the wait monitor pulse to signify starting or resumption of the experiment:
                 compiler.wait_monitor.trigger(t, duration)
+                self.trigger_times.append(t)
             elif t != 'initial':
                 raise LabscriptError("You cannot use waits in unless you have a wait monitor." +
                                      "Please instantiate a WaitMonitor in your connection table.")
         else:
             self.trigger_device.trigger(t, duration)
-        self.trigger_times.append(t)
+            self.trigger_times.append(t + wait_delay)
     
     def collect_change_times(self, outputs):
         """Asks all connected outputs for a list of times that they
@@ -274,6 +285,8 @@ class PseudoClock(Device):
             change_times.append(self.stop_time)
         # include trigger times in change_times, so that pseudoclocks always have an instruction immediately following a wait:
         change_times.extend(self.trigger_times)
+        # Get rid of duplicates if trigger times were already in the list:
+        change_times = list(set(change_times))
         # Sort change times so self.stop_time will be in the middle
         # somewhere if it is prior to the last actual instruction. Whilst
         # this means the user has set stop_time in error, not catching
@@ -432,6 +445,7 @@ class PulseBlaster(PseudoClock):
     #
     # IF YOU CHANGE ONE, YOU MUST CHANGE THE OTHER!
     trigger_delay = 250e-9 
+    wait_delay = 100e-9
     trigger_edge_type = 'falling'
     
     def __init__(self,name,board_number):
@@ -865,10 +879,10 @@ class Output(Device):
                            'the earliest output possible after this trigger is at t=%s'%str(trigger_time + self.trigger_delay))
                     raise LabscriptError(err)
                 # Check that there are no instructions too soon before the trigger:
-                if 0 < trigger_time - t < self.clock_limit:
+                if 0 < trigger_time - t < max(self.clock_limit, compiler.wait_delay):
                     err = (' %s %s has an instruction at t = %s. ' % (self.description, self.name, str(t)) + 
                            'This is too soon before a trigger at t=%s, '%str(trigger_time) + 
-                           'the latest output possible before this trigger is at t=%s'%str(trigger_time - self.clock_limit))
+                           'the latest output possible before this trigger is at t=%s'%str(trigger_time - max(self.clock_limit, compiler.wait_delay)))
                            
     def offset_instructions_from_trigger(self, trigger_times):
         """Subtracts self.trigger_delay from all instructions at or after each trigger_time"""
@@ -1530,8 +1544,9 @@ class RFBlaster(PseudoClock):
     clock_type = 'fast clock'
     allowed_children = [DDS]
     
-    # TODO: find out what this actually is!
+    # TODO: find out what these actually are!
     trigger_delay = 1e-6
+    wait_day = 1e-6
     
     def __init__(self, name, ip_address, trigger_device=None, trigger_connection=None):
         PseudoClock.__init__(self, name, trigger_device, trigger_connection)
@@ -1654,6 +1669,10 @@ class PineBlaster(PseudoClock):
     clock_limit = 10e6
     clock_resolution = 25e-9
     clock_type = 'fast clock'
+    # Todo: find out what this actually is:
+    trigger_delay = 1e-6
+    # Todo: find out what this actually is:
+    wait_delay = 2.5e-6
     
     def __init__(self, name, usbport):
         PseudoClock.__init__(self,name,None,None)
@@ -2010,24 +2029,23 @@ def generate_code():
         save_labscripts(hdf5_file)
 
 def trigger_all_pseudoclocks(t='initial'):
-    all_pseudoclocks = [device for device in compiler.inventory if isinstance(device, PseudoClock)]
-    master_pseudoclock, = [pseudoclock for pseudoclock in all_pseudoclocks if pseudoclock.is_master_pseudoclock]
-    # Which pseudoclock requires the longest pulse in order to trigger it?
-    trigger_duration = max([pseudoclock.trigger_minimum_duration for pseudoclock in all_pseudoclocks if not pseudoclock.is_master_pseudoclock])
-    # Provide this, or the minimum possible pulse, whichever is longer:
-    trigger_duration = max(1.0/master_pseudoclock.clock_limit, trigger_duration)
+    # Must wait this long before providing a trigger, in case child clocks aren't ready yet:
+    wait_delay = compiler.wait_delay
+    if t == 'initial':
+        # But not at the start of the experiment:
+        wait_delay = 0
     # Trigger them all:
-    for pseudoclock in all_pseudoclocks:
-        pseudoclock.trigger(t, trigger_duration)
+    for pseudoclock in compiler.all_pseudoclocks:
+        pseudoclock.trigger(t, compiler.trigger_duration)
     # How long until all devices can take instructions again? The user
     # can command output from devices on the master clock immediately,
     # but unless things are time critical, they can wait this long and
     # know for sure all devices can receive instructions:
-    max_delay_time = max([pseudoclock.trigger_delay for pseudoclock in all_pseudoclocks if not pseudoclock.is_master_pseudoclock])
+    max_delay_time = max_or_zero([pseudoclock.trigger_delay for pseudoclock in compiler.all_pseudoclocks if not pseudoclock.is_master_pseudoclock])
     # On the other hand, perhaps the trigger duration and clock limit of the master clock is
     # limiting when we can next give devices instructions:
-    max_delay = max(trigger_duration + 1.0/master_pseudoclock.clock_limit, max_delay_time)
-    return max_delay
+    max_delay = max(compiler.trigger_duration + 1.0/compiler.master_pseudoclock.clock_limit, max_delay_time)
+    return max_delay + wait_delay
     
 def wait(t, timeout=5):
     max_delay = trigger_all_pseudoclocks(t)
@@ -2036,6 +2054,18 @@ def wait(t, timeout=5):
 
 def start():
     compiler.start_called = True
+    # Get and save some timing info about the pseudoclocks:
+    all_pseudoclocks = [device for device in compiler.inventory if isinstance(device, PseudoClock)]
+    compiler.all_pseudoclocks = all_pseudoclocks
+    master_pseudoclock, = [pseudoclock for pseudoclock in all_pseudoclocks if pseudoclock.is_master_pseudoclock]
+    compiler.master_pseudoclock = master_pseudoclock
+    # Which pseudoclock requires the longest pulse in order to trigger it?
+    compiler.trigger_duration = max_or_zero([pseudoclock.trigger_minimum_duration for pseudoclock in all_pseudoclocks if not pseudoclock.is_master_pseudoclock])
+    # Provide this, or the minimum possible pulse, whichever is longer:
+    compiler.trigger_duration = max(1.0/master_pseudoclock.clock_limit, compiler.trigger_duration)
+    # Must wait this long before providing a trigger, in case child clocks aren't ready yet:
+    compiler.wait_delay = max_or_zero([pseudoclock.wait_delay for pseudoclock in all_pseudoclocks if not pseudoclock.is_master_pseudoclock])
+    
     # Have the master clock trigger pseudoclocks at t = 0:
     max_delay = trigger_all_pseudoclocks()
     return max_delay
@@ -2104,6 +2134,10 @@ def labscript_cleanup():
     compiler.start_called = False
     compiler.wait_table = {}
     compiler.wait_monitor = None
+    compiler.master_pseudoclock = None
+    compiler.all_pseudoclocks = None
+    compiler.trigger_duration = 0
+    compiler.wait_delay = 0
     
 class compiler:
     # The labscript file being compiled:
@@ -2116,4 +2150,8 @@ class compiler:
     start_called = False
     wait_table = {}
     wait_monitor = None
+    master_pseudoclock = None
+    all_pseudoclocks = None
+    trigger_duration = 0
+    wait_delay = 0
 
