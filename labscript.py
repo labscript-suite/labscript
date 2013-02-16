@@ -1981,8 +1981,8 @@ def generate_connection_table(hdf5_file):
     connection_table_array = empty(len(connection_table),dtype=connection_table_dtypes)
     for i, row in enumerate(connection_table):
         connection_table_array[i] = row
-    hdf5_file.create_dataset('connection table', compression=config.compression, data=connection_table_array, maxshape=(None,))
-  
+    dataset = hdf5_file.create_dataset('connection table', compression=config.compression, data=connection_table_array, maxshape=(None,))
+    dataset.attrs['master_pseudoclock'] = compiler.master_pseudoclock.name
   
 def save_labscripts(hdf5_file):
     if compiler.labscript_file is not None:
