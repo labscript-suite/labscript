@@ -2034,7 +2034,7 @@ def generate_wait_table(hdf5_file):
     dataset.attrs['wait_monitor_acquisition_device'] = acquisition_device
     dataset.attrs['wait_monitor_acquisition_connection'] = acquisition_connection
     dataset.attrs['wait_monitor_timeout_device'] = timeout_device
-    dataset.attrs['wait_monitor_acquisition_connection'] = timeout_connection
+    dataset.attrs['wait_monitor_timeout_connection'] = timeout_connection
     
 def generate_code():
     if compiler.hdf5_filename is None:
