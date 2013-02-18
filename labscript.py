@@ -1152,13 +1152,13 @@ class AnalogIn(Device):
          self.units=units
          Device.__init__(self,name,parent_device,connection)
    
-    def acquire(self,label,start_time,end_time,scale_factor=None,units=None):
+    def acquire(self,label,start_time,end_time,wait_name=None,scale_factor=None,units=None):
         if scale_factor is None:
             scale_factor = self.scale_factor
         if units is None:
             units = self.units
         self.acquisitions.append({'start_time': start_time, 'end_time': end_time,
-                                 'label': label, 'scale_factor':scale_factor,'units':units})
+                                 'label': label, 'wait_name':wait_name, 'scale_factor':scale_factor,'units':units})
         return end_time - start_time
   
 class IntermediateDevice(Device):
@@ -1240,13 +1240,13 @@ class NIBoard(IntermediateDevice):
         for connection in input_connections:
             input_attrs.append(self.MAX_name+'/'+connection)
             for acq in inputs[connection].acquisitions:
-                acquisitions.append((connection,acq['label'],acq['start_time'],acq['end_time'],acq['scale_factor'],acq['units']))
+                acquisitions.append((connection,acq['label'],acq['start_time'],acq['end_time'],acq['wait_name'],acq['scale_factor'],acq['units']))
         # The 'a256' dtype below limits the string fields to 256
         # characters. Can't imagine this would be an issue, but to not
         # specify the string length (using dtype=str) causes the strings
         # to all come out empty.
         acquisitions_table_dtypes = [('connection','a256'), ('label','a256'), ('start',float),
-                                     ('stop',float), ('scale factor',float), ('units','a256')]
+                                     ('stop',float), ('wait name','a256'),('scale factor',float), ('units','a256')]
         acquisition_table= empty(len(acquisitions), dtype=acquisitions_table_dtypes)
         for i, acq in enumerate(acquisitions):
             acquisition_table[i] = acq
@@ -2018,11 +2018,11 @@ def save_labscripts(hdf5_file):
         sys.stderr.write('Warning: Cannot save SVN data for imported scripts. Check that the svn command can be run from the command line')
         
 def generate_wait_table(hdf5_file):
-    dtypes = [('time', float), ('timeout', float)]
+    dtypes = [('label','a256'), ('time', float), ('timeout', float)]
     data_array = zeros(len(compiler.wait_table), dtype=dtypes)
     for i, t in enumerate(sorted(compiler.wait_table)):
-        timeout = compiler.wait_table[t]
-        data_array[i] = t, timeout
+        label, timeout = compiler.wait_table[t]
+        data_array[i] = label, t, timeout
     dataset = hdf5_file.create_dataset('waits', data = data_array)
     if compiler.wait_monitor is not None:
         acquisition_device = compiler.wait_monitor.acquisition_device.name 
@@ -2068,9 +2068,11 @@ def trigger_all_pseudoclocks(t='initial'):
     max_delay = max(compiler.trigger_duration + 1.0/compiler.master_pseudoclock.clock_limit, max_delay_time)
     return max_delay + wait_delay
     
-def wait(t, timeout=5):
+def wait(label, t, timeout=5):
     max_delay = trigger_all_pseudoclocks(t)
-    compiler.wait_table[t] = timeout
+    if t in compiler.wait_table:
+        raise LabscriptError('There is already a wait at t=%s'%str(t))
+    compiler.wait_table[t] = label, timeout
     return max_delay
 
 def start():
