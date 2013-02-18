@@ -24,7 +24,7 @@ DDS(          'dds6',  rfblaster_0,       'dds 1')
 
 Camera('andor_ixon_0', pulseblaster_0,   'flag 3',BIAS_port = 42520,serial_number="111C00D1BE", SDK="IMAQdx", effective_pixel_size = 4.6e-6, exposuretime=.1,orientation='top')
 
-WaitMonitor('wait_monitor', ni_pcie_6363_0, 'port0/line0', ni_pcie_6363_0, 'ctr0')
+WaitMonitor('wait_monitor', ni_pcie_6363_0, 'port0/line0', ni_pcie_6363_0, 'ctr0', ni_pcie_6363_0, 'pfi1')
 
 scale = 1.0
 rate = 1e4

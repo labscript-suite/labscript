@@ -1344,7 +1344,7 @@ class Trigger(DigitalOut):
         self.disable(t + duration)
 
 class WaitMonitor(Trigger):
-     def __init__(self, name, parent_device, connection, acquisition_device, acquisition_connection):
+     def __init__(self, name, parent_device, connection, acquisition_device, acquisition_connection, timeout_device, timeout_connection):
         if compiler.wait_monitor is not None:
             raise LabscriptError("Cannot instantiate a second WaitMonitor: there can be only be one in the experiment")
         compiler.wait_monitor = self
@@ -1353,6 +1353,8 @@ class WaitMonitor(Trigger):
             raise LabscriptError('The output device for monitoring wait durations must be clocked by the master pseudoclock')
         self.acquisition_device = acquisition_device
         self.acquisition_connection = acquisition_connection 
+        self.timeout_device = timeout_device
+        self.timeout_connection = timeout_connection 
         
         
 class Camera(DigitalOut):
@@ -2023,12 +2025,16 @@ def generate_wait_table(hdf5_file):
         data_array[i] = t, timeout
     dataset = hdf5_file.create_dataset('waits', data = data_array)
     if compiler.wait_monitor is not None:
-        device = compiler.wait_monitor.acquisition_device.name 
-        connection = compiler.wait_monitor.acquisition_connection
+        acquisition_device = compiler.wait_monitor.acquisition_device.name 
+        acquisition_connection = compiler.wait_monitor.acquisition_connection
+        timeout_device = compiler.wait_monitor.timeout_device.name 
+        timeout_connection = compiler.wait_monitor.timeout_connection
     else:
-        device, connection = '',''
-    dataset.attrs['wait_monitor_acquisition_device'] = device
-    dataset.attrs['wait_monitor_acquisition_connection'] = connection
+        acquisition_device, acquisition_connection, timeout_device, timeout_connection = '','','',''
+    dataset.attrs['wait_monitor_acquisition_device'] = acquisition_device
+    dataset.attrs['wait_monitor_acquisition_connection'] = acquisition_connection
+    dataset.attrs['wait_monitor_timeout_device'] = timeout_device
+    dataset.attrs['wait_monitor_acquisition_connection'] = timeout_connection
     
 def generate_code():
     if compiler.hdf5_filename is None:
