@@ -815,7 +815,7 @@ class Output(Device):
             instruction['initial time'] = round(instruction['initial time'],10)
         # Check that time is not negative or too soon after t=0:
         if time < self.t0:
-            err = ' '.join([self.description, self.name, 'Has an instruction at t=%ss,'%str(time),
+            err = ' '.join([self.description, self.name, 'has an instruction at t=%ss,'%str(time),
                  'Due to the delay in triggering its pseudoclock, the earliest output possible is at t=%s.'%str(self.t0)])
             raise LabscriptError(err)
         # Check that this doesn't collide with previous instructions:
@@ -880,7 +880,7 @@ class Output(Device):
                 # Check no ramps are happening at the trigger time:
                 if isinstance(instruction, dict) and instruction['initial time'] < trigger_time and instruction['end time'] > trigger_time:
                     err = (' %s %s has a ramp %s from t = %s to %s. ' % (self.description, 
-                            self.name, instruction.description, str(instruction['initial time']), str(instruction['end time'])) +
+                            self.name, instruction['description'], str(instruction['initial time']), str(instruction['end time'])) +
                            'This overlaps with a trigger at t=%s, and so cannot be performed.' % str(trigger_time))
                     raise LabscriptError(err)
                 # Check that nothing is happening during the delay time after the trigger:
