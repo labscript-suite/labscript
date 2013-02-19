@@ -1163,13 +1163,13 @@ class AnalogIn(Device):
          self.units=units
          Device.__init__(self,name,parent_device,connection)
    
-    def acquire(self,label,start_time,end_time,wait_name=None,scale_factor=None,units=None):
+    def acquire(self,label,start_time,end_time,wait_label='',scale_factor=None,units=None):
         if scale_factor is None:
             scale_factor = self.scale_factor
         if units is None:
             units = self.units
         self.acquisitions.append({'start_time': start_time, 'end_time': end_time,
-                                 'label': label, 'wait_name':wait_name, 'scale_factor':scale_factor,'units':units})
+                                 'label': label, 'wait_label':wait_label, 'scale_factor':scale_factor,'units':units})
         return end_time - start_time
   
 class IntermediateDevice(Device):
@@ -1251,13 +1251,13 @@ class NIBoard(IntermediateDevice):
         for connection in input_connections:
             input_attrs.append(self.MAX_name+'/'+connection)
             for acq in inputs[connection].acquisitions:
-                acquisitions.append((connection,acq['label'],acq['start_time'],acq['end_time'],acq['wait_name'],acq['scale_factor'],acq['units']))
+                acquisitions.append((connection,acq['label'],acq['start_time'],acq['end_time'],acq['wait_label'],acq['scale_factor'],acq['units']))
         # The 'a256' dtype below limits the string fields to 256
         # characters. Can't imagine this would be an issue, but to not
         # specify the string length (using dtype=str) causes the strings
         # to all come out empty.
         acquisitions_table_dtypes = [('connection','a256'), ('label','a256'), ('start',float),
-                                     ('stop',float), ('wait name','a256'),('scale factor',float), ('units','a256')]
+                                     ('stop',float), ('wait label','a256'),('scale factor',float), ('units','a256')]
         acquisition_table= empty(len(acquisitions), dtype=acquisitions_table_dtypes)
         for i, acq in enumerate(acquisitions):
             acquisition_table[i] = acq
@@ -2080,10 +2080,14 @@ def trigger_all_pseudoclocks(t='initial'):
     return max_delay + wait_delay
     
 def wait(label, t, timeout=5):
+    if not str(label):
+        raise LabscriptError('Wait must have a name')
     max_delay = trigger_all_pseudoclocks(t)
     if t in compiler.wait_table:
         raise LabscriptError('There is already a wait at t=%s'%str(t))
-    compiler.wait_table[t] = label, timeout
+    if any([label==existing_label for existing_label, timeout in compiler.wait_table.values()]):
+        raise LabscriptError('There is already a wait named %s'%str(label))
+    compiler.wait_table[t] = str(label), float(timeout)
     return max_delay
 
 def start():
