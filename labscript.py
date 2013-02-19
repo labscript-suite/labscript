@@ -763,13 +763,24 @@ class Output(Device):
     
     @property
     def trigger_delay(self):
-        """The earliest time output can be commanded from this device after a wait.
+        """The earliest time output can be commanded from this device after a trigger.
         This is nonzeo on secondary pseudoclocks due to triggering delays."""
         parent = self.pseudoclock
         if parent.is_master_pseudoclock:
             return 0
         else:
             return parent.trigger_delay
+    
+    @property
+    def wait_delay(self):
+        """The earliest time output can be commanded from this device after a wait.
+        This is nonzeo on secondary pseudoclocks due to triggering delays and the fact
+        that the master clock doesn't provide a resume trigger to secondary clocks until
+        a minimum time has elapsed: compiler.wait_delay. This is so that if a wait is 
+        extremely short, the child clock is actually ready for the trigger.
+        """
+        delay = compiler.wait_delay if self.pseudoclock.is_master_pseudoclock else 0
+        return self.trigger_delay + delay
             
     def apply_calibration(self,value,units):
         # Is a calibration in use?
@@ -1678,8 +1689,8 @@ class PineBlaster(PseudoClock):
     
     max_instructions = 15000
     
-    def __init__(self, name, usbport):
-        PseudoClock.__init__(self,name,None,None)
+    def __init__(self, name, trigger_device=None, trigger_connection=None, usbport='COM1'):
+        PseudoClock.__init__(self, name, trigger_device, trigger_connection)
         self.BLACS_connection = usbport
     
     def generate_code(self, hdf5_file):
