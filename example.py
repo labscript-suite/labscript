@@ -32,9 +32,9 @@ DDS(          'dds3',  pulseblaster_0,    'dds 0',       freq_conv_class=example
 DDS(          'dds4',  pulseblaster_0,    'dds 1')
 
 # This sets up the inputs/counters/etc that will monitor
-# The first paremeter is the name for the wait_monitor device
-# The second and third paremeters are the device and channel respectively that is triggered when a wait begins. This device should be connected to a counter, 
-# specified in the next two paremeters.
+# The first paremeter is the name for the WaitMonitor device
+# The second and third paremeters are the device and channel respectively that goes high when a wait begins and low when it ends. This output should be   
+# physically connected to a counter specified in the next two paremeters.
 # The final two paremeters specify the device/channel that is to trigger the pseudoclock if the WAIT instruction hits the specified timeout. The output of 
 # this channel should be physicaly connect to the external trigger of the master pseudoclock.
 WaitMonitor('wait_monitor', ni_card_0, 'port0/line0', ni_card_0, 'ctr0', ni_card_0, 'pfi1')
@@ -109,23 +109,27 @@ andor_ixon_0.expose('exposure_1',t,'flat')
 andor_ixon_0.expose('exposure_1',t+1,'atoms')
 
 # Do some more things at various times!
+# (these are ignoring the t variable)
 analog2.ramp(t=2, duration=3, initial=3, final=4, samplerate=rate)
 shutter1.open(t=5.89)
 analog2.constant(t=5.9,value=5)
 analog2.constant(t=7,value=4)
 analog2.constant(t=8,value=5)
 
+
+t+=9 # set t=10 seconds
 # Wait for an external trigger on the master pseudoclock
 # Waits must be names
 # The timeout defaults to 5s, unless otherwise specified.
 # The timeout specifies how long to wait without seeing the external trigger before continuing the experiment 
-wait('my_first_wait', t=10, timeout=2)
+t += wait('my_first_wait', t=t, timeout=2)
+# Waits take very little time as far as labscript is concerned. They only add on the retirggering time needed to start devices up and get them all in sync again.
+# After a wait, labscript time (the t variable here) and execution time (when the hardware instructions are executed on the hardware) will not be the same 
+# as the wait instruction may take anywhere from 0 to "timeout" seconds, and this number is only determined during execution time.
 
-# WAITS TAKE NO TIME AS FAR AS LABSCRIPT IS CONCERNED!!!
-
+t+=1
 # Do something 1s after the wait!
-switch.go_high(11)
-t = 11
+switch.go_high(t)
 
 # Examples programming in different units as specified in the unitconversion classes passed as parameters to the channel definition
 analog0.constant(t, value=5, units='A')
@@ -137,6 +141,6 @@ analog0.ramp(t,duration=1,initial=5,final=7,samplerate=rate, units='Gauss')
 analog1.constant(t, value=3e6, units='uA')
 dds3.setfreq(t,value=60,units='detuned_MHz')
 dds3.setamp(t,value=500,units='mW')
-
-# Stop at t=14.5
-stop(14.5)
+t+=2
+# Stop at t=15 seconds, note that because of the wait timeout, this might be as late as 17s (Plus a little bit of retriggering time) in execution time
+stop(t)
