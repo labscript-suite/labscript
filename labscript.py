@@ -448,8 +448,8 @@ class PulseBlaster(PseudoClock):
     wait_delay = 100e-9
     trigger_edge_type = 'falling'
     
-    def __init__(self,name,board_number):
-        PseudoClock.__init__(self,name,None,None)
+    def __init__(self,name,trigger_device=None,trigger_connection=None,board_number=0):
+        PseudoClock.__init__(self,name,trigger_device,trigger_connection)
         self.BLACS_connection = board_number
         
     def get_direct_outputs(self):
