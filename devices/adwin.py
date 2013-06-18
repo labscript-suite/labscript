@@ -174,7 +174,7 @@ class ADWinCard(PseudoClock):
 #        expanded_change_times
 #        for output in self.get_all_outputs():
     
-class ADWinAOCard(ADWinCard):
+class ADWin_AO_Card(ADWinCard):
     description = 'ADWin analog output card'
     allowed_children = [AnalogOut]
     
@@ -216,7 +216,7 @@ class ADWinAOCard(ADWinCard):
                 self.formatted_instructions.append(formatted_instruction)
 
                         
-class ADWinDOCard(ADWinCard):
+class ADWin_DO_Card(ADWinCard):
     description = 'ADWin digital output card'
     allowed_children = [DigitalOut]
     digital_dtype = uint32
@@ -240,7 +240,7 @@ class ADWinDOCard(ADWinCard):
             
 class ADWin(PseudoClock):
     description = 'ADWin'
-    allowed_children = [ADWinAOCard, ADWinDOCard]
+    allowed_children = [ADWin_AO_Card, ADWin_DO_Card]
     def __init__(self, name, device_no=1, cycle_time = default_cycle_time):
         self.BLACS_connection = device_no
         
@@ -262,11 +262,12 @@ class ADWin(PseudoClock):
         all_analog_instructions = []
         all_digital_instructions = []
         for device in self.child_devices:
-            if isinstance(device, ADWinAOCard):
+            if isinstance(device, ADWin_AO_Card):
                 all_analog_instructions.extend(device.formatted_instructions)
-            elif isinstance(device, ADWinDOCard):
+            elif isinstance(device, ADWin_DO_Card):
                 all_digital_instructions.extend(device.formatted_instructions)
-                
+            else:
+                raise AssertionError("Invalid child device, shouldn't be possible")
         # Make the analog output table:
         analog_dtypes = [('t',int), ('duration',int), ('card',int), ('channel',int),
                          ('ramp_type',int), ('A',int), ('B',int), ('C',int)]
@@ -280,9 +281,9 @@ class ADWin(PseudoClock):
             analog_data[i]['channel'] = instruction['channel']
             analog_data[i]['ramp_type'] = instruction['ramp_type']
             # Map the voltages from the range [-10,10) to a uint16:
-            analog_data[i]['A'] = round((instruction['A']+10)/20.*(2**16-1))
+            analog_data[i]['A'] = int((instruction['A']+10)/20.*(2**16-1))
             analog_data[i]['B'] = round(instruction['B']/self.clock_resolution) # B has units of time
-            analog_data[i]['C'] = round((instruction['C']+10)/20.*(2**16-1))
+            analog_data[i]['C'] = int((instruction['C']+10)/20.*(2**16-1))
         # Add the 'end of data' instruction to the end:
         analog_data[-1]['t'] = 2**32-1
         # Save to the HDF5 file:
