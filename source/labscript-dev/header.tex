@@ -1,0 +1,52 @@
+\usepackage{url}
+\usepackage{cite}
+\usepackage{upgreek}
+\usepackage{lipsum}
+\usepackage[xetex]{rotating}
+\usepackage[xetex]{graphicx}
+%\usepackage[xetex,draft]{graphicx}
+\usepackage[font=small,format=plain,labelfont=bf,up,textfont=up]{caption}
+\usepackage{amsmath}
+%\usepackage[expert, urw-garamond]{mathdesign}
+\usepackage[no-math]{fontspec}
+\setmainfont[Mapping=tex-text, Contextuals=Alternate,Numbers=OldStyle]{Garamond Premier Pro}
+\setmonofont[Scale=MatchLowercase]{DejaVu Sans Mono}
+\usepackage[top=3.5cm, bottom=4cm, left=4cm, right=4cm]{geometry}
+\usepackage{setspace}
+\usepackage{titlepic}
+\usepackage{subfigure}
+\usepackage{xcolor}
+\usepackage{minted}
+\usepackage{lettrine}
+\usepackage{xspace}
+
+\newcommand{\python}[1]{\spacing{0.7}\inputminted[linenos, numbersep=5pt, frame=lines, framesep=2mm,fontsize=\scriptsize]{python}{#1}}
+
+\definecolor{pastelred}{RGB}{200,80,80}
+\definecolor{pastelgreen}{RGB}{0,150,80}
+
+% redefine \texttt to be coloured:
+\renewcommand\texttt[1]{{\ttfamily\color{pastelgreen}#1}}
+
+\usepackage[xetex, bookmarksopen, pagebackref]{hyperref}
+\usepackage{doi}
+\renewcommand*{\backref}[1]{}
+\renewcommand*{\backrefalt}[4]{
+  \ifnum#1=1
+    [p~#2]
+  \else
+    [pp~#2]
+  \fi
+}
+
+\hypersetup{
+    colorlinks=true,%
+    citecolor=pastelred,%
+    filecolor=pastelred,%
+    linkcolor=pastelred,%
+    urlcolor=pastelred
+}
+
+% Magic formula for make \hbar not throwing a spurious message
+% However, \hbar won't work in text mode, which should not be a problem
+\expandafter\let\expandafter\hbar\csname ?-\string\hbar\endcsname

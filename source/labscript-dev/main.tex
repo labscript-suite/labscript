@@ -1,0 +1,75 @@
+\documentclass[a4paper,11pt,titlepage]{article}
+\include{header}
+\begin{document}
+
+\title{Adding a new device to \texttt{labscript}: }
+\author{Chris Billington}
+\maketitle
+\tableofcontents
+\section{Introduction}\label{sec:concepts}
+
+\lettrine[lines=3]{\texttt{l}}{\texttt{abscript}} is a compiler. It translates high-level instructions given by Python function calls into low level instructions suitable for programming into specific devices. Clearly, the form of these low-level instructions is device-specific, and as such code to produce these instructions must be written in order for labscript to work with a new device.
+
+Despite this, many devices are similar, and instructions given to them in a labscript experiment are processed in similar ways. For example, all analog output devices that are externally pseudoclocked will need their outputs interpolated to the times that the clock ticks. Because of this, two analog output devices can benefit from code re-use in labscript.
+
+Depending on how similar your new device is to an existing one, and how well it fits the pseudoclock architecture, you may need to write a lot of code, or very little. The aim of this document is to outline the structure of the labscript module by describing the two main device classes (Sec. \ref{sec:classes}), and how they fit into the different stages in compilation. With this knowledge a developer writing support for a new device can choose which existing class it is most appropriate to subclass for their device, and what data processing they should write themselves and what they should re-use. An example of each class is provided in Sec. \ref{sec:examples}
+
+This document assumes familiarity with object oriented programming in Python.
+
+\section{Class relationships}\label{sec:classes}
+\lettrine[lines=3]{D}{evices are objects} in \texttt{labscript}. In fact, they are all subclassed from the \texttt{labscript.labscript.Device} class. This class contains the logic for adding the device to the compiler `inventory', so that the compiler knows about it, and putting it into the builtin namespace, making each device object available to the user interpreter-wide. It also contains a few other methods pertaining to connecting devices to each other. See its class definition in \texttt{labscript.labscript} to see precisely what all device classes have in common.
+
+Writing device compatibility for \texttt{labscript} comprises subclassing \texttt{Device} or --- more likely --- one of its subclasses, and overriding or adding methods as appropriate. The most important method is the \texttt{generate\_code(hdf5\_file)} one. It will be called at compilation time and is responsible for writing low-level instructions for that device to the given HDF5 file. The instructions should be saved as one or more datasets or attributes in the group \texttt{'/devices/<device\_name>'}, where \texttt{<device\_name>} is the name of the instance of that device as used in labscript (stored in \texttt{self.name}).
+
+Subclasses should generally call their superclass's \texttt{\_\_init\_\_} and \texttt{generate\_code} methods when they are being overridden. Usually, calling the superclass's \texttt{generate\_code} method does most of the instruction processing for you, at which point the object will have its instructions stored as instance attributes ready for your new code to access and translate into device-specific instructions. See the existing device classes (in \texttt{labscript.labscript}) for examples of overwritten \texttt{\_\_init\_\_} and \texttt{generate\_code} methods.
+
+There are two main subclasses of \texttt{Device} that you will be likely to subclass: \texttt{PseudoClock} and \texttt{IntermediateDevice}.
+
+\subsection{\texttt{labscript.labscript.Pseudoclock}}\label{sec:pseudoclock}
+The first is \texttt{labscript.labscript.Pseudoclock}. Most of the control flow during compilation is dictated by methods in this class. Generally, all devices capable of providing their own timing, or providing clocking signals to other devices, should be a \texttt{PseudoClock}\footnote{As is always the case, exceptions are possible but are discouraged.}. A \texttt{PseudoClock} object expects to have children which are  \texttt{Output}s and \texttt{IntermediateDevice}s (each with its own \texttt{Output}s), and during compilation it calls methods on them to collect data on what the \texttt{Output}s have been asked to do in the experiment. From this information it constructs a clocking signal, stored as \texttt{self.clock} in an intermediate format as a dictionary. Implementing a pseudoclock involves converting this structure to whatever format the device itself actually requires for programming, and saving the results to the HDF5 file. An example of a clocking signal is:
+ 
+\python{clock_example.py}
+
+This means that the pseudoclock should tick once with a period of $1$\,ms ($0.5$\,ms each high and low), on both the fast and slow clock outputs\footnote{The \texttt{PseudoClock} is assumed to have at most two outputs, one that ticks at a subset of the times that the other ticks. The one that ticks less often is called the \emph{slow clock}. We use this functionality to have more devices clocked off the same pseudoclock than would otherwise be possible. The \texttt{PseudoClock} class inserts a slow clock tick for every single-value instruction on an output device, as well as a single slow clock tick at the beginning of ramps. However the slow clock does not tick during ramps. This means that devices attached to the slow clock cannot execute function ramps. If you wish to implement a pseudoclock with only one output, you may simply ignore this distinction and produce hardware instructions for only a fast clock signal. See \texttt{labscript.labscript.PineBlaster} for an example of this}. It should then halt execution and wait for an external trigger\footnote{Again, your device need not support this, and you can have it simply throw an error upon encountering such an instruction.}. After that, it should tick once with a period of $1\,\upmu$s on both outputs, then only the fast clock 999 times at a rate of $1$ MHz. It should then tick once more on both clocks with a $1$ ms period. The \texttt{'start'} key is not needed generally for actually producing signals, and is used only in \texttt{labscript} to provide a timestamp in error messages pertaining to producing clocking signals.
+
+So in its simplest form, adding support for a new pseudoclock involves converting this list of dictionaries (or \texttt{'WAIT'} strings) into a list of strings to be piped down a serial connection, a list of parameters to be passed to C function calls, or whatever format is is easiest to read and then program into the device once the HDF5 file is being read by \texttt{BLACS}.
+
+See \texttt{labscript.labscript.PulseBlaster} and \texttt{labscript.labscript.PineBlaster} for examples of pseudoclock classes. The former has DDS and digital outputs as well as providing a clocking signal, so its code generation is quite involved. The latter produces only a signal clock signal and so is fairly simple. The \texttt{PineBlaster} is used as an example in Sec. \ref{sec:examples}
+
+\subsection{\texttt{labscript.labscript.IntermediateDevice}}
+This is the class that you are likely to subclass most often. It represents devices that have a \texttt{PseudoClock} as their parent device and \texttt{Output}s (analog, digital or DDS) or inputs\footnote{Currently only \texttt{AnalogIn}} as their child devices. So for example, National Instruments cards with digital and analog outputs and analog inputs are implemented in \texttt{labscript} as \texttt{IntermediateDevice}s. These devices are programmed with their output values, but receive their timing from the parent pseudoclock.
+
+By the time an \texttt{IntermediateDevice}'s \texttt{generate\_code} method is called during compilation, the parent \texttt{PseudoClock} has already collected the times at which the child \texttt{Outputs} change, generated its clocking data, and left behind some useful instance attributes on each \texttt{Output} pertaining to what their output values should be at each clock tick. These attributes are what you should use in the \texttt{generate\_code} method of your \texttt{IntermediateDevice}.
+
+You can access the child \texttt{Outputs} of an \texttt{IntermediateDevice} with \texttt{self.child\_devices}. Each of these outputs then has an attribute \texttt{output.raw\_output}, which is simply a \texttt{numpy} array of voltages, or in the case of digital outputs, a \texttt{numpy} array of ones and zeros\footnote{You can use the \texttt{labscript.labscript.bitfield} function to convert a list of these arrays of ones and zeros into a single array of integers (bitfields), if necessary.}. In the case of a \texttt{DDS} output, the arrays of amplitudes, frequencies and phases are stored as attributes to three Output-like objects, \texttt{output.frequency}, \texttt{output.amplitude} and \texttt{output.phase}. Each of these is an \texttt{AnalogQuantity}\footnote{Which is a subclass of \texttt{Output} and is identical to an \texttt{AnalogOut} in every way except for the name. This is so that code can tell the difference between analog outputs that correspond to actual physical outputs, and those that exist only to store the frequency, amplitude or phase data of a DDS.} and similarly have \texttt{raw\_output} attributes. DDSs may also have a digital gate for turning them on and off, if so it is stored as \texttt{output.gate} and similarly has a \texttt{raw\_output} attribute for its values.
+
+Child devices may also be \texttt{AnalogInput}s. In this case, each input object has an attribute \texttt{inputs.acquisitions}, which is a list of dictionaries with the acquisition times that have been requested for that channel.
+
+
+Your job in implementing an IntermediateDevice is to do any processing necessary on these values, such as converting voltages to integers in some range, converting frequencies to hexadecimal values, packing sets of Booleans into integers, or whatever your device requires. You should also do any error checking that is specific to your device, like checking if the number of instructions is within the capabilities of the device, as are the values themselves. You should raise an informative \texttt{labscript.labscript.LabscriptError} in the event that something is not right.
+ 
+
+See \texttt{labscript.labscript.NIBoard} or \texttt{labscript.labscript.NovaTechDDS9M} for examples of \texttt{IntermediateDevices}s. The \texttt{NIBoard} is used as an example in \ref{sec:examples}.
+
+%\section{Compilation process}\label{sec:flow}
+
+\section{Examples}\label{sec:examples}
+\subsection{\texttt{PseudoClock} example}
+
+The following is an actual pseudoclock in use in labscript, commented here to explain what each bit is for. It looks long here but is actually only about 40 lines of actual code. Other pseudoclocks may be more complex, as is \texttt{labscript.labscript.PulseBlaster}, owing to its direct digital and DDS outputs as well as a more complex method of programming.
+
+\python{pseudoclock_example.py}
+
+\subsection{\texttt{IntermediateDevice} example}
+
+The following is a class used in \texttt{labscript} for National Instruments cards. This class is not used directly, it is instead subclassed further for specific National Instruments cards with varying numbers of analog and digital outputs, and analog inputs. But it is a more informative example than the more specific classes, as it is the one that contains most of the work of the \texttt{generate\_code} function.
+
+\python{intermediatedevice_example.py}
+\end{document}
+
+
+
+
+
+
+
