@@ -448,9 +448,36 @@ class PulseBlaster(PseudoClock):
     wait_delay = 100e-9
     trigger_edge_type = 'falling'
     
-    def __init__(self,name,trigger_device=None,trigger_connection=None,board_number=0):
+    def __init__(self,name,trigger_device=None,trigger_connection=None,board_number=0,firmware = '', slow_clock_flag=1,fast_clock_flag=0):
         PseudoClock.__init__(self,name,trigger_device,trigger_connection)
         self.BLACS_connection = board_number
+        # TODO: Implement capability checks based on firmware revision of PulseBlaster
+        self.firmware_version = firmware
+        
+        # slow clock flag must be either the integer 0-11 to indicate a flag, or -1 to indicate not in use.
+        if -2 < slow_clock_flag < 12:
+            self.slow_clock_flag = slow_clock_flag
+        else:
+            raise LabscriptError('The slow clock flag for Pulseblaster %s must either be an integer between 0-11 to indicate slow clock output'%name +
+                                 'on that flag or -1 to indicate the suppression of the slow clock')
+        
+        # fast clock flag must be either the integer 0-11 to indicate a flag, or -1 to indicate not in use.
+        if -2 < fast_clock_flag < 12:
+            # the fast clock flag should not be the same as the slow clock flag
+            if fast_clock_flag == slow_clock_flag and fast_clock_flag != -1:
+                raise LabscriptError('The fast clock flag for Pulseblaster %s must not be the same as the slow clock flag')
+            else:
+                self.fast_clock_flag = fast_clock_flag
+        else:
+            raise LabscriptError('The fast clock flag for Pulseblaster %s must either be an integer between 0-11 to indicate fast clock output'%name +
+                                 'on that flag or -1 to indicate the suppression of the fast clock')
+        
+        # Only allow directly connected devices if we don't have a fast clock or a slow clock
+        if slow_clock_flag == -1 and fast_clock_flag == -1:
+            self.allowed_children = [DDS,DigitalOut]
+            self.has_clocks = False
+        else:
+            self.has_clocks = True
         
     def get_direct_outputs(self):
         """Finds out which outputs are directly attached to the PulseBlaster"""
@@ -579,8 +606,11 @@ class PulseBlaster(PseudoClock):
         ampregs = [0]*2
         phaseregs = [0]*2
         dds_enables = [0]*2
-        flags[self.fast_clock_flag] = 0
-        flags[self.slow_clock_flag] = 0 
+        
+        if self.fast_clock_flag >= 0:
+            flags[self.fast_clock_flag] = 0
+        if self.slow_clock_flag >= 0:
+            flags[self.slow_clock_flag] = 0 
         pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs, 'enables':dds_enables,
                         'flags': ''.join([str(flag) for flag in flags]), 'instruction': 'STOP',
                         'data': 0, 'delay': 10.0/self.clock_limit*1e9})
@@ -617,8 +647,10 @@ class PulseBlaster(PseudoClock):
                 ampregs[ddsnumber] = amps[ddsnumber][output.amplitude.raw_output[i]]
                 phaseregs[ddsnumber] = phases[ddsnumber][output.phase.raw_output[i]]
                 dds_enables[ddsnumber] = output.gate.raw_output[i]
-            flags[self.fast_clock_flag] = 1
-            flags[self.slow_clock_flag] = 1 if instruction['slow_clock_tick'] else 0
+            if self.fast_clock_flag >= 0:
+                flags[self.fast_clock_flag] = 1
+            if self.slow_clock_flag >= 0:
+                flags[self.slow_clock_flag] = 1 if instruction['slow_clock_tick'] else 0
             if instruction['slow_clock_tick']:
                 slow_clock_indices.append(j)
             flagstring = ''.join([str(flag) for flag in flags])
@@ -632,36 +664,54 @@ class PulseBlaster(PseudoClock):
             # Instruction delays > 55 secs will require a LONG_DELAY
             # to be inserted. How many times does the delay of the
             # loop/endloop instructions go into 55 secs?
-            quotient, remainder = divmod(instruction['step']/2.0,55.0)
+            if self.has_clocks:
+                quotient, remainder = divmod(instruction['step']/2.0,55.0)
+            else:
+                quotient, remainder = divmod(instruction['step'],55.0)
             if quotient and remainder < 100e-9:
                 # The remainder will be used for the total duration of the LOOP and END_LOOP instructions. 
                 # It must not be too short for this, if it is, take one LONG_DELAY iteration and give 
                 # its duration to the loop instructions:
                 quotient, remainder = quotient - 1, remainder + 55.0
-                
-            # The loop and endloop instructions will only use the remainder:
-            pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs, 'enables':dds_enables,
-                            'flags': flagstring, 'instruction': 'LOOP',
-                            'data': instruction['reps'], 'delay': remainder*1e9})
-            flags[self.fast_clock_flag] = 0
-            flags[self.slow_clock_flag] = 0
-            flagstring = ''.join([str(flag) for flag in flags])
-            # If there was a nonzero quotient, let's wait twice that
-            # many multiples of 55 seconds (one multiple of 55 seconds
-            # for each of the other two loop and endloop instructions):
-            if quotient:
+            if self.has_clocks:
+                # The loop and endloop instructions will only use the remainder:
                 pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs, 'enables':dds_enables,
-                            'flags': flagstring, 'instruction': 'LONG_DELAY',
-                            'data': int(2*quotient), 'delay': 55*1e9})
-                            
-            pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs, 'enables':dds_enables,
-                            'flags': flagstring, 'instruction': 'END_LOOP',
-                            'data': j, 'delay': remainder*1e9})
-                            
-            # Two instructions were used in the case of there being no LONG_DELAY, 
-            # otherwise three. This increment is done here so that the j referred
-            # to in the previous line still refers to the LOOP instruction.
-            j += 3 if quotient else 2
+                                'flags': flagstring, 'instruction': 'LOOP',
+                                'data': instruction['reps'], 'delay': remainder*1e9})
+                if self.fast_clock_flag >= 0:
+                    flags[self.fast_clock_flag] = 0
+                if self.slow_clock_flag >= 0:
+                    flags[self.slow_clock_flag] = 0
+                flagstring = ''.join([str(flag) for flag in flags])
+            
+                # If there was a nonzero quotient, let's wait twice that
+                # many multiples of 55 seconds (one multiple of 55 seconds
+                # for each of the other two loop and endloop instructions):
+                if quotient:
+                    pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs, 'enables':dds_enables,
+                                'flags': flagstring, 'instruction': 'LONG_DELAY',
+                                'data': int(2*quotient), 'delay': 55*1e9})
+                                
+                pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs, 'enables':dds_enables,
+                                'flags': flagstring, 'instruction': 'END_LOOP',
+                                'data': j, 'delay': remainder*1e9})
+                                
+                # Two instructions were used in the case of there being no LONG_DELAY, 
+                # otherwise three. This increment is done here so that the j referred
+                # to in the previous line still refers to the LOOP instruction.
+                j += 3 if quotient else 2
+            else:
+                # The loop and endloop instructions will only use the remainder:
+                pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs, 'enables':dds_enables,
+                                'flags': flagstring, 'instruction': 'CONTINUE',
+                                'data': 0, 'delay': remainder*1e9})
+                # If there was a nonzero quotient, let's wait that many multiples of 55 seconds:
+                if quotient:
+                    pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs, 'enables':dds_enables,
+                                'flags': flagstring, 'instruction': 'LONG_DELAY',
+                                'data': int(quotient), 'delay': 55*1e9})
+                j += 2 if quotient else 1
+                
             try:
                 if self.clock[k+1] == 'WAIT' or self.clock[k+1]['slow_clock_tick']:
                     i += 1
