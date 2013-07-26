@@ -1,6 +1,7 @@
 from labscript import DigitalOut
 
-class PhotonCounter(DigitalOut):
+class SR400PhotonCounter(DigitalOut):
+    description = 'SRS400 Gated Photon Counter'
     def __init__(self, name, parent_device, connection, com_port):
         DigitalOut.__init__(self, name, parent_device, connection)
         self.BLACS_connection = com_port
