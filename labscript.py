@@ -459,7 +459,7 @@ class PulseBlaster(PseudoClock):
             self.slow_clock_flag = slow_clock_flag
         else:
             raise LabscriptError('The slow clock flag for Pulseblaster %s must either be an integer between 0-11 to indicate slow clock output'%name +
-                                 'on that flag or -1 to indicate the suppression of the slow clock')
+                                 ' on that flag or -1 to indicate the suppression of the slow clock')
         
         # fast clock flag must be either the integer 0-11 to indicate a flag, or -1 to indicate not in use.
         if -2 < fast_clock_flag < 12:
@@ -470,11 +470,12 @@ class PulseBlaster(PseudoClock):
                 self.fast_clock_flag = fast_clock_flag
         else:
             raise LabscriptError('The fast clock flag for Pulseblaster %s must either be an integer between 0-11 to indicate fast clock output'%name +
-                                 'on that flag or -1 to indicate the suppression of the fast clock')
+                                 ' on that flag or -1 to indicate the suppression of the fast clock')
         
         # Only allow directly connected devices if we don't have a fast clock or a slow clock
         if slow_clock_flag == -1 and fast_clock_flag == -1:
             self.allowed_children = [DDS,DigitalOut]
+            self.description = 'PB-DDSII-300 [standalone]' #make the error messages make a little more sense
             self.has_clocks = False
         else:
             self.has_clocks = True
