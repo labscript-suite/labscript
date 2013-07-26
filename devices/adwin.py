@@ -1,3 +1,4 @@
+from __future__ import division
 from labscript import Device, PseudoClock, IntermediateDevice, AnalogOut, DigitalOut, bitfield
 from pylab import *
 default_cycle_time = 2500/300e6 # 8.333us
@@ -115,24 +116,24 @@ class ExpRamp(RampInstruction):
         
 class ADWinAnalogOut(AnalogOut):
     def linear_ramp(self, t, duration, initial, final):
-        instruction = LinearRamp(t, duration, initial, final, self.parent_device.clock_resolution)
+        instruction = LinearRamp(t, duration, initial, final, self.parent_device.clock_limit)
         self.add_instruction(t, instruction)
-        return instruction.end_time
+        return instruction.duration
         
     def sin_ramp(self, t, duration, amplitude, offset, angular_period):
-        instruction = SinRamp(t, duration, amplitude, offset, angular_period, self.parent_device.clock_resolution)
+        instruction = SinRamp(t, duration, amplitude, offset, angular_period, self.parent_device.clock_limit)
         self.add_instruction(t, instruction)
-        return instruction.end_time
+        return instruction.duration
         
     def cos_ramp(self, t, duration, amplitude, offset, angular_period):
-        instruction = CosRamp(t, duration, amplitude, offset, angular_period, self.parent_device.clock_resolution)
+        instruction = CosRamp(t, duration, amplitude, offset, angular_period, self.parent_device.clock_limit)
         self.add_instruction(t, instruction)
-        return instruction.end_time
+        return instruction.duration
         
     def exp_ramp(self, t, duration, amplitude, offset, lifetime):
-        instruction = ExpRamp(t, duration, amplitude, offset, lifetime, self.parent_device.clock_resolution)
+        instruction = ExpRamp(t, duration, amplitude, offset, lifetime, self.parent_device.clock_limit)
         self.add_instruction(t, instruction)
-        return instruction.end_time
+        return instruction.duration
         
 class ADWinDigitalOut(DigitalOut):
     pass
@@ -202,9 +203,9 @@ class ADWin_AO_Card(ADWinCard):
                     C = instruction.C
                 else:
                     # Let's construct a ramp out of the single value instruction:
-                    duration = 0
+                    duration = self.clock_resolution
                     ramp_type = 0
-                    A = 0
+                    A = instruction
                     B = 0
                     C = instruction
                 formatted_instruction = {'t':t,
@@ -231,7 +232,9 @@ class ADWin_DO_Card(ADWinCard):
             outputarray = [0]*self.n_digitals
             for output in outputs:
                 channel = output.connection
-                outputarray[channel] = array(output.timeseries)
+                # We have to subtract one from the channel number to get
+                # the correct index, as ADWin is one-indexed, curse it.
+                outputarray[channel - 1] = array(output.timeseries)
         bits = bitfield(outputarray, dtype=self.digital_dtype)
         self.formatted_instructions = []
         for t, value in zip(change_times, bits):
@@ -243,7 +246,9 @@ class ADWin(PseudoClock):
     allowed_children = [ADWin_AO_Card, ADWin_DO_Card]
     def __init__(self, name, device_no=1, cycle_time = default_cycle_time):
         self.BLACS_connection = device_no
-        
+        # round cycle time to the nearest multiple of 3.3333ns
+        quantised_cycle_time = round(cycle_time/3.333333333333e-9)
+        cycle_time = quantised_cycle_time*3.333333333333e-9
         self.clock_limit = 1./cycle_time
         self.clock_resolution = cycle_time
         Device.__init__(self, name, parent_device=None, connection=None)
@@ -280,8 +285,12 @@ class ADWin(PseudoClock):
             analog_data[i]['card'] = instruction['card']
             analog_data[i]['channel'] = instruction['channel']
             analog_data[i]['ramp_type'] = instruction['ramp_type']
-            # Map the voltages from the range [-10,10) to a uint16:
-            analog_data[i]['A'] = int((instruction['A']+10)/20.*(2**16-1))
+            if instruction['ramp_type'] == 0:
+                # If it's a linear ramp, map the voltages for parameter A from the range [-10,10] to a uint16:
+                analog_data[i]['A'] = int((instruction['A']+10)/20.*(2**16-1))
+            elif instruction['ramp_type'] in [1,2]:
+                # For a sine or cos ramp, map the amplitude from [-5,5] to a signed int16:
+                analog_data[i]['A'] = int(instruction['A']/10.*(2**16-1))
             analog_data[i]['B'] = round(instruction['B']/self.clock_resolution) # B has units of time
             analog_data[i]['C'] = int((instruction['C']+10)/20.*(2**16-1))
         # Add the 'end of data' instruction to the end:
@@ -318,4 +327,12 @@ class ADWin(PseudoClock):
         # table.
         Device.generate_code(self, hdf5_file)
         self.collect_card_instructions(hdf5_file)
+        
+        # We don't actually care about these other things that pseudoclock
+        # classes normally do, but they still do some error checking
+        # that we want:
+        change_times = self.collect_change_times(outputs)
+        for output in outputs:
+            output.make_timeseries(change_times)
+        all_times, clock = self.expand_change_times(change_times, outputs)
         
