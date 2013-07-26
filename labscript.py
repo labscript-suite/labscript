@@ -454,26 +454,26 @@ class PulseBlaster(PseudoClock):
         # TODO: Implement capability checks based on firmware revision of PulseBlaster
         self.firmware_version = firmware
         
-        # slow clock flag must be either the integer 0-11 to indicate a flag, or -1 to indicate not in use.
-        if -2 < slow_clock_flag < 12:
+        # slow clock flag must be either the integer 0-11 to indicate a flag, or None to indicate not in use.
+        if -1 < slow_clock_flag < 12 or slow_clock_flag == None:
             self.slow_clock_flag = slow_clock_flag
         else:
             raise LabscriptError('The slow clock flag for Pulseblaster %s must either be an integer between 0-11 to indicate slow clock output'%name +
-                                 ' on that flag or -1 to indicate the suppression of the slow clock')
+                                 ' on that flag or None to indicate the suppression of the slow clock')
         
-        # fast clock flag must be either the integer 0-11 to indicate a flag, or -1 to indicate not in use.
-        if -2 < fast_clock_flag < 12:
+        # fast clock flag must be either the integer 0-11 to indicate a flag, or None to indicate not in use.
+        if -1 < fast_clock_flag < 12 or fast_clock_flag == None:
             # the fast clock flag should not be the same as the slow clock flag
-            if fast_clock_flag == slow_clock_flag and fast_clock_flag != -1:
+            if fast_clock_flag == slow_clock_flag and fast_clock_flag != None:
                 raise LabscriptError('The fast clock flag for Pulseblaster %s must not be the same as the slow clock flag')
             else:
                 self.fast_clock_flag = fast_clock_flag
         else:
             raise LabscriptError('The fast clock flag for Pulseblaster %s must either be an integer between 0-11 to indicate fast clock output'%name +
-                                 ' on that flag or -1 to indicate the suppression of the fast clock')
+                                 ' on that flag orNone to indicate the suppression of the fast clock')
         
         # Only allow directly connected devices if we don't have a fast clock or a slow clock
-        if slow_clock_flag == -1 and fast_clock_flag == -1:
+        if slow_clock_flag == None and fast_clock_flag == None:
             self.allowed_children = [DDS,DigitalOut]
             self.description = 'PB-DDSII-300 [standalone]' #make the error messages make a little more sense
             self.has_clocks = False
@@ -608,9 +608,9 @@ class PulseBlaster(PseudoClock):
         phaseregs = [0]*2
         dds_enables = [0]*2
         
-        if self.fast_clock_flag >= 0:
+        if self.fast_clock_flag is not None:
             flags[self.fast_clock_flag] = 0
-        if self.slow_clock_flag >= 0:
+        if self.slow_clock_flag is not None:
             flags[self.slow_clock_flag] = 0 
         pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs, 'enables':dds_enables,
                         'flags': ''.join([str(flag) for flag in flags]), 'instruction': 'STOP',
@@ -648,9 +648,9 @@ class PulseBlaster(PseudoClock):
                 ampregs[ddsnumber] = amps[ddsnumber][output.amplitude.raw_output[i]]
                 phaseregs[ddsnumber] = phases[ddsnumber][output.phase.raw_output[i]]
                 dds_enables[ddsnumber] = output.gate.raw_output[i]
-            if self.fast_clock_flag >= 0:
+            if self.fast_clock_flag is not None:
                 flags[self.fast_clock_flag] = 1
-            if self.slow_clock_flag >= 0:
+            if self.slow_clock_flag is not None:
                 flags[self.slow_clock_flag] = 1 if instruction['slow_clock_tick'] else 0
             if instruction['slow_clock_tick']:
                 slow_clock_indices.append(j)
@@ -679,9 +679,9 @@ class PulseBlaster(PseudoClock):
                 pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs, 'enables':dds_enables,
                                 'flags': flagstring, 'instruction': 'LOOP',
                                 'data': instruction['reps'], 'delay': remainder*1e9})
-                if self.fast_clock_flag >= 0:
+                if self.fast_clock_flag is not None:
                     flags[self.fast_clock_flag] = 0
-                if self.slow_clock_flag >= 0:
+                if self.slow_clock_flag is not None:
                     flags[self.slow_clock_flag] = 0
                 flagstring = ''.join([str(flag) for flag in flags])
             
