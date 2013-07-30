@@ -118,7 +118,6 @@ class Device(object):
         self.parent_device = parent_device
         self.connection = connection
         self.child_devices = []
-        compiler.inventory.append(self)
         if parent_device:
             parent_device.add_device(self)
         
@@ -138,6 +137,9 @@ class Device(object):
         
         # Put self into the global namespace:
         __builtins__[name] = self
+        
+        # Add self to the compiler's device inventory
+        compiler.inventory.append(self)
         
     def add_device(self,device):
         if any([isinstance(device,DeviceClass) for DeviceClass in self.allowed_children]):
@@ -1616,6 +1618,15 @@ class RFBlaster(PseudoClock):
         PseudoClock.__init__(self, name, trigger_device, trigger_connection)
         self.BLACS_connection = ip_address
     
+    def add_device(self, device):
+        try:
+            prefix, number = device.connection.split()
+            assert int(number) in range(4)
+            assert prefix == 'dds'
+        except Exception:
+            raise LabscriptError('invalid connection string. Please use the format \'dds n\' with n 0 or 1')
+        PseudoClock.add_device(self, device)
+        
     def generate_code(self, hdf5_file):
         from rfblaster import caspr
         import rfblaster.rfjuice
