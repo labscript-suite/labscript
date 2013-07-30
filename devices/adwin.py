@@ -274,7 +274,7 @@ class ADWin(PseudoClock):
             else:
                 raise AssertionError("Invalid child device, shouldn't be possible")
         # Make the analog output table:
-        analog_dtypes = [('t',int), ('duration',int), ('card',int), ('channel',int),
+        analog_dtypes = [('t',uint), ('duration',int), ('card',int), ('channel',int),
                          ('ramp_type',int), ('A',int), ('B',int), ('C',int)]
         # sort by time:
         all_analog_instructions.sort(key=lambda instruction: instruction['t'])
@@ -299,7 +299,7 @@ class ADWin(PseudoClock):
         group.create_dataset('ANALOG_OUTS', data=analog_data)
         
         # Make the digital output table:
-        digital_dtypes = [('t',int), ('card',int), ('bitfield',int)]
+        digital_dtypes = [('t',uint), ('card',int), ('bitfield',int)]
         # sort by time:
         all_digital_instructions.sort(key=lambda instruction: instruction['t'])
         digital_data = zeros(len(all_digital_instructions)+1, dtype=digital_dtypes)
