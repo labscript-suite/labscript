@@ -1621,7 +1621,7 @@ class RFBlaster(PseudoClock):
     def add_device(self, device):
         try:
             prefix, number = device.connection.split()
-            assert int(number) in range(4)
+            assert int(number) in range(2)
             assert prefix == 'dds'
         except Exception:
             raise LabscriptError('invalid connection string. Please use the format \'dds n\' with n 0 or 1')
