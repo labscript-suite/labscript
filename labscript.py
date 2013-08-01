@@ -1624,8 +1624,8 @@ class RFBlaster(PseudoClock):
     allowed_children = [DDS]
     
     # TODO: find out what these actually are!
-    trigger_delay = 1e-6
-    wait_day = 1e-6
+    trigger_delay = 873.75e-6
+    wait_day = trigger_delay
     
     def __init__(self, name, ip_address, trigger_device=None, trigger_connection=None):
         PseudoClock.__init__(self, name, trigger_device, trigger_connection)
