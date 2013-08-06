@@ -1356,22 +1356,35 @@ class NI_PCIe_6363(NIBoard):
     
 class Shutter(DigitalOut):
     description = 'shutter'
-    allowed_states = {1:'open', 0:'closed'}  
     
-    def __init__(self,name,parent_device,connection,delay=(0,0)):
-        DigitalOut.__init__(self,name,parent_device,connection)
+    def __init__(self,name,parent_device,connection,delay=(0,0),open_state=1):
+        DigitalOut.__init__(self, name, parent_device, connection)
         self.open_delay, self.close_delay = delay
-        
+        self.open_state = open_state
+        if self.open_state == 1:
+            self.allowed_states = {0: 'closed', 1: 'open'}
+        elif self.open_state == 0:
+            self.allowed_states = {1: 'closed', 0: 'open'}
+        else:
+            raise LabscriptError("Shutter %s wasn't instantiated with open_state = 0 or 1." % self.name)
+
     # If a shutter is asked to do something at t=0, it cannot start moving
     # earlier than that.  So initial shutter states will have imprecise
     # timing. Not throwing a warning here because if I did, every run
     # would throw a warning for every shutter. The documentation will
     # have to make a point of this.
-    def open(self,t):
-        self.go_high(t-self.open_delay if t >= self.open_delay else 0)
-    def close(self,t):
-        self.go_low(t-self.close_delay if t >= self.close_delay else 0)  
+    def open(self, t):
+        if self.open_state == 1:
+            self.go_high(t-self.open_delay if t >= self.open_delay else 0)
+        elif self.open_state == 0:
+            self.go_low(t-self.open_delay if t >= self.open_delay else 0)
 
+    def close(self, t):
+        if self.open_state == 1:
+            self.go_low(t-self.close_delay if t >= self.close_delay else 0)  
+        elif self.open_state == 0:
+            self.go_high(t-self.close_delay if t >= self.close_delay else 0)
+    
     def generate_code(self, hdf5_file):
         classname = self.__class__.__name__
         calibration_table_dtypes = [('name','a256'), ('open_delay',float), ('close_delay',float)]
@@ -1620,8 +1633,8 @@ class RFBlaster(PseudoClock):
     allowed_children = [DDS]
     
     # TODO: find out what these actually are!
-    trigger_delay = 1e-6
-    wait_day = 1e-6
+    trigger_delay = 873.75e-6
+    wait_day = trigger_delay
     
     def __init__(self, name, ip_address, trigger_device=None, trigger_connection=None):
         PseudoClock.__init__(self, name, trigger_device, trigger_connection)
