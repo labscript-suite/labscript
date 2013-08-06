@@ -1190,8 +1190,8 @@ class StaticDigitalQuantity(DigitalQuantity):
             self.value_set = True
             self.static_value = 0
         else:
-            raise LabscriptError('%s %s has already been set to %s. It cannot also be set to %s.'%(self.description, self.name, allowed_states[self.static_value], allowed_states[value]))
-    
+            raise LabscriptError('%s %s has already been set to %s. It cannot also be set to %s.'%(self.description, self.name, self.instruction_to_string[self.static_value], self.instruction_to_string[value]))
+    f
     def get_change_times(self):
         if not hasattr(self,'static_value'):
             self.static_value = self.default_value
@@ -1421,13 +1421,15 @@ class WaitMonitor(Trigger):
         self.timeout_connection = timeout_connection 
         
         
-class Camera(DigitalOut):
+class Camera(DigitalOut, AnalogOut):
     description = 'Generic Camera'
     frame_types = ['atoms','flat','dark','fluoro','clean']
     minimum_recovery_time = 0 # To be set by subclasses
     
-    def __init__(self,name,parent_device,connection,BIAS_port,serial_number,SDK,effective_pixel_size,exposuretime,orientation):
-        DigitalOut.__init__(self,name,parent_device,connection)
+    def __init__(self,name,parent_device,connection,BIAS_port,serial_number,SDK,effective_pixel_size,exposuretime,orientation,trigger_value=1):
+        Output.__init__(self,name,parent_device,connection)
+        self.trigger_value = trigger_value
+        self.allowed_states = {0:'untriggered', trigger_value:'triggered'}
         self.exposuretime = exposuretime
         self.orientation = orientation
         self.exposures = []
@@ -1437,6 +1439,12 @@ class Camera(DigitalOut):
         self.sn = uint64(serial_number)
         self.sdk = str(SDK)
         self.effective_pixel_size = effective_pixel_size
+        
+    def go_high(self, t):
+        self.add_instruction(t, self.trigger_value)
+    
+    def go_low(self, t):
+        self.add_instruction(t, 0)
         
     def expose(self,name, t ,frametype):
         self.go_high(t)
@@ -1459,6 +1467,7 @@ class Camera(DigitalOut):
             raise LabscriptError('%s is not a valid frame type for %s %s.'%(str(frametype), self.description, self.name) +\
                              'Allowed frame types are: \n%s'%'\n'.join(self.frame_types))
         self.exposures.append((name, t, frametype))
+        return duration
     
     def do_checks(self, *args):
         if not self.t0 in self.instructions:
