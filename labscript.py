@@ -2110,7 +2110,7 @@ def save_labscripts(hdf5_file):
     except ImportError:
         pass
     except WindowsError if os.name == 'nt' else None:
-        sys.stderr.write('Warning: Cannot save SVN data for imported scripts. Check that the svn command can be run from the command line')
+        sys.stderr.write('Warning: Cannot save SVN data for imported scripts. Check that the svn command can be run from the command line\n')
         
 def generate_wait_table(hdf5_file):
     dtypes = [('label','a256'), ('time', float), ('timeout', float)]

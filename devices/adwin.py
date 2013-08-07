@@ -180,6 +180,7 @@ class ADWin_AO_Card(ADWinCard):
     allowed_children = [AnalogOut]
     
     def generate_code(self, hdf5_file):
+        Device.generate_code(self, hdf5_file)
         # OK, let's collect up all the analog instructions!
         self.formatted_instructions = []
         for output in self.get_all_outputs():
@@ -224,6 +225,7 @@ class ADWin_DO_Card(ADWinCard):
     n_digitals = 32
     
     def generate_code(self, hdf5_file):
+        Device.generate_code(self, hdf5_file)
         outputs = self.get_all_outputs() 
         change_times = self.collect_change_times(outputs)
         for output in outputs:
