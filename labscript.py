@@ -1439,7 +1439,7 @@ class Camera(DigitalOut, AnalogOut):
     frame_types = ['atoms','flat','dark','fluoro','clean']
     minimum_recovery_time = 0 # To be set by subclasses
     
-    def __init__(self,name,parent_device,connection,BIAS_port,serial_number,SDK,effective_pixel_size,exposuretime,orientation,trigger_value=1):
+    def __init__(self, name, parent_device, connection, BIAS_port, serial_number, SDK, effective_pixel_size, exposuretime=None, orientation='side', trigger_value=1):
         Output.__init__(self,name,parent_device,connection)
         self.trigger_value = trigger_value
         self.allowed_states = {0:'untriggered', trigger_value:'triggered'}
@@ -1459,9 +1459,15 @@ class Camera(DigitalOut, AnalogOut):
     def go_low(self, t):
         self.add_instruction(t, 0)
         
-    def expose(self,name, t ,frametype):
+    def expose(self,name, t , frametype, exposuretime=None):
         self.go_high(t)
-        duration = self.exposuretime
+        if exposuretime is None:
+            duration = self.exposuretime
+        else:
+            duration = exposuretime
+        if duration is None:
+            raise LabscriptError('Camera has not had an exposuretime set as an instantiation argument, ' +
+                                 'and one was not specified for this exposure')
         self.go_low(t + duration)
         for exposure in self.exposures:
             start = exposure[1]
@@ -1479,7 +1485,7 @@ class Camera(DigitalOut, AnalogOut):
         if not frametype in self.frame_types:
             raise LabscriptError('%s is not a valid frame type for %s %s.'%(str(frametype), self.description, self.name) +\
                              'Allowed frame types are: \n%s'%'\n'.join(self.frame_types))
-        self.exposures.append((name, t, frametype))
+        self.exposures.append((name, t, frametype, duration))
         return duration
     
     def do_checks(self, *args):
@@ -1488,10 +1494,10 @@ class Camera(DigitalOut, AnalogOut):
         DigitalOut.do_checks(self, *args) 
            
     def generate_code(self, hdf5_file):
-        table_dtypes = [('name','a256'), ('time',float), ('frametype','a256')]
+        table_dtypes = [('name','a256'), ('time',float), ('frametype','a256'), ('exposuretime',float)]
         data = array(self.exposures,dtype=table_dtypes)
         group = hdf5_file['devices'].create_group(self.name)
-        group.attrs['exposure_time'] = float(self.exposuretime)
+        group.attrs['exposure_time'] = float(self.exposuretime) if self.exposuretime is not None else float('nan')
         group.attrs['orientation'] = self.orientation
         group.attrs['SDK'] = self.sdk
         group.attrs['serial_number'] = self.sn
