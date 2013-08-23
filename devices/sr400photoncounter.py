@@ -1,4 +1,4 @@
-from labscript import DigitalOut
+from labscript import DigitalOut, LabscriptError
 
 class SR400PhotonCounter(DigitalOut):
     description = 'SRS400 Gated Photon Counter'

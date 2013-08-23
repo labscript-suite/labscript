@@ -181,6 +181,9 @@ class ADWin_AO_Card(ADWinCard):
     
     def generate_code(self, hdf5_file):
         Device.generate_code(self, hdf5_file)
+        # This group must exist in order for BLACS to know that this
+        # device is part of the experiment:
+        group = hdf5_file.create_group('/devices/%s'%self.name)
         # OK, let's collect up all the analog instructions!
         self.formatted_instructions = []
         for output in self.get_all_outputs():
@@ -226,6 +229,9 @@ class ADWin_DO_Card(ADWinCard):
     
     def generate_code(self, hdf5_file):
         Device.generate_code(self, hdf5_file)
+        # This group must exist in order for BLACS to know that this
+        # device is part of the experiment:
+        group = hdf5_file.create_group('/devices/%s'%self.name)
         outputs = self.get_all_outputs() 
         change_times = self.collect_change_times(outputs)
         for output in outputs:
