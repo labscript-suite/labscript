@@ -38,8 +38,8 @@ def pulse_sequence(pulse_sequence,period):
         times = t%period
         states = zeros(len(t),dtype = int)
         for i, a_time in enumerate(times):
-            for time, state in sorted(sequence, key=lambda x: x[0]):
-                if a_time <= time:
+            for time, state in sorted(pulse_sequence, key=lambda x: x[0], reverse=True):
+                if a_time >= time:
                     states[i] = state
                     break
                     
@@ -47,3 +47,4 @@ def pulse_sequence(pulse_sequence,period):
             return states
         else:
             return states[0]
+    return pulse_function

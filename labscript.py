@@ -1194,7 +1194,7 @@ class DigitalQuantity(Output):
     your pulse sequence will not be significantly altered)
     '''
     def repeat_pulse_sequence(self,t,duration,pulse_sequence,period,samplerate):
-        self.add_instruction(t, {'function': functions.pulse_function(pulse_sequence,period), 'description':'pulse sequence',
+        self.add_instruction(t, {'function': functions.pulse_sequence(pulse_sequence,period), 'description':'pulse sequence',
                                  'initial time':t, 'end time': t + duration, 'clock rate': samplerate, 'units': None})
         
         return duration
