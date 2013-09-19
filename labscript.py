@@ -1171,6 +1171,33 @@ class DigitalQuantity(Output):
         self.add_instruction(t,1)
     def go_low(self,t):
         self.add_instruction(t,0) 
+    
+    '''
+    This function only works if the DigitalQuantity is on a fast clock
+    
+    The pulse_sequence parameter should be specified as a list of tuples. 
+    Each tuple should be of the form (time,state)
+    
+    The period parmeter should, in general, be longer than the entire pulse sequence, 
+    and defines how long the final tuple should be held for before repeating the pulse sequence.
+    
+    The pulse sequence specified will be repeated from time t until t+duration.
+    
+    The samplerate parameter specifies how often to update the output
+    
+    Note 1: The samplerate should be significantly faster than the smallest time difference between 
+    two states in the pulse sequence, or else points in your pulse sequence may never be evaluated.
+    
+    Note 2: The time points your pulse sequence is evaluated at may be different than you expect,
+    if another output changes state between t and t+duration. As such, you should set the samplerate
+    high enough that even if this rounding of tie points occurs (to fit in the update required to change the other output)
+    your pulse sequence will not be significantly altered)
+    '''
+    def repeat_pulse_sequence(self,t,duration,pulse_sequence,period,samplerate):
+        self.add_instruction(t, {'function': functions.pulse_function(pulse_sequence,period), 'description':'pulse sequence',
+                                 'initial time':t, 'end time': t + duration, 'clock rate': samplerate, 'units': None})
+        
+        return duration
 
 class DigitalOut(DigitalQuantity):
     description = 'digital output'
