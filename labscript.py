@@ -242,6 +242,7 @@ class PseudoClock(Device):
         """Ask the trigger device to produce a digital pulse of a given duration to trigger this pseudoclock"""
         if t == 'initial':
             t = self.initial_trigger_time
+        t = round(t,10)
         if self.is_master_pseudoclock:
             if compiler.wait_monitor is not None:
                 # Make the wait monitor pulse to signify starting or resumption of the experiment:
@@ -252,7 +253,7 @@ class PseudoClock(Device):
             self.trigger_times.append(t)
         else:
             self.trigger_device.trigger(t, duration)
-            self.trigger_times.append(t + wait_delay)
+            self.trigger_times.append(round(t + wait_delay,10))
     
     def collect_change_times(self, outputs):
         """Asks all connected outputs for a list of times that they
