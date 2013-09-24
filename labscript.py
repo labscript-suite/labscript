@@ -1701,7 +1701,7 @@ class RFBlaster(PseudoClock):
         group.create_dataset('TABLE_DATA',compression=config.compression, data=data)
         
         # Quantise the data and save it to the h5 file:
-        quantised_dtypes = [('time',int32),('amp0',int32),('freq0',int32),('phase0',int32),('amp1',int32),('freq1',int32),('phase1',int32)]
+        quantised_dtypes = [('time',int64),('amp0',int32),('freq0',int32),('phase0',int32),('amp1',int32),('freq1',int32),('phase1',int32)]
         quantised_data = zeros(len(self.times),dtype=quantised_dtypes)
         quantised_data['time'] = array(c.tT*1e6*data['time']+0.5)
         for dds in range(2):
@@ -1718,7 +1718,7 @@ class RFBlaster(PseudoClock):
         # When should the RFBlaster wait for a trigger?
         quantised_trigger_times = array([c.tT*1e6*t + 0.5 for t in self.trigger_times], dtype=int32)
         for dds in range(2):
-            abs_table = zeros((len(self.times), 4),dtype=int32)
+            abs_table = zeros((len(self.times), 4),dtype=int64)
             abs_table[:,0] = quantised_data['time']
             abs_table[:,1] = quantised_data['amp%d'%dds]
             abs_table[:,2] = quantised_data['freq%d'%dds]
