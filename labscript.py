@@ -404,7 +404,8 @@ class PseudoClock(Device):
             # Adjust the stop time relative to the last trigger time
             self.stop_time = self.stop_time - self.trigger_delay * len(self.trigger_times)
             # Modify the trigger times themselves so that we insert wait instructions at the right times:
-            self.trigger_times = [t - i*self.trigger_delay for i, t in enumerate(self.trigger_times)]
+            initial_trigger_time = self.trigger_times[0]
+            self.trigger_times = [t - initial_trigger_time - i*self.trigger_delay for i, t in enumerate(self.trigger_times)]
                             
     def generate_clock(self):
         outputs = self.get_all_outputs()
@@ -1716,7 +1717,7 @@ class RFBlaster(PseudoClock):
         binary_group = group.create_group('BINARY_CODE')
         diff_group = group.create_group('DIFF_TABLES')
         # When should the RFBlaster wait for a trigger?
-        quantised_trigger_times = array([c.tT*1e6*t + 0.5 for t in self.trigger_times], dtype=int32)
+        quantised_trigger_times = array([c.tT*1e6*t + 0.5 for t in self.trigger_times], dtype=int64)
         for dds in range(2):
             abs_table = zeros((len(self.times), 4),dtype=int64)
             abs_table[:,0] = quantised_data['time']
@@ -1754,7 +1755,7 @@ class RFBlaster(PseudoClock):
                                  jump_to_start=(i == 0),
                                  jump_from_end=(i == len(diff_tables) - 1),
                                  local_loop_pre = str(i),
-                                 set_defaults = True)
+                                 set_defaults = (i==0))
                 # Save the assembly to the h5 file:
                 with open(temp_assembly_filepath,) as assembly_file:
                     assembly_code = assembly_file.read()
