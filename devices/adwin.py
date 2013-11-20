@@ -90,28 +90,28 @@ class LinearRamp(RampInstruction):
         RampInstruction.__init__(self, t, duration, A=final_value, B=0, C=initial_value, clock_rate=clock_rate)
 
     def evaluate(self, t):
-        return (self.A - self.C)/self.duration * (t - self.initial_time) + self.C
+        return (self.A - self.C)/self.duration * t  + self.C
         
 class SinRamp(RampInstruction):
     def __init__(self, t, duration, amplitude, offset, angular_period, clock_rate):
         RampInstruction.__init__(self, t, duration, A=amplitude, B=angular_period, C=offset, clock_rate=clock_rate)
 
     def evaluate(self, t):
-        return self.A*sin((t - self.initial_time)/self.B) + self.C
+        return self.A*sin(t/self.B) + self.C
         
 class CosRamp(RampInstruction):
     def __init__(self, t, duration, amplitude, offset, angular_period, clock_rate):
         RampInstruction.__init__(self, t, duration, A=amplitude, B=angular_period, C=offset, clock_rate=clock_rate)
 
     def evaluate(self, t):
-        return self.A*cos((t - self.initial_time)/self.B) + self.C
+        return self.A*cos(t/self.B) + self.C
         
 class ExpRamp(RampInstruction):
-    def __init__(self, t, duration, amplitude, offset, lifetime, clock_rate):
-        RampInstruction.__init__(self, t, duration, A=amplitude, B=lifetime, C=offset, clock_rate=clock_rate)
+    def __init__(self, t, duration, amplitude, offset, time_constant, clock_rate):
+        RampInstruction.__init__(self, t, duration, A=amplitude, B=time_constant, C=offset, clock_rate=clock_rate)
 
     def evaluate(self, t):
-        return self.A*exp((t - self.initial_time)/lifetime) + self.C
+        return self.A*exp(t/self.B) + self.C
         
         
 class ADWinAnalogOut(AnalogOut):
@@ -130,8 +130,8 @@ class ADWinAnalogOut(AnalogOut):
         self.add_instruction(t, instruction)
         return instruction.duration
         
-    def exp_ramp(self, t, duration, amplitude, offset, lifetime):
-        instruction = ExpRamp(t, duration, amplitude, offset, lifetime, self.parent_device.clock_limit)
+    def exp_ramp(self, t, duration, amplitude, offset, time_constant):
+        instruction = ExpRamp(t, duration, amplitude, offset, time_constant, self.parent_device.clock_limit)
         self.add_instruction(t, instruction)
         return instruction.duration
         
@@ -293,12 +293,14 @@ class ADWin(PseudoClock):
             analog_data[i]['card'] = instruction['card']
             analog_data[i]['channel'] = instruction['channel']
             analog_data[i]['ramp_type'] = instruction['ramp_type']
-            if instruction['ramp_type'] == 0:
+            if instruction['ramp_type'] in [0]:
                 # If it's a linear ramp, map the voltages for parameter A from the range [-10,10] to a uint16:
                 analog_data[i]['A'] = int((instruction['A']+10)/20.*(2**16-1))
-            elif instruction['ramp_type'] in [1,2]:
-                # For a sine or cos ramp, map the amplitude from [-5,5] to a signed int16:
-                analog_data[i]['A'] = int(instruction['A']/10.*(2**16-1))
+            elif instruction['ramp_type'] in [1,2,3]:
+                # For an exp,  sine or cos ramp, map A from [-10,10] to a signed int16:
+                analog_data[i]['A'] = int(instruction['A']/10.*(2**15-1))
+            else:
+                raise RuntimeError('Sanity check failed: Invalid ramp type! Something has gone wrong.')
             analog_data[i]['B'] = round(instruction['B']/self.clock_resolution) # B has units of time
             analog_data[i]['C'] = int((instruction['C']+10)/20.*(2**16-1))
         # Add the 'end of data' instruction to the end:
