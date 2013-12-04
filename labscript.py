@@ -1753,7 +1753,8 @@ class RFBlaster(PseudoClock):
                     for i, dtab in enumerate(diff_tables):
                         compileD(dtab, assembly_file, init=(i == 0),
                                  jump_to_start=(i == 0),
-                                 jump_from_end=(i == len(diff_tables) - 1),
+                                 jump_from_end=False,
+                                 close_end=(i == len(diff_tables) - 1),
                                  local_loop_pre = str(i),
                                  set_defaults = (i==0))
                 # Save the assembly to the h5 file:
