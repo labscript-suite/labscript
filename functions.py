@@ -11,6 +11,12 @@ def sine(duration, amplitude, angfreq, phase, dc_offset):
 def sine_ramp(duration, initial, final):
     return lambda t: (final-initial)*(sin(pi*(t)/(2*duration)))**2 + initial
     
+def sine4_ramp(duration, initial, final):
+    return lambda t: (final-initial)*(sin(pi*(t)/(2*duration)))**4 + initial
+    
+def sine4_reverse_ramp(duration, initial, final):
+    return lambda t: (final-initial)*(sin(pi/2+pi*(t)/(2*duration)))**4 + initial
+    
 def exp_ramp(duration,initial,final,zero):
     rate = 1/duration * log((initial-zero)/(final-zero))
     return lambda t: (initial-zero)*exp(-rate*(t)) + zero

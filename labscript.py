@@ -1074,6 +1074,18 @@ class AnalogQuantity(Output):
                                  'initial time':t, 'end time': t + duration, 'clock rate': samplerate, 'units': units})   
                 
         return duration
+        
+    def sine4_ramp(self,t,duration,initial,final,samplerate,units=None):
+        self.add_instruction(t, {'function': functions.sine4_ramp(duration,initial,final), 'description':'sinusoidal ramp',
+                                 'initial time':t, 'end time': t + duration, 'clock rate': samplerate, 'units': units})   
+                
+        return duration
+        
+    def sine4_reverse_ramp(self,t,duration,initial,final,samplerate,units=None):
+        self.add_instruction(t, {'function': functions.sine4_reverse_ramp(duration,initial,final), 'description':'sinusoidal ramp',
+                                 'initial time':t, 'end time': t + duration, 'clock rate': samplerate, 'units': units})   
+                
+        return duration
     
     def exp_ramp(self, t, duration, initial, final, samplerate, zero=0, trunc=False, trunc_type='linear', units=None):
         if trunc is not False:
