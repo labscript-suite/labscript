@@ -242,6 +242,7 @@ class PseudoClock(Device):
         """Ask the trigger device to produce a digital pulse of a given duration to trigger this pseudoclock"""
         if t == 'initial':
             t = self.initial_trigger_time
+        t = round(t,10)
         if self.is_master_pseudoclock:
             if compiler.wait_monitor is not None:
                 # Make the wait monitor pulse to signify starting or resumption of the experiment:
@@ -252,7 +253,7 @@ class PseudoClock(Device):
             self.trigger_times.append(t)
         else:
             self.trigger_device.trigger(t, duration)
-            self.trigger_times.append(t + wait_delay)
+            self.trigger_times.append(round(t + wait_delay,10))
     
     def collect_change_times(self, outputs):
         """Asks all connected outputs for a list of times that they
@@ -403,7 +404,8 @@ class PseudoClock(Device):
             # Adjust the stop time relative to the last trigger time
             self.stop_time = self.stop_time - self.trigger_delay * len(self.trigger_times)
             # Modify the trigger times themselves so that we insert wait instructions at the right times:
-            self.trigger_times = [t - i*self.trigger_delay for i, t in enumerate(self.trigger_times)]
+            initial_trigger_time = self.trigger_times[0]
+            self.trigger_times = [t - initial_trigger_time - i*self.trigger_delay for i, t in enumerate(self.trigger_times)]
                             
     def generate_clock(self):
         outputs = self.get_all_outputs()
@@ -1072,6 +1074,18 @@ class AnalogQuantity(Output):
                                  'initial time':t, 'end time': t + duration, 'clock rate': samplerate, 'units': units})   
                 
         return duration
+        
+    def sine4_ramp(self,t,duration,initial,final,samplerate,units=None):
+        self.add_instruction(t, {'function': functions.sine4_ramp(duration,initial,final), 'description':'sinusoidal ramp',
+                                 'initial time':t, 'end time': t + duration, 'clock rate': samplerate, 'units': units})   
+                
+        return duration
+        
+    def sine4_reverse_ramp(self,t,duration,initial,final,samplerate,units=None):
+        self.add_instruction(t, {'function': functions.sine4_reverse_ramp(duration,initial,final), 'description':'sinusoidal ramp',
+                                 'initial time':t, 'end time': t + duration, 'clock rate': samplerate, 'units': units})   
+                
+        return duration
     
     def exp_ramp(self, t, duration, initial, final, samplerate, zero=0, trunc=False, trunc_type='linear', units=None):
         if trunc is not False:
@@ -1171,6 +1185,33 @@ class DigitalQuantity(Output):
         self.add_instruction(t,1)
     def go_low(self,t):
         self.add_instruction(t,0) 
+    
+    '''
+    This function only works if the DigitalQuantity is on a fast clock
+    
+    The pulse_sequence parameter should be specified as a list of tuples. 
+    Each tuple should be of the form (time,state)
+    
+    The period parmeter should, in general, be longer than the entire pulse sequence, 
+    and defines how long the final tuple should be held for before repeating the pulse sequence.
+    
+    The pulse sequence specified will be repeated from time t until t+duration.
+    
+    The samplerate parameter specifies how often to update the output
+    
+    Note 1: The samplerate should be significantly faster than the smallest time difference between 
+    two states in the pulse sequence, or else points in your pulse sequence may never be evaluated.
+    
+    Note 2: The time points your pulse sequence is evaluated at may be different than you expect,
+    if another output changes state between t and t+duration. As such, you should set the samplerate
+    high enough that even if this rounding of tie points occurs (to fit in the update required to change the other output)
+    your pulse sequence will not be significantly altered)
+    '''
+    def repeat_pulse_sequence(self,t,duration,pulse_sequence,period,samplerate):
+        self.add_instruction(t, {'function': functions.pulse_sequence(pulse_sequence,period), 'description':'pulse sequence',
+                                 'initial time':t, 'end time': t + duration, 'clock rate': samplerate, 'units': None})
+        
+        return duration
 
 class DigitalOut(DigitalQuantity):
     description = 'digital output'
@@ -1434,15 +1475,13 @@ class WaitMonitor(Trigger):
         self.timeout_connection = timeout_connection 
         
         
-class Camera(DigitalOut, AnalogOut):
+class Camera(DigitalOut):
     description = 'Generic Camera'
     frame_types = ['atoms','flat','dark','fluoro','clean']
     minimum_recovery_time = 0 # To be set by subclasses
     
-    def __init__(self, name, parent_device, connection, BIAS_port, serial_number, SDK, effective_pixel_size, exposuretime=None, orientation='side', trigger_value=1):
-        Output.__init__(self,name,parent_device,connection)
-        self.trigger_value = trigger_value
-        self.allowed_states = {0:'untriggered', trigger_value:'triggered'}
+    def __init__(self, name, parent_device, connection, BIAS_port, serial_number, SDK, effective_pixel_size, exposuretime=None, orientation='side'):
+        DigitalOut.__init__(self,name,parent_device,connection)
         self.exposuretime = exposuretime
         self.orientation = orientation
         self.exposures = []
@@ -1452,12 +1491,6 @@ class Camera(DigitalOut, AnalogOut):
         self.sn = uint64(serial_number)
         self.sdk = str(SDK)
         self.effective_pixel_size = effective_pixel_size
-        
-    def go_high(self, t):
-        self.add_instruction(t, self.trigger_value)
-    
-    def go_low(self, t):
-        self.add_instruction(t, 0)
         
     def expose(self,name, t , frametype, exposuretime=None):
         self.go_high(t)
@@ -1681,7 +1714,7 @@ class RFBlaster(PseudoClock):
         group.create_dataset('TABLE_DATA',compression=config.compression, data=data)
         
         # Quantise the data and save it to the h5 file:
-        quantised_dtypes = [('time',int32),('amp0',int32),('freq0',int32),('phase0',int32),('amp1',int32),('freq1',int32),('phase1',int32)]
+        quantised_dtypes = [('time',int64),('amp0',int32),('freq0',int32),('phase0',int32),('amp1',int32),('freq1',int32),('phase1',int32)]
         quantised_data = zeros(len(self.times),dtype=quantised_dtypes)
         quantised_data['time'] = array(c.tT*1e6*data['time']+0.5)
         for dds in range(2):
@@ -1696,9 +1729,9 @@ class RFBlaster(PseudoClock):
         binary_group = group.create_group('BINARY_CODE')
         diff_group = group.create_group('DIFF_TABLES')
         # When should the RFBlaster wait for a trigger?
-        quantised_trigger_times = array([c.tT*1e6*t + 0.5 for t in self.trigger_times], dtype=int32)
+        quantised_trigger_times = array([c.tT*1e6*t + 0.5 for t in self.trigger_times], dtype=int64)
         for dds in range(2):
-            abs_table = zeros((len(self.times), 4),dtype=int32)
+            abs_table = zeros((len(self.times), 4),dtype=int64)
             abs_table[:,0] = quantised_data['time']
             abs_table[:,1] = quantised_data['amp%d'%dds]
             abs_table[:,2] = quantised_data['freq%d'%dds]
@@ -1732,9 +1765,10 @@ class RFBlaster(PseudoClock):
                     for i, dtab in enumerate(diff_tables):
                         compileD(dtab, assembly_file, init=(i == 0),
                                  jump_to_start=(i == 0),
-                                 jump_from_end=(i == len(diff_tables) - 1),
+                                 jump_from_end=False,
+                                 close_end=(i == len(diff_tables) - 1),
                                  local_loop_pre = str(i),
-                                 set_defaults = True)
+                                 set_defaults = (i==0))
                 # Save the assembly to the h5 file:
                 with open(temp_assembly_filepath,) as assembly_file:
                     assembly_code = assembly_file.read()
