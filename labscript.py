@@ -8,7 +8,11 @@ import h5_lock, h5py
 from pylab import *
 
 import functions
-
+try:
+    from unitconversions import *
+except:
+    print 'Failed to import unit conversion classes'
+    
 import __main__
 
 ns = 1e-9
@@ -1547,6 +1551,16 @@ class DDS(Device):
                  amp_limits=None, amp_conv_class=None, amp_conv_params={}, phase_limits=None, phase_conv_class=None, phase_conv_params = {}):
         self.clock_type = parent_device.clock_type
         Device.__init__(self, name, parent_device, connection)
+        
+        if isinstance(self.parent_device, NovaTechDDS9M):
+            # create some default unit converstion classes if none are specified
+            if freq_conv_class is None:
+                if 'NovaTechDDS9mFreqConversion' in globals():
+                    freq_conv_class = NovaTechDDS9mFreqConversion
+            if amp_conv_class is None:
+                if 'NovaTechDDS9mAmpConversion' in globals():
+                    amp_conv_class = NovaTechDDS9mAmpConversion
+        
         self.frequency = AnalogQuantity(self.name + '_freq', self, 'freq', freq_limits, freq_conv_class, freq_conv_params)
         self.amplitude = AnalogQuantity(self.name + '_amp', self, 'amp', amp_limits, amp_conv_class, amp_conv_params)
         self.phase = AnalogQuantity(self.name + '_phase', self, 'phase', phase_limits, phase_conv_class, phase_conv_params)
@@ -1562,6 +1576,7 @@ class DDS(Device):
             if 'device' in digital_gate and 'connection' in digital_gate: 
                 raise LabscriptError('You cannot specify a digital gate for a DDS connected to %s. The digital gate is always internal to the Pulseblaster.' % (self.parent_device.name))
             self.gate = DigitalQuantity(self.name + '_gate', self, 'gate')
+            
             
     def setamp(self, t, value, units=None):
         self.amplitude.constant(t, value, units)
