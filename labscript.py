@@ -1236,7 +1236,7 @@ class StaticDigitalQuantity(DigitalQuantity):
             self.static_value = 0
         else:
             raise LabscriptError('%s %s has already been set to %s. It cannot also be set to %s.'%(self.description, self.name, self.instruction_to_string[self.static_value], self.instruction_to_string[value]))
-    f
+    
     def get_change_times(self):
         if not hasattr(self,'static_value'):
             self.static_value = self.default_value
