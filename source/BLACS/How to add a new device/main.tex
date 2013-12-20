@@ -5,475 +5,394 @@
 
 
 \begin{document}\title{How to add a new type of hardware device to BLACS}
-\author{Philip Starkey}
 \date{\today}
 \maketitle
 \setstretch{1.2}
 \section{Introduction}
-This tutorial covers the basics of adding a new hardware device type to BLACS. Existing device types include the PulseBlaster, NovatechDDS9m, NI PCIe 6363 and NI PCI 6733. These classes are used by BLACS to generate the unique tab for each device on the BLACS front panel. Adding support for your device to BLACS does not add support to labscript, which will also need to be done if you wish to use the device in a buffered sequence (see **TO BE ADDED IN LATER**). If your device is never to be used in a buffered sequence, you may instead wish to implement it as a virtual device (see ** TO BE ADDED IN LATER**).
+This tutorial covers the basics of adding a new hardware device type to BLACS. 
+Existing device types include the PulseBlaster, NovatechDDS9m, NI PCIe 6363 and NI PCI 6733. 
+These classes are used by BLACS to generate the unique tab for each device on the BLACS front panel. 
+Adding support for your device to BLACS does not add support to labscript, which will also need to be done if you wish to use the device in a buffered sequence (see labscript documentation). 
 
-This tutorial assumes a working knowledge of Python, PyGTK and Glade. If are not familiar with one or more of these, please attempt a tutorial on the subject before continuing with this!
+This tutorial assumes a working knowledge of Python. 
+Some advanced sections also require a working knowledge of PySide (very similar to PyQt) and QtDesigner. 
+If are not familiar with one or more of these, please attempt a tutorial on the subject before continuing with this guide!
 
-\section{The Glade Interface}\label{glade interface}
-The first step is to roughly design the interface for your device in Glade. The design of your interface can be as simple or as complex as you like. 
+\subsection{Creating the Device Classes}\label{creating class}
+All device classes as stored in pythonlib/BLACS/hardware\_interfaces. 
+You should create a new file for your device in this folder, with an appropriate name (the name should be the lowercase version of the device class used in labscript). 
+We shall refer to the name in this tutorial as \texttt{pulseblaster.py}).
 
-The backend of BLACS only requires that you conform to one rule for your interface. Anything you want to behave as a digital out should be represented by a widget that can be linked to a GtkAction (this is generally a togglebutton or a checkbox).
-
-Anything you want to behave as an analog out should be represented by a widget that can be linked to a GtkAdjustment (usually a GtkSpinButton) and should have a corresponding GtkComboBox for changing the units of the value shown in the GtkSpinButton.
-
-Also note that internally within BLACS and Labscript, we represent a DDS as a collection of 3 analog outs (one for frequency, amplitude and phase), so it is recommended to follow this pattern when creating an interface for a DDS device. In general, most interfaces can be broken down into a combination of digital outputs (a part of the device with only two states) and analog outputs (a part of the device which can take any value between a maximum and minimum value, often with a particular quantisation).
-
-\textbf{As of Feb 08, 2012, BLACS does not override the GtkSpinButton properties such as \texttt{digits} and \texttt{climb rate}. It will however add it's own GtkAdjustment to the widget, so you are not required to do this yourself in glade.}
-
-\subsection{The GtkComboBox for unit selection}\label{glade unit selection}
-For each \texttt{GtkSpinButton}, you should have a \texttt{GtkCombobox} located nearby for displaying the unit, and switching between different unit calibrations.
-
-You will also need to create a \texttt{GtkListStore} \textbf{for each} unit selection \texttt{GtkCombobox} and then link them to the \texttt{GtkCombobox}'s appropriately. The list store should have one column called \texttt{unit} of type \texttt{gchararray}. Each \texttt{GtkCombobox} will then need a \texttt{GtkCellRendererText} child for which the \texttt{text} property is linked to the \texttt{unit} column of the \texttt{GtkListStore}
-
-\section{Creating the Device Class}\label{creating class}
-All device classes as stored in pythonlib/BLACS/hardware\_interfaces. You should create a new file for your device in this folder, with an appropriate name (we shall refer to the name in this tutorial as \texttt{pulseblaster.py}).
-
-The first thing you need to do in your empty python file is import the required packages and classes. The code below imports gtk and the BLACS backend classes for handling various output types. 
-The final line imports the BLACS backend for the tab state machine. We'll cover these more as we go.
+The first thing you need to do in your empty python file is import the required packages and classes.
+The code below imports the BLACS backend classes for the tab state machine (we'll cover these more as we go).
+You can also optionally import PySide if you wish to add more PySide widgets to the interface yourself (see section \ref{??})
 \begin{python}
-import gtk
-from output_classes import AO, DO, DDS
-from tab_base_classes import Tab, Worker, define_state
+from BLACS.tab_base_classes import Worker, define_state
+from BLACS.tab_base_classes import MODE_MANUAL, MODE_TRANSITION_TO_BUFFERED
+from BLACS.tab_base_classes import MODE_TRANSITION_TO_MANUAL, MODE_BUFFERED  
+from BLACS.device_base_class import DeviceTab
 \end{python}
 
-Next we need to define two classes. The first class will handle the GUI, and related events. The second will handle the communication with the actual hardware. The first class name (hence forth known as the device class) should match (ignoring case) the device class shown in the entry in the connection table for an instance of your device. It should also be the same name as your python file. You may call the second class (hence forth known as the worker class) whatever you wish, though it is advisable to use something understandable!
+Next we need to define two classes. 
+The first class will handle the GUI, and related events. 
+The second will handle the communication with the actual hardware. 
+The first class name (hence forth known as the device class) should be the lower case version of the device class shown in the entry in the connection table for an instance of your device. 
+It should also be the same name as your python file. 
+You may call the second class (hence forth known as the worker class) whatever you wish, though it is advisable to use something understandable!
 
-In this tutorial we will use \texttt{pulseblaster} and \texttt{PulseblasterWorker} as our class names. 
+In this tutorial we will use \texttt{my\_device} and \texttt{MyWorker} as our class names. 
 
 \begin{python}
-class pulseblaster(Tab):
+class my_device(DeviceTab):
     pass
 	
-class PulseblasterWorker(Worker):
+class MyWorker(Worker):
     pass
 \end{python}
 
-\textbf{Note:} We have used \texttt{pass} here as a placeholder. You can assume that the \texttt{pass} statements will be removed once the tutorial inserts code at the same indentation level.
+\textbf{Note:} We have used \texttt{pass} here as a placeholder. 
+You can assume that the \texttt{pass} statements will be removed once the tutorial inserts code at the same indentation level.
+
+
+\section{Implementing a simple Device Class}\label{device_class}
+The device class handles the creation of the GUI and the interaction with the GUI and the Queue Manager. 
+Most of this is handled by the \texttt{DeviceTab} class you are subclassing.
+We'll first discuss the minimum requirements for subclassing \texttt{DeviceTab}, followed by an in depth explanation of the internal workings of \texttt{DeviceTab} and details on advanced implementation possibilities.
+
+When the device tab is instantiated, the functions described in the next sections are run in the following order:
+\begin{python}
+    self.initialise_GUI() 
+    self.restore_save_data(settings_dictionary)
+    self.initialise_workers()
+    self.initialise_device()
+\end{python}
+
+\subsection{Overriding the \texttt{initialise\_GUI} function}
+The \texttt{initialise\_GUI} function is where you define the output capabilities of your device and generate the graphical interface for manual control of the device through the front panel.
+The \texttt{DeviceTab} class you are subclassing has a lot of function to help you do this.
+Here we'll walk through a simple example, but for full details see the \texttt{DeviceTab} reference in section \ref{device_class_reference}.
+
+The first step is to override the \texttt{initialise\_GUI} function and define some capabilities of the device:
+
+\begin{python}
+def initialise_GUI(self):
+    # Capabilities
+    self.num_DDS = 2
+    self.num_DO = 12
+    self.ao_base_units     = 'V'
+    self.ao_base_min       = -10.0
+    self.ao_base_max       =  10.0
+    self.ao_base_step      =  0.001
+    self.ao_base_decimals  =  3
+    self.dds_base_units    = {'freq':'Hz',        'amp':'Vpp', 'phase':'Degrees'}
+    self.dds_base_min      = {'freq':0.3,         'amp':0.0,   'phase':0}
+    self.dds_base_max      = {'freq':150000000.0, 'amp':1.0,   'phase':360}
+    self.dds_base_step     = {'freq':1000000,     'amp':0.01,  'phase':1}
+    self.dds_base_decimals = {'freq':1,           'amp':3,     'phase':3}
+\end{python}
+This should look pretty straight forward, we are just storing in a dictionary the number of DDS and digital outputs, followed by the capabilities of the DDSs of the device in \textbf{base units}. 
+Base units are considered to be SI units like Volts, Hz, etc.
+Base units are not necessarily the same as hardware units (more on this later).
+All of this information is for your own use, and does not have to follow any particular naming convention, nor does it have to be stored as an instance atrribute using \texttt{self}.
+
+Following this you should define 1-3 dictionaries which define the properties of the digital, analog and DDS output channels respectively.
+If your devices does not have one or more of these types of outputs, you do not need to create the dictionary of properties.
+
+For digital outputs, the dictionary should be of the form:
+\begin{python}
+    digital_properties = {'hardware_channel_1':{},
+                          'hardware_channel_2':{}
+                         }
+\end{python}
+where \texttt{hardware\_channel\_x} is the name of the channel connection as specified in your \texttt{labscript} implementation. For instance PulseBlasters would use Flag 1, Flag 2, etc. while NI PCIe 6363s would use port0/line0, port0/line1, etc.
+
+For analog outputs, the dictionary should be of the form:
+\begin{python}
+    analog_properties = {'hardware_channel_1':{'base_unit':self.ao_base_units,
+                                               'min':self.ao_base_min,
+                                               'max':self.ao_base_max,
+                                               'step':self.ao_base_step,
+                                               'decimals':self.ao_base_decimals
+                                              },
+                         'hardware_channel_2':{'base_unit':self.ao_base_units,
+                                               'min':self.ao_base_min,
+                                               'max':self.ao_base_max,
+                                               'step':self.ao_base_step,
+                                               'decimals':self.ao_base_decimals
+                                              },
+                        }
+\end{python}
+where, again, \texttt{hardware\_channel\_x} is the name of the channel connection as specified in your \texttt{labscript} implementation.
+
+DDS properties are combination of three analog properties and a digital property.
+The DDS property dictionary should thus be of the form:
+\begin{python}
+    # The creation of this dictionary could be simplified by one or
+    # more for loops. However we chose to write everything out explicitly
+    # here so that it is clear what is going on. Consult one of the already 
+    # implemented device classes to see how it could be done in fewer lines
+    # of code (for example the PulseBlaster)
+    dds_properties = {'hardware_channel_1':
+                           {'freq':{'base_unit':self.dds_base_units['freq'],
+                                    'min':self.dds_base_min['freq'],
+                                    'max':self.dds_base_max['freq'],
+                                    'step':self.dds_base_step['freq'],
+                                    'decimals':self.dds_base_decimals['freq']
+                                   },
+                             'amp':{'base_unit':self.dds_base_units['amp'],
+                                    'min':self.dds_base_min['amp'],
+                                    'max':self.dds_base_max['amp'],
+                                    'step':self.dds_base_step['amp'],
+                                    'decimals':self.dds_base_decimals['amp']
+                                   },
+												  'phase':{'base_unit':self.dds_base_units['phase'],
+                                    'min':self.dds_base_min['phase'],
+                                    'max':self.dds_base_max['phase'],
+                                    'step':self.dds_base_step['phase'],
+                                    'decimals':self.dds_base_decimals['phase']
+                                   },
+                            'gate':{}
+                            },
+
+                      'hardware_channel_2':
+                           {'freq':{'base_unit':self.dds_base_units['freq'],
+                                    'min':self.dds_base_min['freq'],
+                                    'max':self.dds_base_max['freq'],
+                                    'step':self.dds_base_step['freq'],
+                                    'decimals':self.dds_base_decimals['freq']
+                                   },
+                             'amp':{'base_unit':self.dds_base_units['amp'],
+                                    'min':self.dds_base_min['amp'],
+                                    'max':self.dds_base_max['amp'],
+                                    'step':self.dds_base_step['amp'],
+                                    'decimals':self.dds_base_decimals['amp']
+                                   },
+												  'phase':{'base_unit':self.dds_base_units['phase'],
+                                    'min':self.dds_base_min['phase'],
+                                    'max':self.dds_base_max['phase'],
+                                    'step':self.dds_base_step['phase'],
+                                    'decimals':self.dds_base_decimals['phase']
+                                   },
+                            'gate':{}
+                            }
+                     }
+\end{python}
+where, again, \texttt{hardware\_channel\_x} is the name of the channel connection as specified in your \texttt{labscript} implementation.
+Importantly, if you omit any of the freq, amp, phase or gate entries, it will be assumed that the DDS output does not have control over that parameter. 
+For instance you may have a frequency source for which you cannot control the amplitude or phase, nor does it have an on/off control (gate). 
+As such you would define your dds dictionary as:
+\begin{python}
+    dds_properties = {'hardware_channel_1':
+                           {'freq':{'base_unit':self.dds_base_units['freq'],
+                                    'min':self.dds_base_min['freq'],
+                                    'max':self.dds_base_max['freq'],
+                                    'step':self.dds_base_step['freq'],
+                                    'decimals':self.dds_base_decimals['freq']
+                                   }
+                            }
+                      }
+\end{python}
+
+You should then call one or more of the following functions to create python objects for your outputs:
+\begin{python}   
+    self.create_digital_outputs(digital_properties)
+    self.create_analog_outputs(analog_properties)
+    self.create_dds_outputs(dds_properties)
+\end{python}
+The objects create exist behind the scenes, and will have automatically looked up relevant entries in the connection table to get their name and unit conversion class.
+
+You should then create the widgets for each of these outputs. 
+There are several ways you can do this, each of which is explained in ??\ref{??}.
+The simplest is to let the \texttt{DeviceTab} do it for you, as follows:
+\begin{python}
+    dds_widgets,ao_widgets,do_widgets = self.auto_create_widgets()
+\end{python}
+Note that three dictionaries are always returned, regardless of whether you are using any digital, analog and dds outputs on your device.
+For instance, if you have not create any analog outputs as detailed above, the \texttt{ao\_widgets} variable will contain an empty dictionary.
+
+You must then place these widgets in the GUI tab for your device.
+Again, this can be done several ways (see ??\ref{??}), but the simplest is to do:
+\begin{python}
+    self.auto_place_widgets(dds_widgets,do_widgets)
+\end{python}
+The order in which you pass the dictionaries of widgets determines the order they appear in the device tab.
+You can split up the dictionaries of widgets if you like, for instance to segregate some digital outputs from the others.
+You can also specify heading names, and a sorting function for each group of widgets you pass to this function (see section \ref{??} for details).
+
+If you wish to add additional GUI elements, you may do so before or after the call to \texttt{auto\_place\_widgets}.
+You can access the Qt Layout which contains the main body of the tab using:
+\begin{python}
+    self.get_tab_layout()
+\end{python}
+You can then insert/append Qt Widgets or layouts you have created either from code or by loading a Qt UI file created by Qt Designer.
+
+%TODO: Explain other ways to call auto_place_widgets for controlling group name/sort order.
+
+
+\subsection{Overriding the \texttt{get\_save\_data} and \texttt{restore\_save\_data} functions}
+You may find you wish to save and restore some data from your tab when BLACS is closed or the tab is restarted.
+\texttt{DeviceTab} provides two functions to override to implement this behaviour.
+
+\texttt{get\_save\_data} should be implemented to return a dictionary of key:value pairs you wish saved.
+
+\texttt{restore\_save\_data} provides a dictionary of key:value pairs to restore as you wish.
+
+The signatures of the functions are:
+\begin{python}
+def get_save_data(self):
+	# your code here
+	pass
+	
+def restore_save_data(self, save_data):
+	# your code here
+	pass
+\end{python}
+
+The dictionary you return must meet the following requirements:
+\begin{python}
+# This expression must be true
+eval(repr(my_save_data)) == my_save_data 
+\end{python}
+
+See the Camera device class implementation for an example.
+
+\subsection{Overriding the \texttt{initialise\_workers} function}
+The \texttt{initialise\_workers} function is used to tell the device Tab to launch one or more worker processes to communicate with the device.
+A device tab can have one or more associated worker processes, with one of them being identified as the \textit{primary worker}.
+When the device tab enters one of the states inbuilt into \texttt{DeviceTab} (such as \texttt{transition\_to\_buffered}, the primary worker is communicated with first. 
+Following this, communication with secondary worker processes commences one after the other.
+The order in which secondary processes are chosen to communicate with depends on the names of all worker processes and the number of worker processes.
+We simply iterate over a dictionary of worker processes, keyed by the worker process name (watch the PyCon ``The mighty dictionary'' video online for more information on Python dictionary ordering).
+If you require secondary worker processes to be communicated with in a specific order, please contact the developers and request this feature to be added.
+
+To launch a worker process, simply call:
+\begin{python}
+def initialise_workers(self):
+    self.create_worker("my_worker", MyWorker)
+\end{python}
+where \texttt{my\_worker} is a unique name for this worker process and \texttt{MyWorker} is the class name you wish to launch in the new worker process.
+
+\texttt{create\_worker} also takes a third, optional dictionary of keyword arguments to pass into the worker process (see section \ref{??}).
+A good piece of information to pass in would be the \texttt{BLACS\_connection attribute} specified in the connection table.
+This parameter usually contains information specifying the physical data connection to the PC (Eg. COM12), and is available as an instance attribute of \texttt{DeviceClass}:
+\begin{python}
+def initialise_workers(self):
+    self.create_worker("my_worker", MyWorker,{'com_port':str(self.BLACS_connection))
+\end{python}
+You can access this value from within the Worker Class using \texttt{self.com\_port}.
+
+Finally, you need to set the primary worker.
+Do do this, simply write:
+\begin{python}
+    self.primary_worker = "my_worker"
+\end{python}
+where \texttt{my\_worker} is the name you used in the call to \texttt{create\_worker}
+
+
+\subsection{Overriding the \texttt{start\_run} function}
+If your device is a pseudoclock, you will need to override the \texttt{start\_run} function.
+This function is called by the Queue Manager to begin a buffered experiment shot.
+\textbf{This function must be a state function (see section \ref{device_class_state_machine.}}
+\textbf{You will also need to become familiar with the \texttt{statemachine\_timeout\_add} functionality to schedule a regular poll of the device before continuing with this section (see section \ref{statemachine_timeout_add}.}
+Your implementation of \texttt{start\_run} will be passed a queue which it will use to notify the Queue Manager when the experiment shot has finished running.
+\textbf{It is up to you to schedule a poll of your device to determine if the shot has completed.}
+
+Below is the PulseBlaster implementation:
+\begin{python}
+@define_state(MODE_BUFFERED,True)  
+def start_run(self, notify_queue):
+    self.statemachine_timeout_remove(self.status_monitor)
+    yield(self.queue_work(self.primary_worker,'pb_start'))
+    self.statemachine_timeout_add(100,self.status_monitor,notify_queue)
+\end{python}
+
+In this implementation, we first stop the existing poll of the device status.
+We then ask the worker process to start the buffered shot.
+Once the shot has begun, we setup a regular poll of the pulseblaster every 100\,ms which will notify the Queue Manager at the end of the shot using the \texttt{notify\_queue}.
+
+
+\section{\texttt{DeviceTab} reference}\label{device_class_reference}
+% TODO: List attributes and functions that will be of use to people subclassing DeviceTab
+
+
+
+
+
 \newpage
-\subsection{The Worker Class}
-The worker class is used solely to communicated with the hardware for our device. It exists to separate out the code, modules, dll's, etc. from the GUI to provide better stability to the system. The worker class is instantiated inside a separate process (reffered to from now on as the worker process), which can be restarted by the user if the device becomes unresponsive. Upon restart, all libraries are completely reloaded as they are only loaded within the worker process. This allows the system to recover from errors in 3rd party API's without the need to restart the entire control system.
+\section{Advanced features of the \texttt{DeviceTab}}
+\subsection{The state machine}\label{device_class_state_machine}
+The \texttt{Tab} class (\texttt{DeviceTab} subclasses \texttt{Tab}) contains a state machine which regulates the interprocess communication between the worker process and the GUI process, as well as making sure that the Qt event based architecture is transformed into a deterministic system. 
+The simple Device Class implementation discussed in section \ref{device_class} is already using the state machine behind the scenes.
 
-The worker class consists of methods which can be executed by the state machine. In your device class you can call:
+Most of the state machine architecture is hidden within the \texttt{Tab} class. 
+Any function in the device class prefixed (decorated) with \texttt{@define\_state} will be queued up appropriately in the state machine when it is called.
+We will refer to functions prefixed with \texttt{@define\_state} as \textit{state machine functions}.
+
+The state machine has 4 modes it can be in: \texttt{MODE\_MANUAL}, \texttt{MODE\_TRANSITION\_TO\_BUFFERED}, \texttt{MODE\_BUFFERED} and \texttt{MODE\_TRANSITION\_TO\_MANUAL}. These 4 modes correspond to the following situations for the device:
+
+\begin{itemize}
+	\item \texttt{MODE\_MANUAL}: The device is programmed to static values that match the front panel interface of BLACS. The device is \textbf{not} running a buffered experiment compiled by \texttt{labscript}.
+	\item \texttt{MODE\_TRANSITION\_TO\_BUFFERED}: The device is being programmed with a buffered sequence from a HDF5 file.
+	\item \texttt{MODE\_BUFFERED}: The device is either waiting for a trigger to start the execution of a buffered experiment, or is currently executing an experiment.
+	\item \texttt{MODE\_TRANSITION\_TO\_MANUAL}: The device has finished executing the buffered experiment and is currently saving any acquired data and preparinfg to entered \texttt{MODE\_MANUAL}.
+\end{itemize}
+
+In general you should not need to worry about transitioning between these modes unless you are overwriting \texttt{transition\_to\_buffered} or \texttt{transition\_to\_manual}.
+
+A state machine function can be configured to run only in one or more of these modes.
+A state machine function can also be configured to stay in the queue until the state machine is in a matching mode and/or to only use the most recently queued  call of the state machine function.
+The code \texttt{@define\_state} is a Python \textit{decorator}, and takes 2 required arguments and 1 optional argument.
+The arguments are:
+
+\begin{itemize}
+	\item \texttt{allowed\_modes}: This in the binary OR of the modes in which the following state machine function is allowed to run in. If the statemachine is in a mode not specified here, it will not run until the state machine is in a matching mode
+	\item \texttt{queue\_state\_indefinitely}: This argument should be set to True or False.
+	If True, the state machine function will remain in the queue until the statemachine enters one of the allowed modes. 
+	Setting this flag to True guarantees the state machine function will run eventually (unless the device tab is restarted or BLACS is closed). 
+	If False, this state machine function will be removed from the queue if it is the next item in the state machine to be run, but the current state machine mode is not one of the allowed modes.
+	\item \texttt{delete\_stale\_states}: An optional argument that defaults to False. If set to True, the state machine will look for newer versions of the state machine function in the queue, and will run the most recent found before encountering a different state machine function in the queue. If set to False (the default), this state will not be deleted when newer versions exist.
+\end{itemize}
+
+An example use of \texttt{@define\_state} is shown below:
 \begin{python}
-self.queue_work('some_function',arg1,arg2,kwrd1=arg3)
-\end{python}
-and this will call the function called \texttt{some\_function} with arguments \texttt{arg1,arg2,kwrd1=arg3} in the worker class. This is covered in more detail in section \ref{device_class_state_machine}.
-
-\subsubsection{The \texttt{init} method}
-The init method in the worker class is special for two reasons. The first is that it is not called \texttt{\_\_init\_\_} as you would expect. This is because we don't want to override the \texttt{\_\_init\_\_} method in class \texttt{Worker},  which is essential for successful operation.
-
-The second is that this is the function in which you import the modules, classes, etc. that you wish to access from within the worker class. They are imported here, within the class, so that they only exist within the worker process, and not within the BLACS process. This allows modules to be completely unloaded from the system when the worker process is restarted. This allows recovery of the programming library without the need to completely restart the program (a technique not seen in any other control system to our knowledge).
-
-If you wish to import a module (for example \texttt{h5py}), use the following code:
-\begin{python}
-class PulseblasterWorker(Worker):
-    def init(self):
-        global h5py; import h5py
-\end{python}
-
-If you wish to import something from within a module (for example \texttt{spinapi}), you can use:
-\begin{python}
-        exec 'from spinapi import *' in globals()
-\end{python}
-
-You can also set the default values for any class attributes in the \texttt{init} method. For instance:
-\begin{python}
-        self.smart_cache = {}
-\end{python}
-
-If you wish to pass in variables, at instantiation, to your worker class, you can do so, and it is document in section \ref{device_class_init}.
-
-\subsubsection{Worker Class States}
-As covered in section \ref{device_class_state_machine} you can ask the tabs state machine to execute functions within the worker class. These functions can take arguments and keyword arguments as a normal function would, however the arguments must be able to be placed in a Python Queue. Objects with instance methods cannot be placed in a queue, and so can not be passed to a function you wish to call from the state machine.
-
-In general you will have at least 3 functions within your worker class. One to initialise the device, one to handle an update to the devices output in software timed mode (otherwise known as \texttt{static mode}) and one to handle the programming of the device for the hardware timed mode (otherwise known as \texttt{buffered mode}). You may also want functions for exiting the buffered mode (via an abort, or end at the end of the run), checking the status of the device, etc.
-
-Examples of such functions can be seen in any of the existing hardware interface worker classes.
-
-\newpage
-\subsection{The Device Class}\label{device_class}
-
-\subsubsection{The state machine}\label{device_class_state_machine}
-The device class contains a state machine which regulates the interprocess communication between the worker process and the GUI process, as well as making sure that the GTK event/signal based architecture is transformed into a deterministic system. 
-
-Most of the state machine architecture is hidden within the \texttt{Tab} class. Any method in the device class prefixed with \texttt{@define\_state} will be queued up appropriately in the state machine. An example is shown below:
-\begin{python}
-    @define_state
+    @define_state(allowed_modes=MODE_MANUAL|MODE_BUFFERED,queue_state_indefinitely=True,delete_stale_states=False)
     def start(self,widget=None):
         # some code follows
         time.sleep(5)
 \end{python}
 
-Note that if we call this method from within our code, E.g.:
+Note that if we call this function from within our code, E.g.:
 \begin{python}
     def foo(self):
         self.start() # This function call returns immediately
 \end{python}
-the call to \texttt{start} returns immediately. Some time in the future, the method start will be executed, and the thread will sleep for 5 seconds as expected.
+the call to \texttt{start} returns immediately. Some time in the future, the function \texttt{start} will be executed, and the main thread (the GUI) will sleep for 5 seconds as expected.
 
-This means that calls to state machine methods (E.g. \texttt{start}) cannot return parameters in the conventional way. It is expected that state machine methods will be called upon a GTK event (in which case you will never need to return anything from your state) or from another thread (in which case you can use a Python Queue to block the calling thread until your state machine method puts the returns values in the queue)
+This means that calls to state machine functions (E.g. \texttt{start}) cannot return parameters in the conventional way. It is expected that state machine functions will be called upon a Qt event (in which case you will never need to return anything from your state) or from another thread (in which case you can use a Python Queue to block the calling thread until your state machine function puts the return values in the queue)
 
-As mentioned, state machine methods are designed to interact with the worker process. You can call functions within your worker class with the following code:
+As mentioned, state machine functions are designed to interact with the worker process. You can call functions within your worker process with the following code:
 \begin{python}
-    @define_state
+    @define_state(MODE_MANUAL,True)
     def start(self,widget=None):
-        self.queue_work('foo')
+        result = yield(self.queue_work(self.primary_worker,'foo'))
 \end{python}
 
-If you wish to pass arguments to your method, you can instead call something similar to
+If you wish to pass arguments to your function, you can instead call something similar to
 \begin{python}
-        self.queue_work('foo',1,5,x=3)
+        result = yield(self.queue_work(self.primary_worker,'foo',1,5,x=3))
 \end{python}
-This will call the method \texttt{foo} with the arguments \texttt{1,5,3} in the worker process.
+This will call the function \texttt{foo} with the arguments \texttt{1,5,3} in the worker process name stored in \texttt{self.primary\_worker}.
 
-It is important to note that you cannot pass objects as arguments to a worker class method. The arguments must be able to be placed into a Python Queue.
+It is important to note that you cannot pass objects as arguments to a worker class function. The arguments must be able to be placed into a Python Queue.
 
-Note that the worker process function is not executed until the state machine function ends. Thus in the following example 
-\begin{python}
-    @define_state
-    def start(self,widget=None):
-        x = 1
-        self.queue_work('foo',x)
-        x = 2
-        print x
-\end{python}
-\texttt{'2'} will be printed before the method \texttt{foo} is executed. Since \texttt{x} is an integer, \texttt{foo} will be passed \texttt{'1'} as it's only argument. It is recommended that you call \texttt{self.queue\_work} at the end of your state machine function to avoid confusion.
-
-If you wish to execute some further code once the worker class method has been executed, you can use the \texttt{self.do\_after} method. For example:
-\begin{python}
-    @define_state
-    def start(self,widget=None):
-        x = 1
-        self.queue_work('foo',x)
-        self.do_after('leave_foo',x)
-        
-    def leave_foo(self,x,_results):
-        print x # prints 1
-        print _results
-\end{python}
-The last argument passed to the method called by \texttt{do\_after} is \texttt{\_results} which contains a tuple of values returned by the worker class method called by \texttt{queue\_work}. Note that the method called by \texttt{do\_after} does \textbf{not} have \texttt{@define\_state} written above it's definition.
-
-\subsubsection{Class attributes}\label{device_class_attributes}
-It is necessary to define the capabilities of the device as follows:
-\begin{python}
-class pulseblaster(Tab):
-    # Channel Capabilities
-    # You must follow the naming convention shown here as BLACS uses them to save
-    # the state of the AO/DO/DDS channels in your device.
-    num_DDS = 2
-    num_DO = 4 
-    # If one is zero, you may omit it.
-    # num_AO = 0
-    
-    # It is also a good idea to define hardware limits for your output channels here
-    # The names you give these variables are arbitrary and are for your use only,
-    # though it is recommended to stay consistent with these names
-    base_units = {'freq':'MHz',     'amp':'Vpp', 'phase':'Degrees'}
-    base_min =   {'freq':0.0000003, 'amp':0.0,   'phase':0}
-    base_max =   {'freq':150.0,     'amp':1.0,   'phase':360}
-    base_step =  {'freq':1,         'amp':0.01,  'phase':1}
-\end{python}
-
-\subsubsection{The \texttt{\_\_init\_\_} method}\label{device_class_init}
-The \texttt{\_\_init\_\_} method definition is as follows:
-\begin{python}
-    # notebook: The notebook in which this tab is located. 
-    #           You shouldn't need to use this, except to pass
-    #           it to the Tab __init__ method
-    #
-    # settings: This is a dictionary that contains the 'device_name'
-    #           The 'connection_table' object for BLACS
-    #           The 'saved_data' returned by self.get_save_data() on last exit
-    #           The 'front_panel_settings' which contains all saved data for
-    #           attached DO/AO/DDS channels
-    #
-    # restart: This is True only if the device tab has been restarted by the user
-    def __init__(self,notebook,settings,restart=False):
-\end{python}
-
-One of the first things to do in the \texttt{\_\_init\_\_} method is to instantiate the \texttt{Tab} base class via:
-\begin{python}
-		# PulseblasterWorker is the class name for the device worker class 
-		# you have defined previously.
-        Tab.__init__(self,PulseblasterWorker,notebook,settings)
-\end{python}
-You can also pass an optional parameter to this function, \texttt{workerargs=\{\}}. The keys in this dictionary will be turned into instance variables of the worker class whose value matches the value of the dictionary. If you wish to pass your own queue to the worker process, this is where you must do it, and an example can be seen in the \texttt{ni\_pcie\_6363} class.
-
-You will probably also want to save the settings dictionary and device name as attributes. Now is also a good time to create some other attributes you will need later:
-\begin{python}
-        self.settings = settings
-        self.device_name = settings['device_name']
-        self.static_mode = True
-        self.destroy_complete = False
-\end{python}
-
-Now we want to build our GUI from the glade file. We do that by calling:
-\begin{python}
-        # Create the PyGTK Builder:
-        self.builder = gtk.Builder()
-        self.builder.add_from_file('hardware_interfaces/your_glade_file.glade')
-        # Connect signals to methods in this class
-        self.builder.connect_signals(self)
-\end{python}
-This code also connects any signals you have defined in your glade file to methods within this class. If you do add any signals, make sure you remember to define the methods too!
-
-You can now pull out references to the GTK widgets you placed in your glade file via the names you gave them in glade. You will need to at least get a reference to the GtkScrolledWindow (the top most widget) in your glade file. For example, we have called the top most widget \texttt{toplevel} in \texttt{pulseblaster.glade}, so we would call in the \texttt{\_\_init\_\_} method:
-\begin{python} 
-        self.toplevel = self.builder.get_object('toplevel')
-\end{python}
-Any other 'one off' widgets you wish to access and change their content programmatically can be done in a similar fashion.
-
-We now move on to initialising the objects which will handle the widgets for the AO/DO/DDS channels of your device. Depending on the capabilities of your device, you will need to instantiate the following lists (naming convention must be followed):
-\begin{python}
-        self.dds_outputs = []
-        self.digital_outs = []
-        self.analog_outs = []
-\end{python}
-
-You will now want to loop over the channels for a particular output type. We will give the example for \texttt{DDS}'s here, as this involves making an internal \texttt{AO} object for each of the frequency, amplitude and phase components of the DDS.
-
-Here we loop over the number of DDS channels for the device, and generate a unique name, within this device instance, for each channel. We then get the connection table entry object, and use it to find the channel name if it exists. It is important that the channel name be set to \texttt{-} if it is not in the connection table.
-\begin{python}
-        for i in range(self.num_DDS):
-            # Generate a unique channel name (unique to the device instance,
-            # it does not need to be unique to BLACS)
-            channel = 'DDS %d'%i
-            
-            # Get the connection table entry object
-            conn_table_entry = self.settings['connection_table'].find_child(
-                self.settings['device_name'],'dds %d'%i)
-                
-            # Get the name of the channel
-            # If no name exists, it MUST be set to '-'
-            name = conn_table_entry.name if conn_table_entry else '-'
-            
-            # Set the label to reflect the connected channels name:
-            self.builder.get_object('channel_%d_label'%i).set_text(
-                channel + ' - ' + name)
-\end{python}  
-
-We now loop over the frequency, phase, and amplitude sections of the DDS, and we will create an \texttt{AO} object for each which we will later use to make a \texttt{DDS object}. First however we must get the calibration details for each sub channel from the connection table, and the widgets for each sub channel from the glade file.
-\begin{python}
-            # Loop over freq,amp,phase and create AO objects for each
-            ao_objects = {}
-            sub_chnl_list = ['freq','amp','phase']
-            for sub_chnl in sub_chnl_list:
-                calib = None
-                calib_params = {}
-                
-                # find the calibration details for this subchannel
-                # TODO: Also get their min/max values
-                if conn_table_entry:
-                	sub_chnl_name = conn_table_entry.name+'_'+sub_chnl
-                    if sub_chnl_name in conn_table_entry.child_list:
-                        sub_chnl_entry = conn_table_entry.child_list[sub_chnl_name]
-                        if sub_chnl_entry != "None":
-                            calib = sub_chnl_entry.calibration_class
-                            calib_params =
-                                eval(sub_chnl_entry.calibration_parameters)
-                
-                # Get the subchannel (eq freq) widget from the glade file
-                spinbutton = self.builder.get_object(sub_chnl+'_chnl_%d'%i)
-                # Get the unit selection for the subchannel widget
-                unit_selection = self.builder.get_object(sub_chnl+'_unit_chnl_%d'%i)
-\end{python}
-
-We then create the AO object. Note that we pass in a function as the 8th argument (\texttt{self.program\_static}). This function is covered in section \ref{device_class_program_static} and can be given a different name, just make sure you pass the correct function to the \texttt{AO} and \texttt{DO} objects.
-\begin{python}
-                # Make output object:
-                ao_objects[sub_chnl] = AO(name+'_'+sub_chnl, 
-                                          channel+'_'+sub_chnl, 
-                                          spinbutton, 
-                                          unit_selection, 
-                                          calib, 
-                                          calib_params, 
-                                          self.base_units[sub_chnl], 
-                                          self.program_static, 
-                                          self.base_min[sub_chnl], 
-                                          self.base_max[sub_chnl], 
-                                          self.base_step[sub_chnl])
-\end{python}
-
-We then update the values and settings of this object to the previously saved state:
-\begin{python}
-                # Set default values:
-                ao_objects[sub_chnl].update(settings)
-\end{python}
-
-We can then instantiate the \texttt{DO} object for the DDS gate (which is a lot simpler than the \texttt{AO} objects!) and add them to our \texttt{dds\_outputs} list:
-\begin{python}
-            # Get the widgets for the gate
-            gate_togglebutton = self.builder.get_object('active_chnl_%d'%i)        
-            # Make the gate DO object            
-            gate = DO(name+'_gate', 
-                      channel+'_gate', 
-                      gate_togglebutton, 
-                      self.program_static)
-            # update the gate value based on saved value
-            if 'DDS %d_gate'%i in settings['front_panel_settings']:
-                gate.set_state(
-                   settings['front_panel_settings'][channel+'_gate']['base_value'],
-                   program=False)
-                    
-                # TODO: Set lock state
-                    
-            # Construct the DDS object and store for later access:
-            self.dds_outputs.append(DDS(ao_objects['freq'],
-                                        ao_objects['amp'],
-                                        ao_objects['phase'],
-                                        gate))
-\end{python}
+You may \texttt{yield} to one or more worker process function many times within a single state function.
+\textbf{Note that you can only do this from within a function that is decorated with \texttt{@define\_state}.}
 
 
 
-
-\subsubsection{The \texttt{get\_save\_data} method} \label{device_class_get_save_data}
-This function provides an interface for saving tab specific data upon exiting BLACS. The data becomes available to the tab during the \texttt{\_\_init\_\_} method in the \texttt{settings['saved\_data']} variable (see section \ref{device_class_init}).
-
-This method should return a dictionary of data to be saved. The dictionary should satisfy the following condition:
-\begin{python}
-save_data = {'key':value} # Dictionary of data to save
-
-eval(repr(save_data)) == save_data # This expression must be true
-\end{python}
-
-We finish by adding the toplevel widget in our glade file to the \texttt{GtkViewport} provided by the \texttt{Tab} base class and queuing up any initialisation functions we want (for instance \texttt{program\_static} and/or a device specific initialisation state):
-
-\begin{python}
-        # Insert our GUI into the viewport provided by BLACS:
-        self.viewport.add(self.toplevel)
-        
-        # Initialise the Pulseblaster:
-        self.initialise_pulseblaster()
-        
-        # Program the hardware with the initial values of everything:
-        self.program_static()
-\end{python}
-
-\subsubsection{The \texttt{program\_static} method} \label{device_class_program_static}
-This is the only method in section \ref{device_class} which can have a different name. The name of this method should correspond to the method named passed into the AO and DO objects instantiated in section \ref{device_class_init}.
-
-This function should be a state machine function, and should call a worker class function to update the device outputs to match the current front panel values.
-
-Below is an example from the pulseblaster code. Here we make use of the \texttt{self.static\_mode} variable to only program changes if we are not currently running a buffered experiment. We pass the values to program in as a dictionary.
-
-\begin{python}
-    def get_front_panel_state(self):
-        return {'freq0':self.dds_outputs[0].freq.value,
-                'amp0':self.dds_outputs[0].amp.value,
-                'phase0':self.dds_outputs[0].phase.value,
-                'en0':self.dds_outputs[0].gate.state,
-                'freq1':self.dds_outputs[1].freq.value,
-                'amp1':self.dds_outputs[1].amp.value,
-                'phase1':self.dds_outputs[1].phase.value,
-                'en1':self.dds_outputs[1].gate.state,
-                'flags':''.join(['1' if flag.state else '0' ...
-                ... for flag in self.digital_outs]).ljust(12,'0')}
-    
-    # You must have widget=None as this method is called directly by a gtk widget
-    @define_state
-    def program_static(self,widget=None):
-        # Skip programming if in buffered mode:
-        if self.static_mode:
-        	# call program_static function in the worker class
-            self.queue_work('program_static',self.get_front_panel_state())
-\end{python}
-
-\subsubsection{The \texttt{transition\_to\_buffered} method}\label{device_class_transition_to_buffered}
-This method is called by the BLACS experiment queue manager, as is designed to program the hardware for a buffered sequence, and place the device in a state ready for execution to begin. The \texttt{transition\_to\_buffered} method is likely to follow the below code almost exactly.
-\begin{python}
-@define_state
-    # This function is given the path to the experiment h5file, and a queue used
-    # to notify BLACS when the device is ready for the experiment to start
-    def transition_to_buffered(self,h5file,notify_queue):
-        self.static_mode = False 
-        initial_values = self.get_front_panel_state()
-        self.queue_work('program_buffered',h5file,initial_values)
-        self.do_after('leave_program_buffered',notify_queue)
-\end{python}
-
-The method sets the \texttt{static\_mode} instance variable to False to stop the device being reprogrammed mid experiment if the front panel is modified by the user. This only works if the variable is checked by your \texttt{program\_static} method (see section \ref{device_class_program_static}).
-
-We pass the h5file and front panel values to the \texttt{program\_buffered} method in the worker process, which handles the programming of the device. To avoid output changes upon programming, it is often required to use the front panel values as the first instruction given to the device, and to request that the device remain on this instruction until the device is triggered to start the experiment. Exceptions to this are the NI cards which will not update their outputs until they receive the first clock pulse. Your labscript device class should generate a dummy (or zero valued) instruction as the first instruction in the h5 file, which you can insert the current front panel values into at program time.
-
-Your worker process buffered programming function (above we called it the \texttt{program\_buffered} method) should return the output values of the final instruction. These are automatically passed to the \texttt{leave\_program\_buffered} method in the device class.
-
-The \texttt{leave\_program\_buffered} method will look very similar to this:
-\begin{python}
-    def leave_program_buffered(self,notify_queue,_results):
-        # These are the final values that the device will be in
-        # at the end of the run. Store them so that we can use them
-        # in transition_to_static:
-        self.final_values = _results
-        # Notify the queue manager thread that we've finished
-        # transitioning to buffered:
-        notify_queue.put(self.device_name)
-\end{python}
-
-We save the final values so that we can update the front panel when the experiment is over, and notify the BLACS queue manager that the device has finished programming is now ready for the experiment to begin.
-
-\subsubsection{The \texttt{transition\_to\_static} method}\label{device_class_transition_to_static}
-The \texttt{transition\_to\_static} method is called by the BLACS queue manager when it has detected that the experiment is over. The purpose of this method is to save any acquired data to the h5file, put the device in a state ready for manual front panel control and update the front panel to reflect the final value of the experiment run.
-
-The method generally follows:
-\begin{python}
-    @define_state
-    def transition_to_static(self,notify_queue):
-        # Code to update front panel values to final experiment output state
-        
-        # Code to place the device in a manual update mode and to
-        # save acquired data (usually calls a worker process method)
-        
-        # Reenable static updates triggered by GTK events
-        self.static_mode = True
-        # Notify the queue manager that we've finished transitioning to static:
-        # If your device needs to save data to the h5 file, only call this after
-        # the data has been saved
-        notify_queue.put(self.device_name)
-\end{python}
-
-To update the front panel values, you should call the \texttt{set\_value} or \texttt{set\_state} methods of the \texttt{AO} or \texttt{DO} objects respectively. It is recommended that you pass \texttt{program=False} to these methods and call the \texttt{static\_update} function of your device class manually. This will make your device ready for the next experiment as quickly as possible as it minimises the number of times we communicate with the worker process, and the number of times we ask the device to be reprogrammed (once only, instead of once per channel).
-
-The queue passed to this method is used as a rudimentary lock for saving data to the experiment h5 file. If your device does not need to access the h5 file at the end of the experiment (which most devices should not unless they have acquired data) you may put the device name in the queue immediately. This will ensure that the transition to static time is as short as possible as devices not accessing the h5 file can transition to static simultaneously. 
-
-If your device does need to access the h5 file, then you can be certain that your device has unobstructed write access to the h5 file until you use the \texttt{notify\_queue}. Generally the saving of data is done in a worker process method, and the \texttt{notify\_queue} is passed to a device class method called after the worker process method has finished. Note that the \texttt{transition\_to\_static} method is not passed the path to the h5 file, and so you need to save it somewhere in your \texttt{transition\_to\_buffered} (or the  associated worker process) method.
-
-\subsubsection{The \texttt{abort\_buffered} method}\label{device_class_abort_buffered}
-This method is called when your device has successfully run the \texttt{transition\_to\_buffered} method, but another device has failed the same step. At this point the BLACS queue manager cancels the experiment run and calls the \texttt{abort\_buffered} method. 
-
-This method should place the device back into a working manual mode state. Importantly, the output of the device should not have changed since before \texttt{transition\_to\_buffered} was called, and should not have changed after \texttt{abort\_buffered} has been called.
-
-The method header for this function is as follows:
-\begin{python}
-    def abort_buffered(self):
-\end{python}
-
-The contents of this method varies from device to device. It be as simple as setting \texttt{self.static\_mode = True}, it may call \texttt{transition\_to\_static} (with no notify queue) or be something else entirely.
-
-\subsubsection{The \texttt{destroy} method}\label{device_class_destroy}
-The \texttt{destroy} method is called when BLACS is asked to exit. It should place the device is a safe state, set the \texttt{destroy\_complete} instance variable to \texttt{True} and then call the \texttt{close\_tab} method which is defined in the Tab class as does \textbf{not} need overriding. 
-
-It will look something like:
-\begin{python}
-    @define_state
-    def destroy(self):        
-        self.queue_work('pb_close')
-        self.do_after('leave_destroy')
-        
-    def leave_destroy(self,_results):
-        self.destroy_complete = True
-        self.close_tab()
-\end{python}
-
-\section{Advanced Features}
-
-\subsection{Device class state machine, callback on timeout}
-The state machine architecture of BLACS provides the functionality to register a timeout callback; that is, a method to be called (approximately) every \texttt{n} milliseconds. This is generally used for periodic status monitoring of a device.
+\subsection{Device class state machine, callback on timeout}\label{statemachine_timeout_add}
+The state machine architecture of BLACS provides the functionality to register a timeout callback; that is, a function to be called (approximately) every \texttt{n} milliseconds. 
+This is generally used for periodic status monitoring of a device.
 
 To add such a timeout callback to your code, you call from within your device class:
 \begin{python}
@@ -483,11 +402,176 @@ where userdata1 and following arguments are passed to \texttt{self.some\_functio
 
 To remove the timeout, call 
 \begin{python}
-self.timeouts.remove(self.some_function)
+self.statemachine_timeout_remove(self.some_function)
 \end{python}
 
-Do to the nature of state machines (callbacks are processed one at a time based on the order in the queue), your method is not guaranteed to run as often as you have requested. Initially, because your method is a state machine method, BLACS will add your method to the state machine queue. Once your method has run, it will add a GTK callback to run in \texttt{delay} milliseconds. This GTK callback will queue up your function in the state machine again, and, depending on the length of the queue at that time, may not run immediately. 
+Due to the nature of state machines (callbacks are processed one at a time based on the order in the queue), your function is not guaranteed to run as often as you have requested. Initially, because your function is a state machine function, BLACS will add your function to the state machine queue. Once your function has run, it will add a Qt single-shot timer to run an internal function in \texttt{delay} milliseconds. This internal function will queue up your function in the state machine again, and, depending on the length of the queue at that time, may not run immediately. 
 
-\textbf{Also note that you can only have one timeout for a given method. Creating a timeout for the same method will replace the existing timeout.}
+\textbf{Also note that you can only have one timeout for a given function. Creating a timeout for the same function will replace the existing timeout.}
+
+
+
+\newpage
+\section{The Worker Class}
+The worker class is used solely to communicated with the hardware for our device. 
+It exists to separate out the code, modules, dll's, etc. from the GUI to provide better stability to the system. 
+The worker class is instantiated inside a separate process (referred to from now on as the worker process), which can be restarted by the user if the device becomes unresponsive.
+Upon restart, all libraries are completely reloaded as they are only loaded within the worker process. 
+This allows the system to recover from errors in 3rd party API's without the need to restart the entire control system.
+
+The worker class consists of functions which can be executed by the state machine. 
+In your device class you can call:
+\begin{python}
+result = yield(self.queue_work('worker_name','some_function',arg1,arg2,kwrd1=arg3))
+\end{python}
+and this will call the function called \texttt{some\_function} with arguments \texttt{arg1,arg2,kwrd1=arg3} in the worker process you have created and named \texttt{'my\_worker'} (not to be confused with the Worker class name). 
+This is covered in more detail in section \ref{device_class_state_machine}.
+
+\subsection{The \texttt{init} function}
+The init function in the worker class is special for two reasons. 
+The first is that it is not called \texttt{\_\_init\_\_} as you would expect. 
+This is because we don't want to override the \texttt{\_\_init\_\_} function in class \texttt{Worker},  which is essential for successful operation.
+
+The second is that this is the function in which you should import the modules, classes, etc. that you wish to access from within the worker class. 
+They are imported here, within the class, so that they only exist within the worker process, and not within the BLACS process. 
+This allows modules to be completely unloaded from the system when the worker process is restarted, and thus recovery of the programming library without the need to completely restart the program (a technique not seen in any other control system to our knowledge).
+The \texttt{{init}} function will always be the first function in your worker process to be run after it has been created.
+
+If you wish to import a module (for example \texttt{h5py}), use the following code:
+\begin{python}
+class MyWorker(Worker):
+    def init(self):
+        global h5py; import h5_lock, h5py
+\end{python}
+This imports both the labscript suite \texttt{h5\_lock} module (which prevents simultaneous accessing of h5 file which could cause data corruption) and the \texttt{h5py} module which is stored as a global variable.
+
+If you wish to import something from within a module (for example one or more functions from the \texttt{spinapi} module), you can use:
+\begin{python}
+        exec 'from spinapi import *' in globals()
+\end{python}
+or
+\begin{python}
+        exec 'from spinapi import pb_start, pb_stop' in globals()
+\end{python}
+
+You can also set the default values for any class attributes in the \texttt{init} function. For instance:
+\begin{python}
+        self.smart_cache = {}
+\end{python}
+
+\subsection{The \texttt{initialise} function}
+This function is automatically called by the \texttt{DeviceTab} class after worker processes are created. 
+Anything done here can probably be done it \texttt{init} so this function is likely to be removed at some point in time.
+It is \textbf{not} guaranteed to run immediately after \texttt{init}.
+There may be other worker process functions run sooner by calls to \texttt{statemachine\_timeout\_add}.
+
+You do however need to define an empty function here for the moment.
+Please define in your worker class:
+\begin{python}
+    def initialise(self):
+        pass
+\end{python}
+
+
+\subsection{The \texttt{program\_manual} function}
+This function is called whenever the device needs to be programmed to output values when \textbf{not} executing a buffered shot.
+The most common time this happens is when a value of a digital, analog or DDS output widget on the front panel is changed.
+
+The function is passed an argument which contains all of the current front panel values in a dictionary.
+The dictionary is keyed by the hardware channel names you defined in the \texttt{initialise\_GUI} function in your Device GUI class.
+
+The method should return the values for each output value, coerced to the value that the device is actually outputting now.
+This is to accurately reflect the device quantisation on the front panel of BLACS.
+The return value should be a dictionary of the same format as the one passed in.
+
+Your function should look something like:
+\begin{python}
+    def program_manual(self, front_panel_values):
+        # Program the device
+        # work out what values the device is actually outputting
+        return modified_front_panel_values
+\end{python}
+
+
+
+\subsection{The \texttt{transition\_to\_buffered} function}
+This function is called whenever the Queue Manager requests the device to move into buffered mode in preparation for executing a buffered sequence.
+
+This function is passed the \texttt{device\_name} to look up in the HDF5 file located at the path contained by \texttt{h5file}.
+The function is also passed the current initial\_values, so that your device can be programmed to maintain output continuity until the device is triggered.
+This may require inserting a dummy instruction at the beginning of the instruction list provided by \texttt{labscript}.
+The final argument passed to this function is a Boolean value that indicates whether the device should have it's entire instruction table overwritten (only applies to device classes that have called \texttt{self.supports\_smart\_programming(True)} in the \texttt{initialise\_GUI} function).
+
+The function should return a dictionary containing the final value of each output once the buffered shot has finished execution.
+The dictionary should be keyed by the hardware channel names you defined in the \texttt{initialise\_GUI} function in your Device GUI class.
+
+\textbf{Note:} you should avoid holding the HDF5 file open when programming the device. Open the file, copy the data into local memory, close the file and the program the device.
+This will allow other devices to access the file to begin their programming process, and will minimise your experiment cycle time.
+
+Example:
+\begin{python}
+    def transition_to_buffered(self,device_name,h5file,initial_values,fresh):
+        # Open HDF5 file
+        # copy device data to local memory
+        # close HDF5 file
+        #
+        # check whether we need to do a completely fresh program or not
+        # Check whether the data for this shot is similar enough to the last shot
+        #       and whether only some instructions need reprogramming
+        # 
+        # build final value dictionary
+        return final_experiment_values
+\end{python}
+
+\subsection{The \texttt{transition\_to\_manual} function}
+This function is called after the master pseudoclock reports that the experiment has finished. 
+This function takes no arguments, should place the device back in the correct mode for operation by the front panel of BLACS, and return a Boolean flag indicating the success of this method.
+Any acquisitions made during the buffered shot should be saved to the HDF5 file now (you must store a reference to the HDF5 file in \texttt{transition\_to\_buffered} if you need to access it in \texttt{transition\_to\_manual}).
+
+Example:
+\begin{python}
+    def transition_to_manual(self):
+        # save any acquired data to HDF5 file
+        # place device in mode ready for BLACS front panel control
+        # return True if this was all successful, or False otherwise
+        return True/False
+\end{python}
+
+\subsection{Abort functions}
+There are two functions that may be called if something went wrong and the experiment shot is to be aborted.
+The first, \texttt{abort\_transition\_to\_buffered}, is called if the experiment shot must be aborted \textbf{before} the master pseudoclock has been triggered to begin.
+The second, \texttt{abort\_buffered}, is called if the shot must be aborted during the execution of a buffered shot.
+Both functions take no arguments (other than \texttt{self}) and should return \texttt{True} or \texttt{False} depending on whether they were successful and the device is ready for front panel input from BLACS again.
+If False is returned, this will cause an error to be displayed requesting the user to \textbf{restart} the device tab themselves. 
+
+Example
+\begin{python}
+    def abort_buffered(self):
+        # place the device back in manual mode, while in the middle
+        #       of an experiment shot
+        # return True if this was all successful, or False otherwise
+        return True/False
+		
+    def abort_transition_to_buffered(self):
+        # place the device back in manual mode, after the device has run
+        #       transition_to_buffered, but has not been triggered to 
+        #       begin the experiment shot.
+        # return True if this was all successful, or False otherwise
+        return True/False		
+\end{python}
+
+
+\subsection{The shutdown function}
+The shutdown function is called when BLACS is asked to close.
+This should put the device in safe state, for example closing any open communication connections with the device.
+The function should not return any value (the return value is ignored)
+
+Example:
+\begin{python}
+    def shutdown(self):
+        # close any open connections
+        # place the device in a nice state
+        # return nothing
+\end{python}
 
 \end{document}
