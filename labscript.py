@@ -4,12 +4,12 @@ import sys
 import subprocess
 import keyword
 
-import h5_lock, h5py
+import labscript_utils.h5_lock, h5py
 from pylab import *
 
 import functions
 try:
-    from unitconversions import *
+    from labscript_utils.unitconversions import *
 except:
     print 'Failed to import unit conversion classes'
     
