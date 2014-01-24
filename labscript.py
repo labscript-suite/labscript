@@ -25,8 +25,6 @@ try:
     from labscript_utils.unitconversions import *
 except:
     print 'Failed to import unit conversion classes'
-    
-import __main__
 
 ns = 1e-9
 us = 1e-6
@@ -40,19 +38,10 @@ GHz = 1e9
 # We need to backup the builtins as they are now, as well as have a
 # reference to the actual builtins dictionary (which will change as we
 # add globals and devices to it), so that we can restore the builtins
-# when labscript_cleanup() is called. The if statement here is because
-# __builtins__ is either a dictionary, or a module, depending on whether
-# we are the __main__ module or not. We're usually not, but just in case
-# we'll handle both cases.
-module = type(__main__)
-if isinstance(__builtins__, module):
-    _builtins_dict = __builtins__.__dict__
-    _existing_builtins_dict = __builtins__.__dict__.copy()
-elif isinstance(__builtins__, dict):
-    _builtins_dict = __builtins__
-    _existing_builtins_dict = __builtins__.copy()
-else:
-    raise ImportError('Can\'t get __builtins__ dictionary, what\'s going on?')
+# when labscript_cleanup() is called. 
+import __builtin__
+_builtins_dict = __builtin__.__dict__
+_existing_builtins_dict = _builtins_dict.copy()
     
 # Startupinfo, for ensuring subprocesses don't launch with a visible command window:
 if os.name=='nt':
@@ -139,7 +128,7 @@ class Device(object):
             parent_device.add_device(self)
         
         # Check that the name doesn't already exist in the python namespace
-        if name in locals() or name in globals() or name in __builtins__:
+        if name in locals() or name in globals() or name in _builtins_dict:
             raise LabscriptError('The device name %s already exists in the Python namespace. Please choose another.'%name)
         if name in keyword.kwlist:
             raise LabscriptError('%s is a reserved Python keyword.'%name +
@@ -153,7 +142,7 @@ class Device(object):
             raise ValueError('%s is not a valid Python variable name.'%name)
         
         # Put self into the global namespace:
-        __builtins__[name] = self
+        _builtins_dict[name] = self
         
         # Add self to the compiler's device inventory
         compiler.inventory.append(self)
@@ -1249,7 +1238,7 @@ class StaticDigitalQuantity(DigitalQuantity):
             self.static_value = 0
         else:
             raise LabscriptError('%s %s has already been set to %s. It cannot also be set to %s.'%(self.description, self.name, self.instruction_to_string[self.static_value], self.instruction_to_string[value]))
-    f
+    
     def get_change_times(self):
         if not hasattr(self,'static_value'):
             self.static_value = self.default_value
@@ -2274,7 +2263,7 @@ def load_globals(hdf5_filename):
     with h5py.File(hdf5_filename,'r') as hdf5_file:
         params = dict(hdf5_file['globals'].attrs)
         for name in params.keys():
-            if name in globals().keys() or name in locals().keys() or name in dir(__builtins__):
+            if name in globals() or name in locals() or name in _builtins_dict:
                 raise LabscriptError('Error whilst parsing globals from %s. \'%s\''%(hdf5_filename,name) +
                                      ' is already a name used by Python, labscript, or Pylab.'+
                                      ' Please choose a different variable name to avoid a conflict.')
@@ -2296,11 +2285,10 @@ def load_globals(hdf5_filename):
             if type(params[name]) == bool_: # bool_ is numpy.bool_, imported from pylab
                 params[name] = bool(params[name])                         
             
-            __builtins__[name] = params[name]
+            _builtins_dict[name] = params[name]
             
             
 def labscript_init(hdf5_filename, labscript_file=None, new=False):
-    # Backup builtins so they can be restored at cleanup:
     if new:
         with h5py.File(hdf5_filename ,'w') as hdf5_file:
             hdf5_file.create_group('globals')
