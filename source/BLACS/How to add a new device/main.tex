@@ -334,7 +334,7 @@ These attributes are available to instances of \texttt{DeviceTab} (and its subcl
 %attributes:
 %
 % BLACS_connection
-% _connection_table
+% connection_table
 % device_name
 % error_message
 % force_full_buffered_reprogram
@@ -354,7 +354,7 @@ The contents of the string is determined by the connection table entry in \textt
 It is likely you will want to pass this value to each worker process you create as one of the arguments at instantiation of the worker process (see section \ref{ref:create_worker}).
 Note that the \texttt{labscript} device class may expose this setting to the user under a different name, for instance the keyword argument \texttt{com\_port}.
 
-\subsubsection{\texttt{\_connection\_table}}\label{ref:_connection_table}
+\subsubsection{\texttt{connection\_table}}\label{ref:_connection_table}
 This attribute contains a reference to the connection table object instantiated when BLACS is started.
 This object is an instance of class \texttt{ConnectionTable} located in `BLACS/connections.py'.
 % TODO: Expand to explain methods available. Need a whole other reference I think...
@@ -912,7 +912,7 @@ These keys should have the following values:
 
 \begin{itemize}
 	\item \texttt{device\_name}: A string containing the device name (as stored in the \texttt{device\_name} attribute).
-	\item \texttt{connection\_table}: A reference to the connection table object (as stored in the \texttt{\_connection\_table} attribute).
+	\item \texttt{connection\_table}: A reference to the connection table object (as stored in the \texttt{connection\_table} attribute).
 	\item \texttt{saved\_data}: A dictionary of the form that \texttt{get\_save\_data} is to be passed.
 	\item \texttt{front\_panel\_settings}: A dictionary keyed by hardware channel name. 
 	Each of these keys should have a value which is a dictionary containing the settings for the output channel. 
