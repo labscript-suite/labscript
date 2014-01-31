@@ -2,11 +2,14 @@
 \include{pythonlisting}
 \usepackage{setspace}
 \usepackage[margin=1.5cm]{geometry}
-
+\usepackage[bookmarks=false,colorlinks=true,linkcolor=green,citecolor=red,pdffitwindow=true,pdfsubject={BLACS - Add new device}]{hyperref}
 
 \begin{document}\title{How to add a new type of hardware device to BLACS}
 \date{\today}
 \maketitle
+\newpage
+\tableofcontents
+\newpage
 \setstretch{1.2}
 \section{Introduction}
 This tutorial covers the basics of adding a new hardware device type to BLACS. 
@@ -21,11 +24,11 @@ If are not familiar with one or more of these, please attempt a tutorial on the 
 \subsection{Creating the Device Classes}\label{creating class}
 All device classes as stored in pythonlib/BLACS/hardware\_interfaces. 
 You should create a new file for your device in this folder, with an appropriate name (the name should be the lowercase version of the device class used in labscript). 
-We shall refer to the name in this tutorial as \texttt{pulseblaster.py}).
+We shall refer to the name in this tutorial as \texttt{my\_device.py}).
 
 The first thing you need to do in your empty python file is import the required packages and classes.
 The code below imports the BLACS backend classes for the tab state machine (we'll cover these more as we go).
-You can also optionally import PySide if you wish to add more PySide widgets to the interface yourself (see section \ref{??})
+You can also optionally import PySide if you wish to add more PySide widgets to the interface yourself (see section \ref{ref:get_tab_layout})
 \begin{python}
 from BLACS.tab_base_classes import Worker, define_state
 from BLACS.tab_base_classes import MODE_MANUAL, MODE_TRANSITION_TO_BUFFERED
@@ -67,7 +70,7 @@ When the device tab is instantiated, the functions described in the next section
     self.initialise_device()
 \end{python}
 
-\subsection{Overriding the \texttt{initialise\_GUI} function}
+\subsection{Overriding the \texttt{initialise\_GUI} function}\label{tutorial:overriding_initialise_GUI}
 The \texttt{initialise\_GUI} function is where you define the output capabilities of your device and generate the graphical interface for manual control of the device through the front panel.
 The \texttt{DeviceTab} class you are subclassing has a lot of function to help you do this.
 Here we'll walk through a simple example, but for full details see the \texttt{DeviceTab} reference in section \ref{device_class_reference}.
@@ -90,13 +93,14 @@ def initialise_GUI(self):
     self.dds_base_step     = {'freq':1000000,     'amp':0.01,  'phase':1}
     self.dds_base_decimals = {'freq':1,           'amp':3,     'phase':3}
 \end{python}
-This should look pretty straight forward, we are just storing in a dictionary the number of DDS and digital outputs, followed by the capabilities of the DDSs of the device in \textbf{base units}. 
+This should look pretty straight forward, we are just storing the number of DDS and digital outputs, followed by the capabilities of the DDSs of the device in \textbf{base units}. 
 Base units are considered to be SI units like Volts, Hz, etc.
-Base units are not necessarily the same as hardware units (more on this later).
+Base units are not necessarily the same as hardware units.
+If your hardware is not programmed in SI units, we recommend converting from SI to the required unit \textbf{within} the worker process methods so that the user never has to deal with the arbitrary units the device manufacturer opted for.
 All of this information is for your own use, and does not have to follow any particular naming convention, nor does it have to be stored as an instance atrribute using \texttt{self}.
 
 Following this you should define 1-3 dictionaries which define the properties of the digital, analog and DDS output channels respectively.
-If your devices does not have one or more of these types of outputs, you do not need to create the dictionary of properties.
+If your devices does not have one or more of these types of outputs, you do not need to create the dictionary of properties for it.
 
 For digital outputs, the dictionary should be of the form:
 \begin{python}
@@ -192,17 +196,18 @@ As such you would define your dds dictionary as:
                             }
                       }
 \end{python}
+and only the frequency control will be displayed in the DDS widget.
 
-You should then call one or more of the following functions to create python objects for your outputs:
+Once the output property dictionaries are defined, you should call one or more of the following functions to create python objects (we'll refer to them as ``output objects'' or \texttt{AO}, \texttt{DO} or \texttt{DDS} objects for your outputs:
 \begin{python}   
     self.create_digital_outputs(digital_properties)
     self.create_analog_outputs(analog_properties)
     self.create_dds_outputs(dds_properties)
 \end{python}
-The objects create exist behind the scenes, and will have automatically looked up relevant entries in the connection table to get their name and unit conversion class.
+The objects create exist behind the scenes, and will have automatically looked up relevant entries in the BLACS connection table to get their name and unit conversion class.
 
 You should then create the widgets for each of these outputs. 
-There are several ways you can do this, each of which is explained in ??\ref{??}.
+There are several ways you can do this, see sections \ref{ref:auto_create_widgets}, \ref{ref:create_analog_widgets}, \ref{ref:create_digital_widgets} and \ref{ref:create_dds_widgets}.
 The simplest is to let the \texttt{DeviceTab} do it for you, as follows:
 \begin{python}
     dds_widgets,ao_widgets,do_widgets = self.auto_create_widgets()
@@ -211,13 +216,13 @@ Note that three dictionaries are always returned, regardless of whether you are 
 For instance, if you have not create any analog outputs as detailed above, the \texttt{ao\_widgets} variable will contain an empty dictionary.
 
 You must then place these widgets in the GUI tab for your device.
-Again, this can be done several ways (see ??\ref{??}), but the simplest is to do:
+Again, this can be done several ways (see sections \ref{ref:auto_place_widgets} and \ref{ref:get_tab_layout}), but the simplest is to do:
 \begin{python}
     self.auto_place_widgets(dds_widgets,do_widgets)
 \end{python}
 The order in which you pass the dictionaries of widgets determines the order they appear in the device tab.
 You can split up the dictionaries of widgets if you like, for instance to segregate some digital outputs from the others.
-You can also specify heading names, and a sorting function for each group of widgets you pass to this function (see section \ref{??} for details).
+You can also specify heading names, and a sorting function for each group of widgets you pass to this function (see section \ref{ref:auto_place_widgets} for details).
 
 If you wish to add additional GUI elements, you may do so before or after the call to \texttt{auto\_place\_widgets}.
 You can access the Qt Layout which contains the main body of the tab using:
@@ -226,16 +231,27 @@ You can access the Qt Layout which contains the main body of the tab using:
 \end{python}
 You can then insert/append Qt Widgets or layouts you have created either from code or by loading a Qt UI file created by Qt Designer.
 
-%TODO: Explain other ways to call auto_place_widgets for controlling group name/sort order.
+Finally, you should specify whether you implementation will support ``smart programming'' and/or ``remote value checking''.
+This can be done by calling the methods:
+\begin{python}
+    self.supports_remote_value_check(False)
+    self.supports_smart_programming(False) 
+\end{python}
+where the single argument is \texttt{True} or \texttt{False} indicating whether support exists.
+For details on smart programming, see sections \ref{ref:supports_smart_programming} and \ref{worker:transition_to_buffered}.
+For details on remote value checking, see section \ref{remote_value_checking}.
 
-
-\subsection{Overriding the \texttt{get\_save\_data} and \texttt{restore\_save\_data} functions}
+\subsection{Overriding the \texttt{get\_save\_data} and \texttt{restore\_save\_data} functions}\label{tutorial:save_data}
 You may find you wish to save and restore some data from your tab when BLACS is closed or the tab is restarted.
-\texttt{DeviceTab} provides two functions to override to implement this behaviour.
+\texttt{DeviceTab} provides two functions to override to implement this behaviour:
 
-\texttt{get\_save\_data} should be implemented to return a dictionary of key:value pairs you wish saved.
 
-\texttt{restore\_save\_data} provides a dictionary of key:value pairs to restore as you wish.
+\begin{itemize}
+	\item \texttt{get\_save\_data} should be implemented to return a dictionary of key:value pairs you wish saved.
+
+  \item \texttt{restore\_save\_data} provides a dictionary of key:value pairs to restore as you wish.
+\end{itemize}
+
 
 The signatures of the functions are:
 \begin{python}
@@ -256,10 +272,10 @@ eval(repr(my_save_data)) == my_save_data
 
 See the Camera device class implementation for an example.
 
-\subsection{Overriding the \texttt{initialise\_workers} function}
+\subsection{Overriding the \texttt{initialise\_workers} function}\label{tutorial:initialise_workers}
 The \texttt{initialise\_workers} function is used to tell the device Tab to launch one or more worker processes to communicate with the device.
 A device tab can have one or more associated worker processes, with one of them being identified as the \textit{primary worker}.
-When the device tab enters one of the states inbuilt into \texttt{DeviceTab} (such as \texttt{transition\_to\_buffered}, the primary worker is communicated with first. 
+When the device tab enters one of the states inbuilt into \texttt{DeviceTab} (such as \texttt{transition\_to\_buffered}), the primary worker is communicated with first. 
 Following this, communication with secondary worker processes commences one after the other.
 The order in which secondary processes are chosen to communicate with depends on the names of all worker processes and the number of worker processes.
 We simply iterate over a dictionary of worker processes, keyed by the worker process name (watch the PyCon ``The mighty dictionary'' video online for more information on Python dictionary ordering).
@@ -272,7 +288,7 @@ def initialise_workers(self):
 \end{python}
 where \texttt{my\_worker} is a unique name for this worker process and \texttt{MyWorker} is the class name you wish to launch in the new worker process.
 
-\texttt{create\_worker} also takes a third, optional dictionary of keyword arguments to pass into the worker process (see section \ref{??}).
+\texttt{create\_worker} also takes a third, optional dictionary of keyword arguments to pass into the worker process (see section \ref{ref:create_worker}).
 A good piece of information to pass in would be the \texttt{BLACS\_connection attribute} specified in the connection table.
 This parameter usually contains information specifying the physical data connection to the PC (Eg. COM12), and is available as an instance attribute of \texttt{DeviceClass}:
 \begin{python}
@@ -292,8 +308,8 @@ where \texttt{my\_worker} is the name you used in the call to \texttt{create\_wo
 \subsection{Overriding the \texttt{start\_run} function}
 If your device is a pseudoclock, you will need to override the \texttt{start\_run} function.
 This function is called by the Queue Manager to begin a buffered experiment shot.
-\textbf{This function must be a state function (see section \ref{device_class_state_machine.}}
-\textbf{You will also need to become familiar with the \texttt{statemachine\_timeout\_add} functionality to schedule a regular poll of the device before continuing with this section (see section \ref{statemachine_timeout_add}.}
+\textbf{This function must be a state function (see section \ref{device_class_state_machine}).}
+\textbf{You will also need to become familiar with the \texttt{statemachine\_timeout\_add} functionality to schedule a regular poll of the device before continuing with this section (see section \ref{statemachine_timeout_add}).}
 Your implementation of \texttt{start\_run} will be passed a queue which it will use to notify the Queue Manager when the experiment shot has finished running.
 \textbf{It is up to you to schedule a poll of your device to determine if the shot has completed.}
 
@@ -313,6 +329,635 @@ Once the shot has begun, we setup a regular poll of the pulseblaster every 100\,
 
 \section{\texttt{DeviceTab} reference}\label{device_class_reference}
 % TODO: List attributes and functions that will be of use to people subclassing DeviceTab
+\subsection{Instance Attributes}
+These attributes are available to instances of \texttt{DeviceTab} (and its subclasses).
+%attributes:
+%
+% BLACS_connection
+% _connection_table
+% device_name
+% error_message
+% force_full_buffered_reprogram
+% logger
+% mode
+% primary_worker
+% settings
+% state
+% _tab_text_colour
+%    update_tab_text_colour
+% _ui
+%
+
+\subsubsection{\texttt{BLACS\_connection}}\label{ref:BLACS_connection}
+This attribute contains the \textbf{string}, from the connection table entry of this instantiated device, that indicates how this device is connected to the PC. 
+The contents of the string is determined by the connection table entry in \texttt{labscript}.
+It is likely you will want to pass this value to each worker process you create as one of the arguments at instantiation of the worker process (see section \ref{ref:create_worker}).
+Note that the \texttt{labscript} device class may expose this setting to the user under a different name, for instance the keyword argument \texttt{com\_port}.
+
+\subsubsection{\texttt{\_connection\_table}}\label{ref:_connection_table}
+This attribute contains a reference to the connection table object instantiated when BLACS is started.
+This object is an instance of class \texttt{ConnectionTable} located in `BLACS/connections.py'.
+% TODO: Expand to explain methods available. Need a whole other reference I think...
+
+\subsubsection{\texttt{device\_name}}\label{ref:device_name}
+This attribute contains the name of the device, as specified in the connection table.
+
+\subsubsection{\texttt{error\_message}}\label{ref:error_message}
+This contains the current error message displayed to the user for this device.
+If no error is present, it will be an empty string.
+This attribute is a Python property. 
+This means, in theory, you can set modify the error message as you wish, using this attribute, and the changes will automatically be applied to the displayed message.
+We however recommend you only read from it.
+If you do wish to modify the error, we recommend appending to the existing error using the \texttt{+=} operator.
+Note that ``not\_responding'' error messages are not stored here, but are instead stored in the \texttt{\_not\_responding\_error\_message} and \texttt{not\_responding\_for} attributes.
+
+\subsubsection{\texttt{force\_full\_buffered\_reprogram}}\label{ref:force_full_buffered_reprogram}
+This attribute is passed to the worker process by \texttt{DeviceTab.transition\_to\_buffered}.
+In the example implementation shown for the worker function \texttt{transition\_to\_buffered} (see section \ref{worker:transition_to_buffered}), the value here is placed in the variable \texttt{fresh}.
+Set this attribute to \texttt{True} if you wish a full reprogram of the device buffer to occur at the start of the next buffered shot.
+If the device supports smart programming (see section \ref{ref:supports_smart_programming}), then this attribute will be set to False by \texttt{DeviceTab.transition\_to\_buffered} after each buffered sequence has been programmed.
+
+\subsubsection{\texttt{logger}}\label{ref:logger}
+This attribute contains the Python logger object for this device.
+This can be used to warn the user of errors, or save debug information to the log file or terminal. 
+Python logger objects have methods such as \texttt{info}, \texttt{debug}, \texttt{warning}, etc. which can be passed a string to log.
+See the Python logging module documentation for more details.
+
+\subsubsection{\texttt{mode}}\label{ref:mode}
+This attribute stores the current mode of the device. 
+It will be an integer, either 1, 2, 4 or 8 corresponding to one of the modes described in section \ref{device_class_state_machine}.
+These modes are one of \texttt{MODE\_MANUAL}, \texttt{MODE\_TRANSITION\_TO\_BUFFERED}, \texttt{MODE\_BUFFERED} and \texttt{MODE\_TRANSITION\_TO\_MANUAL}
+The mode should only ever be set to one of these variables/values, and should only be set by an implementation of \texttt{DeviceTab.transition\_to\_buffered} or \texttt{DeviceTab.transition\_to\_manual}.
+You can read this mode at any time you wish.
+
+\subsubsection{\texttt{primary\_worker}}\label{ref:primary_worker}
+This attribute should be set to the name of the primary worker process, defined when you call \texttt{create\_worker} (see sections \ref{ref:create_worker} and \ref{ref:initialise_workers}).
+This is generally done in your implementation of \texttt{create\_worker} (see section \ref{tutorial:initialise_workers})
+
+\subsubsection{\texttt{settings}}\label{ref:settings}
+This attribute contains all the settings information for the Device Tab. 
+It includes current values for all of the \texttt{AO}, \texttt{DO} and \texttt{DDS} objects instantiated (including current units, step size, etc.). 
+It also includes the device name, connection table object and results from the last call to \texttt{DeviceTab.get\_save\_data}.
+You generally shouldn't need to directly access this attribute, as most of the information is exposed through other instance attributes and methods.
+
+\subsubsection{\texttt{state}}\label{ref:state}
+This attribute contains name of the current state function we are in. 
+You should not modify the contents of this attribute.
+It is unlikely you will ever need to read from this attribute (we only document it here for completeness).
+
+\subsubsection{\texttt{\_tab\_text\_colour}}\label{ref:_tab_text_colour}
+This attribute contains the current colour of the displayed text in the BLACS tab of the notebook. 
+This is black if there is no error, or red if there is.
+You may change the colour if you like by setting this attribute, however the colour may be later overwritten by the statemachine (for instance if an error occurs)
+Call \texttt{update\_tab\_text\_colour()} after setting this attribute to apply the change.
+
+\subsubsection{\texttt{\_ui}}\label{ref:_ui}
+This attribute contains all the Qt user interface (UI) objects that were loaded from the `BLACS/tab\_frame.ui' file.
+If you wish to modify the UI significantly, this is what you are going to need to access.
+However most people should never need to access this attribute.
+
+\subsection{Instance Methods to override}
+These methods should be overridden by your subclass of \texttt{DeviceTab}.
+See section \ref{device_class} for more details.
+
+% methods to override:
+%
+% initialise_GUI
+% initialse_workers
+% get_save_data
+% restore_save_data
+\subsubsection{\texttt{initialise\_GUI}}\label{ref:initialise_GUI}
+This method should be used to create any \texttt{AO}, \texttt{DO} and \texttt{DDS} objects and associated widgets, and to add any custom elements to the graphical user interface (GUI).
+More details can be found in section \ref{tutorial:overriding_initialise_GUI}
+
+The signature of this method is:
+\begin{python}
+def initialise_GUI(self):
+\end{python}
+
+\subsubsection{\texttt{initialise\_workers}}\label{ref:initialise_workers}
+This method should be used to create one or more worker processes using the \texttt{create\_worker} method (see section \ref{ref:create_worker}).
+You should also store the primary worker name (see section \ref{ref:primary_worker}) and secondary worker names (if any, see section \ref{ref:add_secondary_worker}).
+More details can be found in section \ref{tutorial:initialise_workers}
+
+The signature of this method is:
+\begin{python}
+def initialise_workers(self):
+\end{python}
+
+\subsubsection{\texttt{get\_save\_data}}\label{ref:get_save_data}
+This method should return a dictionary of any custom save data you wish saved across instances of your device tab (see section \ref{tutorial:save_data} for more details).
+This method will be called by BLACS at the appropriate times.
+
+The signature of this method is:
+\begin{python}
+def get_save_data(self):
+\end{python}
+
+\subsubsection{\texttt{restore\_save\_data}}\label{ref:restore_save_data}
+This method is passed a dictionary of the custom save data returned by a previous instance of your device tab (using the \texttt{get\_save\_data} method, see section \ref{tutorial:save_data} for more details).
+This method will be called by BLACS at the appropriate times.
+You should restore the data to the appropriate places in your device tab implementation in this method.
+
+The signature of this method is:
+\begin{python}
+def restore_save_data(self, data):
+\end{python}
+
+\subsubsection{\texttt{get\_front\_panel\_values}}\label{ref:override_get_front_panel_values}
+If you are implementing a custom output that is not bound to an \texttt{AO}, \texttt{DO} or \texttt{DDS} object, you may wish to override this method to extend it's capabilities.
+See section \ref{ref:get_front_panel_values} for more details on this method.
+
+\subsection{Instance Methods}
+%methods:
+%
+% add_secondary_worker
+% auto_create_widgets
+% auto_place_widgets
+% create_analog_outputs
+% create_analog_widgets
+% create_dds_outputs
+% create_dds_widgets
+% create_digital_outputs
+% create_digital_widgets
+% create_worker
+% get_channel
+% get_front_panel_values
+% get_tab_layout
+% queue_work
+% statemachine_timeout_add
+% statemachine_timeout_remove
+% statemachine_timeout_remove_all
+% supports_remote_value_check
+% supports_smart_programming
+%
+
+\subsubsection{\texttt{add\_secondary\_worker}}\label{ref:add_secondary_worker}
+This method is used to register the names of workers that are not the primary worker.
+The default implementation of \texttt{DeviceTab} communicates with these workers immediately after communicating with the primary worker.
+
+The signature of this method is:
+\begin{python}
+def add_secondary_worker(self, worker_name):
+\end{python}
+where \texttt{worker\_name} is a string containing the name assigned to the worker when you created it using \texttt{create\_worker} (see section \ref{ref:create_worker}).
+
+\subsubsection{\texttt{auto\_create\_widgets}}\label{ref:auto_create_widgets}
+This method creates and returns a widget for each of the \texttt{DO}, \texttt{AO} and \texttt{DDS} objects created using the \texttt{create\_*\_outputs} methods (see sections \ref{ref:create_analog_outputs}, \ref{ref:create_digital_outputs} and \ref{ref:create_dds_outputs}).
+The return value is a tuple containing 3 elements, each of which is a dictionary of widgets for the \texttt{DDS}, \texttt{AO} and \texttt{DO} objects respectively.
+These dictionaries are keyed by the hardware channel name used when creating the outputs.
+
+The signature of this method is:
+\begin{python}
+def auto_create_widgets(self):
+    dds_widgets, ao_widgets, do_widgets = {}, {}, {}
+    ...
+    return dds_widgets, ao_widgets, do_widgets
+\end{python}
+
+\subsubsection{\texttt{auto\_place\_widgets}}\label{ref:auto_place_widgets}
+\textbf{Calling this method more than once per instance is not recommended}.
+This method places any passed widgets into a layout.
+This layout is of our own design, and has the following features:
+\begin{itemize}
+	\item collapsible/expandable groups,
+	\item automatically adjusts the number of widgets per row so that they fit and display nicely as the tab is resized,
+	\item the widgets in a group have a uniform width, and
+	\item the width of widgets across multiple groups can be linked (this feature not yet exposed, contact the developers if you would like it to be).
+\end{itemize}
+
+The \texttt{auto\_place\_widgets} method can take an arbitrary number of arguments.
+There are two options for the format of the argument:
+
+\begin{enumerate}
+	\item The argument can be a dictionary of widgets, keyed by the hardware channel name. 
+	In this case, the title of the layout group will correspond to the type of widget of the first element of the unsorted dictionary (e.g., ``Analog Outputs'', ``Digital Outputs'' or ``DDS Outputs'').
+	If a group with this title already exists, widgets will be added to the existing group.
+	The new widgets will be sorted alphabetically by key, and added to this group.
+	
+	\item The argument can be a tuple. 
+	The first element of this tuple should be the title of the group you wish to create or append to.
+	The second element of this tuple should be a dictionary of widgets as described in option 1 above.
+	The tuple can also contain a third, optional element, which specifies a function to be used to sort the order of the new widgets.
+	This function is provided directed to the \texttt{key} keyword argument of the \texttt{sorted} method in the Python standard library.
+\end{enumerate}
+
+This method returns no value.
+
+Example usage:
+\begin{python}
+analog_outputs = {'ao1':my_ao_widget}
+digital_outputs = {'port0/line1': my_do_widget_1, 'port0/line21':my_do_widget_2}
+self.auto_place_widgets(analog_outputs, 
+                        (``My custom name'', digital_outputs, 
+                          lambda x: '\%02d'\%x.replace('port0/line','')
+                        )
+                       )
+\end{python}
+
+\subsubsection{\texttt{create\_analog\_outputs}}\label{ref:create_analog_outputs}
+This method creates analog output objects. 
+These objects are the backend for analog widgets, and handle unit conversions,  saving/restoring values, etc.
+The tutorial in section \ref{device_class} covers how to use this method in depth.
+
+This method takes a dictionary that defines the properties of the analog output objects you wish to instantiate. 
+The dictionary should be keyed by hardware channel name.
+The values of each key should be a dictionary with the keys \texttt{base\_unit}, \texttt{min}, \texttt{max}, \texttt{step} and \texttt{decimals}.
+
+This method returns no value.
+
+Example usage:
+\begin{python}
+    analog_properties = {'hardware_channel_1':{'base_unit':self.ao_base_units,
+                                               'min':self.ao_base_min,
+                                               'max':self.ao_base_max,
+                                               'step':self.ao_base_step,
+                                               'decimals':self.ao_base_decimals
+                                              },
+                         'hardware_channel_2':{'base_unit':self.ao_base_units,
+                                               'min':self.ao_base_min,
+                                               'max':self.ao_base_max,
+                                               'step':self.ao_base_step,
+                                               'decimals':self.ao_base_decimals
+                                              },
+                        }
+    self.create_analog_outputs(analog_properties)
+\end{python}
+
+
+\subsubsection{\texttt{create\_analog\_widgets}}\label{ref:create_analog_widgets}
+This method is used to create widgets associated with analog output objects.
+It is used by \texttt{auto\_create\_widgets} (see section \ref{ref:auto_create_widgets}) but can be called directly if more control over the widgets are required.
+This method takes a dictionary which specifies properties of the analog widgets.
+The dictionary should be keyed by hardware channel name.
+The value associated with each key should be a dictionary which contains 0 or more of the keys:
+
+\begin{itemize}
+	\item \texttt{display\_name}: This can be used to display a custom string next to the spinbox in the analog widget. 
+	If set to \texttt{None}, the string defaults to the channel followed by the name specified in the connection table for this channel (if any). 
+	If set to a string, that string is displayed instead.
+	If this key is not specified, it defaults to \texttt{None}
+	
+	\item \texttt{horizontal\_alignment}: This can be used to specify whether the string discussed in the above dot point, is aligned above, or to the left of the spinbox.
+	If not specified, it defaults to \texttt{False} (string above the spinbox).
+	If set to \texttt{True} it places the string to the left of the spinbox.
+	
+	\item \texttt{parent}: If you wish this widget to have a specific parent widget (see Qt documentation on parent widgets) you can set it here.
+	If this key is not specified, it defaults to \texttt{None}.
+	Note that any parent set will be overwritten if the widget is added to a layout.
+\end{itemize}
+
+This method returns a dictionary of widgets, keyed by the hardware channel names.
+
+Example usage:
+\begin{python}
+widget_properties = {'ao1':{'display_name':'Frequency',
+                            'horizontal_alignment': True
+                           }
+                    }
+my_widgets = self.create_analog_widgets(widget_properties)
+\end{python}
+
+
+
+
+\subsubsection{\texttt{create\_dds\_outputs}}\label{ref:create_dds_outputs}
+This method creates analog output objects. 
+These objects are the backend for DDS widgets, and handle unit conversions, saving/restoring values, etc.
+The tutorial in section \ref{device_class} covers how to use this method in depth.
+
+This method takes a dictionary that defines the properties of the DDS output objects you wish to instantiate. 
+The dictionary should be keyed by hardware channel name.
+The values of each key should be a dictionary with one or more of the keys \texttt{freq}, \texttt{amp}, \texttt{phase} and \texttt{gate}.
+The keys used determine whether controls for those properties are shown.
+Each of the \texttt{freq}, \texttt{amp}, \texttt{phase} and \texttt{gate} keys used should have a value that is a dictionary which follows the format used in \texttt{create\_analog\_outputs} (see section \ref{ref:create_analog_outputs}) for \texttt{freq}, \texttt{amp} and \texttt{phase} and follows the format used in \texttt{create\_digital\_outputs} (see section \ref{ref:create_digital_outputs}) for the \texttt{gate}.
+
+This method returns no value.
+
+Example usage:
+\begin{python}
+    # The creation of this dictionary could be simplified by one or
+    # more for loops. However we chose to write everything out explicitly
+    # here so that it is clear what is going on. Consult one of the already 
+    # implemented device classes to see how it could be done in fewer lines
+    # of code (for example the PulseBlaster)
+    dds_properties = {'hardware_channel_1':
+                           {'freq':{'base_unit':self.dds_base_units['freq'],
+                                    'min':self.dds_base_min['freq'],
+                                    'max':self.dds_base_max['freq'],
+                                    'step':self.dds_base_step['freq'],
+                                    'decimals':self.dds_base_decimals['freq']
+                                   },
+                             'amp':{'base_unit':self.dds_base_units['amp'],
+                                    'min':self.dds_base_min['amp'],
+                                    'max':self.dds_base_max['amp'],
+                                    'step':self.dds_base_step['amp'],
+                                    'decimals':self.dds_base_decimals['amp']
+                                   },
+												  'phase':{'base_unit':self.dds_base_units['phase'],
+                                    'min':self.dds_base_min['phase'],
+                                    'max':self.dds_base_max['phase'],
+                                    'step':self.dds_base_step['phase'],
+                                    'decimals':self.dds_base_decimals['phase']
+                                   },
+                            'gate':{}
+                            },
+
+                      'hardware_channel_2':
+                           {'freq':{'base_unit':self.dds_base_units['freq'],
+                                    'min':self.dds_base_min['freq'],
+                                    'max':self.dds_base_max['freq'],
+                                    'step':self.dds_base_step['freq'],
+                                    'decimals':self.dds_base_decimals['freq']
+                                   },
+                             'amp':{'base_unit':self.dds_base_units['amp'],
+                                    'min':self.dds_base_min['amp'],
+                                    'max':self.dds_base_max['amp'],
+                                    'step':self.dds_base_step['amp'],
+                                    'decimals':self.dds_base_decimals['amp']
+                                   },
+												  'phase':{'base_unit':self.dds_base_units['phase'],
+                                    'min':self.dds_base_min['phase'],
+                                    'max':self.dds_base_max['phase'],
+                                    'step':self.dds_base_step['phase'],
+                                    'decimals':self.dds_base_decimals['phase']
+                                   },
+                            'gate':{}
+                            }
+                     }
+    self.create_dds_outputs(dds_properties)
+\end{python}
+
+
+
+\subsubsection{\texttt{create\_dds\_widgets}}\label{ref:create_dds_widgets}
+This method is used to create widgets associated with dds output objects.
+It is used by \texttt{auto\_create\_widgets} (see section \ref{ref:auto_create_widgets}) but can be called directly.
+This method takes a dictionary which specifies properties of the dds widgets.
+The dictionary should be keyed by hardware channel name.
+The value associated with each key should be an empty dictionary (this is so we can expand configuration options in the future).
+This method returns a dictionary of widgets, keyed by the hardware channel names.
+
+Example usage:
+\begin{python}
+widget_properties = {'dds0':{},
+                     'dds1':{}
+                    }
+my_widgets = self.create_dds_widgets(widget_properties)
+\end{python}
+
+
+\subsubsection{\texttt{create\_digital\_outputs}}\label{ref:create_digital_outputs}
+This method creates digital output objects. 
+These objects are the backend for digital widgets, and handle the lock state,  saving/restoring values, etc.
+The tutorial in section \ref{device_class} covers how to use this method in depth.
+
+This method takes a dictionary that defines the properties of the digital output objects you wish to instantiate. 
+The dictionary should be keyed by hardware channel name.
+The values of each key should be an empty dictionary (this is so we can expand configuration options in the future).
+
+This method returns no value.
+
+Example usage:
+\begin{python}
+    digital_properties = {'hardware_channel_1':{},
+                         'hardware_channel_2':{},
+                        }
+    self.create_digital_outputs(digital_properties)
+\end{python}
+
+
+\subsubsection{\texttt{create\_digital\_widgets}}\label{ref:create_digital_widgets}
+This method is used to create widgets associated with digital output objects.
+It is used by \texttt{auto\_create\_widgets} (see section \ref{ref:auto_create_widgets}) but can be called directly.
+This method takes a dictionary which specifies properties of the digital widgets.
+The dictionary should be keyed by hardware channel name.
+The value associated with each key should be an empty dictionary (this is so we can expand configuration options in the future).
+This method returns a dictionary of widgets, keyed by the hardware channel names.
+
+Example usage:
+\begin{python}
+widget_properties = {'port0/line1':{},
+                     'port0/line21':{}
+                    }
+my_widgets = self.create_digital_widgets(widget_properties)
+\end{python}
+
+
+\subsubsection{\texttt{create\_worker}}\label{ref:create_worker}
+This method creates and instantiates an instance of a specified worker process.
+This results in a new process being spawned on your PC.
+The signature of this method is:
+\begin{python}
+def create_worker(self, worker_name, WorkerClass, worker_arguments = {}):
+\end{python}
+where \texttt{worker\_name} is a string containing the name you wish to assign to this worker (used to register the worker as a primary or secondary worker, see sections \ref{ref:primary_worker} and \ref{ref:add_secondary_worker}).
+\texttt{WorkerClass} is a reference to the \textbf{class} (\textbf{not} an instance) you wish to launch in the subprocess (this class should subclass the \texttt{Worker} class in `BLACS/tab\_base\_classes.py'. The \texttt{create\_worker} method is responsible for creating an instance of the \texttt{WorkerClass}.
+\texttt{worker\_arguments} is a dictionary of arguments to be passed to the worker process. These arguments become available as instance attributes of the worker instance with the names specified by the keys of the dictionary (subject to change in the future).
+
+\subsubsection{\texttt{get\_channel}}\label{ref:get_channel}
+This method returns an \texttt{AO}, \texttt{DO} or \texttt{DDS} object for a given hardware channel name, or \texttt{None} if it does not exist.
+
+The signature of this method is:
+\begin{python}
+def get_channel(self, channel_name):
+\end{python}
+where \texttt{channel\_name} is a string containing the hardware channel name of the output object you wish to return.
+
+\subsubsection{\texttt{get\_front\_panel\_values}}\label{ref:get_front_panel_values}
+This method returns a dictionary, keyed by hardware channel name, containing all the current values of the \texttt{AO}, \texttt{DO} and \texttt{DDS} objects.
+
+This method is used to get the values on the BLACS front panel when programming the device in both manual and buffered mode.
+If you have a custom output not registered as either an \texttt{AO}, \texttt{DO} or \texttt{DDS} object, you may wish to override this method to \textbf{extend} the dictionary to contain your custom values.
+
+\subsubsection{\texttt{get\_tab\_layout}}\label{ref:get_tab_layout}
+This method takes no arguments and returns a reference to the main layout of the tab.
+This layout is an instance of \texttt{QVBoxLayout}.
+
+\subsubsection{\texttt{queue\_work}}\label{ref:queue_work}
+This method returns a tuple in the form required to \texttt{yield} from a statefunction (see section \ref{device_class_state_machine} for more details).
+It is used to communicate with a worker process.
+
+The signature of this method is:
+\begin{python}
+def queue_work(self, worker_name, worker_function_name, *args, **kwargs):
+\end{python}
+where \texttt{worker\_name} should be a string containing the name of the worker you wish to communicate wish (as defined when you created the worker process, see section \ref{ref:create_worker}).
+\texttt{worker\_function\_name} should be a string containing the name of the method of the worker process you wish to run.
+You can also specify any number of optional arguments and keyword arguments following this.
+These arguments will be passed to the method of the worker process you have specified to run.
+
+Example usage:
+\begin{python}
+result = yield(self.queue_work(self.primary_worker, 'my_worker_function',
+                                1, 7, keyword = 'foo'))
+
+# or alternatively
+work = self.queue_work(self.primary_worker, 'my_worker_function', 
+                       1, 7, keyword = 'foo')
+result = yield(work)
+\end{python}
+
+\subsubsection{\texttt{statemachine\_timeout\_add}}\label{ref:statemachine_timeout_add}
+This method sets up a timer which repeatedly calls the specified state-function after a delay.
+The signature of this method is:
+\begin{python}
+def statemachine_timeout_add(self, delay, statefunction, *args, **kwargs):
+\end{python}
+where \texttt{delay} is the minimum time in millseconds between calls to the specified state-function and \texttt{statefunction} is a reference to the method to call (this method must be decorated with \texttt{@define\_state}, see section \ref{device_class_state_machine}).
+You can also specify any number of optional arguments and keyword arguments following this.
+These arguments will be passed to the state-function you have specified to run.
+
+Note that the specified delay is the \textbf{minimum} time between calls. 
+Immediately after your state-function has been run, another state will execute which sets up a timer object that fires in \texttt{delay} milliseconds.
+There is some overhead in processing this state.
+Furthermore, when the timer fires, your state-function is queued up in the state machine, but is not guaranteed to immediately run as there may be other state-functions in the queue.
+However, it \textbf{is} guaranteed that the state which sets up the timer, will always run immediately after your state-function.
+This ensures there will only ever be one entry for your state-function in the state queue at any given time.
+
+\textbf{Note:} You cannot set up multiple timeout callback for the same state-function. 
+Subsequent calls to \texttt{statemachine\_timeout\_add} with the same state-function in the argument, will result in the old timeout being replaced with the delay, etc. of this new call.
+
+\subsubsection{\texttt{statemachine\_timeout\_remove}}\label{ref:statemachine_timeout_remove}
+This method takes a reference to a state-function as the only argument, and removes the timeout callback created with \texttt{statemachine\_timeout\_add} (see section \ref{ref:statemachine_timeout_add}).
+This method returns \texttt{True} if a timeout was found to remove, otherwise \texttt{False}.
+
+The signature of this method is:
+\begin{python}
+def statemachine_timeout_remove(self, statefunction):
+\end{python}
+where \texttt{statefunction} is a reference to a function decorated with \texttt{@define\_state} (see section \ref{device_class_state_machine}).
+
+\subsubsection{\texttt{statemachine\_timeout\_remove\_all}}\label{ref:statemachine_timeout_remove_all}
+This method takes no arguments, and removes \textbf{all} timeout callbacks created with \texttt{statemachine\_timeout\_add} (see section \ref{ref:statemachine_timeout_add}).
+This method returns \texttt{True} if there were timeouts to remove, otherwise \texttt{False}.
+
+The signature of this method is:
+\begin{python}
+def statemachine_timeout_remove_all(self):
+\end{python}
+
+\subsubsection{\texttt{supports\_remote\_value\_check}}\label{ref:supports_remote_value_check}
+This method sets an internal flag that determines whether a timeout callback will be setup that runs a state-function which periodically checks the output values programmed into the device and compares them with the BLACS front panel.
+This is effectively a consistency check to make sure the BLACS front panel is up to date.
+As not all devices support this feature, you must explicitly enable it if you device does.
+
+%TODO: add in sections in the tutorial that explain when to do this, and how to create the worker function correctly.
+
+
+\subsubsection{\texttt{supports\_smart\_programming}}\label{ref:supports_smart_programming}
+This method sets an internal flag that determines whether the checkbox to force a full buffered reprogram is shown or hidden.
+If set to \texttt{False}, the checkbox is hidden and left checked permanently.
+Note that even if set to \texttt{False}, you can still programmatically change whether a full buffered reprogram can occur with the \texttt{force\_full\_buffered\_reprogram} property (see section \ref{ref:force_full_buffered_reprogram}).
+
+%TODO: Explain when to call this function, and add in a section to the tutorial that explains.
+
+The signature of this method is:
+\begin{python}
+def supports_smart_programming(self, value):
+\end{python}
+where value is \texttt{True} or \texttt{False}.
+
+%advanced methods:
+%
+% connect_restart_receiver
+% disconnect_restart_receiver
+% restart
+% update_from_settings
+
+\subsubsection{\texttt{connect\_restart\_receiver}}\label{ref:connect_restart_receiver}
+This method allows you to register a function to be called when the device tab is restarted.
+Usually this is only used by components of BLACS outside of the device Tab, though there is no reason why you couldn't call it from within DeviceTab.
+
+The signature of this method is:
+\begin{python}
+def connect_restart_receiver(self, function):
+\end{python}
+where function is a reference to the function you wish called. 
+The function you provide should take one argument (the name of the device that has been restarted).
+
+\subsubsection{\texttt{disconnect\_restart\_receiver}}\label{ref:disconnect_restart_receiver}
+This method allows you to deregister a function that was registered using \texttt{connect\_restart\_receiver} (see section \ref{ref:connect_restart_receiver}).
+Usually this is only used by components of BLACS outside of the device Tab, though there is no reason why you couldn't call it from within DeviceTab.
+
+The signature of this method is:
+\begin{python}
+def disconnect_restart_receiver(self, function):
+\end{python}
+where function is a reference to the function you wish deregister. 
+
+
+\subsubsection{\texttt{restart}}\label{ref:restart}
+This method initiates a restart of the device Tab. 
+Usually this is called when the restart button is clicked, however you could call this method programmatically if you wished.
+The method takes an arbitrary number of keyword arguments (and ignores them all) so it can be connected to GUI signals that pass arguments.
+
+The signature of this method is:
+\begin{python}
+def restart(self, *args):
+\end{python}
+
+
+\subsubsection{\texttt{update\_from\_settings}}\label{ref:update_from_settings}
+This method restores the settings of the tab from a provided dictionary.
+This method is called by BLACS on startup and if the user loads a front panel via the file menu.
+This method will not affect the state of ``locked'' widgets.
+
+The signature of this method is:
+\begin{python}
+def update_from_settings(self, settings):
+\end{python}
+where \texttt{settings} is a dictionary with the keys \texttt{device\_name}, \texttt{connection\_table}, \texttt{saved\_data} and \texttt{front\_panel\_settings}.
+These keys should have the following values:
+
+\begin{itemize}
+	\item \texttt{device\_name}: A string containing the device name (as stored in the \texttt{device\_name} attribute).
+	\item \texttt{connection\_table}: A reference to the connection table object (as stored in the \texttt{\_connection\_table} attribute).
+	\item \texttt{saved\_data}: A dictionary of the form that \texttt{get\_save\_data} is to be passed.
+	\item \texttt{front\_panel\_settings}: A dictionary keyed by hardware channel name. 
+	Each of these keys should have a value which is a dictionary containing the settings for the output channel. 
+	%TODO: document the contents of these dictionaries.
+\end{itemize}
+
+
+%
+% statefunctions
+%
+% initialise_device
+% destroy
+% program_device
+% check_remote_values
+%     on_resolve_value_inconsistency
+% transition_to_buffered
+% abort_transition_to_buffered
+% abort_buffered
+% transition_to_manual
+% 
+%
+\subsection{State-functions}\label{ref:statefunctions}
+State-functions are methods decorated with the \texttt{@define\_state} decorator. 
+When called, they do not run immediately, but are placed in a queue and executed in the order they were called.
+See section \ref{device_class_state_machine} for more details.
+
+The \texttt{DeviceTab} class provides some default implementations of state-functions, which should be adequate for most device implementations.
+We list them below:
+
+\begin{itemize}
+\item \texttt{abort\_buffered}
+\item \texttt{abort\_transition\_to\_buffered}
+\item \texttt{check\_remote\_values} (has an associated method \texttt{on\_resolve\_value\_inconsistency} which is not a state-function)
+\item \texttt{destroy}
+\item \texttt{initialise\_device}
+\item \texttt{program\_device}
+%     on_resolve_value_inconsistency
+\item \texttt{transition\_to\_buffered}
+\item \texttt{transition\_to\_manual}
+\end{itemize}
+
+There are some cases where it may be desirable to override these methods.
+Please check with us on the mailing list before doing so, in case there is an easy way to achieve your aims.
+Should you wish to override them, \textbf{do not call the state-function method you are overriding in an attempt to extend it's functionality}.
+If you override, you \textbf{must} reimplement yourself, any functionality you want to keep from the \texttt{DeviceTab} implementation.
 
 
 
@@ -355,7 +1000,9 @@ The arguments are:
 
 An example use of \texttt{@define\_state} is shown below:
 \begin{python}
-    @define_state(allowed_modes=MODE_MANUAL|MODE_BUFFERED,queue_state_indefinitely=True,delete_stale_states=False)
+    @define_state(allowed_modes=MODE_MANUAL|MODE_BUFFERED,
+                  queue_state_indefinitely=True,
+                  delete_stale_states=False)
     def start(self,widget=None):
         # some code follows
         time.sleep(5)
@@ -410,6 +1057,13 @@ Due to the nature of state machines (callbacks are processed one at a time based
 \textbf{Also note that you can only have one timeout for a given function. Creating a timeout for the same function will replace the existing timeout.}
 
 
+\subsection{Remote Value Checking}\label{remote_value_checking}
+The default implementation of the \texttt{DeviceTab} supports a periodic consistency check on the output values of a device (providing that the device supports this).
+This can be enabled by setting \texttt{supports\_remote\_value\_check}
+The tab will query the worker process for current output values, and compare these to the values on the BLACS front panel.
+If any inconsistencies exist, BLACS will ask the user to choose whether to keep the remote values of the device, or the local values shown on the BLACS front panel.
+Beyond enabling the feature, no further implementation is required in the device class.
+For the worker class implementation, see section \ref{worker:remote_value_checking}.
 
 \newpage
 \section{The Worker Class}
@@ -494,7 +1148,7 @@ Your function should look something like:
 
 
 
-\subsection{The \texttt{transition\_to\_buffered} function}
+\subsection{The \texttt{transition\_to\_buffered} function}\label{worker:transition_to_buffered}
 This function is called whenever the Queue Manager requests the device to move into buffered mode in preparation for executing a buffered sequence.
 
 This function is passed the \texttt{device\_name} to look up in the HDF5 file located at the path contained by \texttt{h5file}.
@@ -536,6 +1190,20 @@ Example:
         # return True if this was all successful, or False otherwise
         return True/False
 \end{python}
+
+\subsection{Remote value checking}\label{worker:remote_value_checking}
+This \texttt{check\_remote\_values} method should only be present if your tab is configured to check remote values (see section \ref{remote_value_checking}).
+The method takes no arguments, and should return a dictionary of remote values, keyed by hardware channel name.
+
+Example:
+\begin{python}
+    def check_remote_values(self):
+        current_output_values = {}
+        # read from the device, the values it is outputting
+        # place them in a dictionary, keyed by hardware channel
+        return current_output_values
+\end{python}
+
 
 \subsection{Abort functions}
 There are two functions that may be called if something went wrong and the experiment shot is to be aborted.
