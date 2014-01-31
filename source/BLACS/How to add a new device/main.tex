@@ -67,7 +67,6 @@ When the device tab is instantiated, the functions described in the next section
     self.initialise_GUI() 
     self.restore_save_data(settings_dictionary)
     self.initialise_workers()
-    self.initialise_device()
 \end{python}
 
 \subsection{Overriding the \texttt{initialise\_GUI} function}\label{tutorial:overriding_initialise_GUI}
@@ -947,7 +946,6 @@ We list them below:
 \item \texttt{abort\_transition\_to\_buffered}
 \item \texttt{check\_remote\_values} (has an associated method \texttt{on\_resolve\_value\_inconsistency} which is not a state-function)
 \item \texttt{destroy}
-\item \texttt{initialise\_device}
 \item \texttt{program\_device}
 %     on_resolve_value_inconsistency
 \item \texttt{transition\_to\_buffered}
@@ -1111,19 +1109,6 @@ or
 You can also set the default values for any class attributes in the \texttt{init} function. For instance:
 \begin{python}
         self.smart_cache = {}
-\end{python}
-
-\subsection{The \texttt{initialise} function}
-This function is automatically called by the \texttt{DeviceTab} class after worker processes are created. 
-Anything done here can probably be done it \texttt{init} so this function is likely to be removed at some point in time.
-It is \textbf{not} guaranteed to run immediately after \texttt{init}.
-There may be other worker process functions run sooner by calls to \texttt{statemachine\_timeout\_add}.
-
-You do however need to define an empty function here for the moment.
-Please define in your worker class:
-\begin{python}
-    def initialise(self):
-        pass
 \end{python}
 
 
