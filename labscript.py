@@ -173,7 +173,7 @@ class Device(object):
         if parent.is_master_pseudoclock:
             return 0
         else:
-            return parent.trigger_times[0] + parent.trigger_delay
+            return round(parent.trigger_times[0] + parent.trigger_delay, 10)
                             
     def get_all_outputs(self):
         all_outputs = []
@@ -945,7 +945,7 @@ class Output(Device):
                            'This overlaps with a trigger at t=%s, and so cannot be performed.' % str(trigger_time))
                     raise LabscriptError(err)
                 # Check that nothing is happening during the delay time after the trigger:
-                if trigger_time < t < trigger_time + self.trigger_delay:
+                if round(trigger_time,10) < round(t,10) < round(trigger_time + self.trigger_delay, 10):
                     err = (' %s %s has an instruction at t = %s. ' % (self.description, self.name, str(t)) + 
                            'This is too soon after a trigger at t=%s, '%str(trigger_time) + 
                            'the earliest output possible after this trigger is at t=%s'%str(trigger_time + self.trigger_delay))
