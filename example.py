@@ -13,7 +13,7 @@
 
 import __init__ # only have to do this because we're inside the labscript directory
 from labscript import *
-from unitconversions import *
+from labscript_utils.unitconversions import *
 
 PulseBlaster(name='pulseblaster_0', board_number=0)
 NI_PCIe_6363(name='ni_card_0',  parent_device=pulseblaster_0, clock_type='fast clock', clock_terminal='ni_pcie_6363_0/PFI0', MAX_name='ni_pcie_6363_0', acquisition_rate=100e3)
