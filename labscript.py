@@ -448,6 +448,7 @@ class PulseBlaster(PseudoClock):
     fast_clock_flag = 0
     slow_clock_flag = 1
     clock_type = 'slow clock'
+    n_flags = 12
     
     # This value is coupled to a value in the PulseBlaster worker process of BLACS
     # This number was found experimentally but is determined theoretically by the
@@ -465,14 +466,14 @@ class PulseBlaster(PseudoClock):
         self.firmware_version = firmware
         
         # slow clock flag must be either the integer 0-11 to indicate a flag, or None to indicate not in use.
-        if -1 < slow_clock_flag < 12 or slow_clock_flag == None:
+        if -1 < slow_clock_flag < self.n_flags or slow_clock_flag == None:
             self.slow_clock_flag = slow_clock_flag
         else:
             raise LabscriptError('The slow clock flag for Pulseblaster %s must either be an integer between 0-11 to indicate slow clock output'%name +
                                  ' on that flag or None to indicate the suppression of the slow clock')
         
         # fast clock flag must be either the integer 0-11 to indicate a flag, or None to indicate not in use.
-        if -1 < fast_clock_flag < 12 or fast_clock_flag == None:
+        if -1 < fast_clock_flag < self.n_flags or fast_clock_flag == None:
             # the fast clock flag should not be the same as the slow clock flag
             if fast_clock_flag == slow_clock_flag and fast_clock_flag != None:
                 raise LabscriptError('The fast clock flag for Pulseblaster %s must not be the same as the slow clock flag')
@@ -509,10 +510,10 @@ class PulseBlaster(PseudoClock):
                     connection = int(connection)
                 except:
                     raise LabscriptError('%s %s has invalid connection string: \'%s\'. '%(output.description,output.name,str(output.connection)) + 
-                                         'Format must be \'flag n\' with n an integer less than 12, or \'dds n\' with n less than 2.')
-                if not connection < 12:
+                                         'Format must be \'flag n\' with n an integer less than %d, or \'dds n\' with n less than 2.'%self.n_flags)
+                if not connection < self.n_flags:
                     raise LabscriptError('%s is set as connected to output connection %d of %s. '%(output.name, connection, self.name) +
-                                         'Output connection number must be a integer less than 12.')
+                                         'Output connection number must be a integer less than %d.'%self.n_flags)
                 if prefix == 'dds' and not connection < 2:
                     raise LabscriptError('%s is set as connected to output connection %d of %s. '%(output.name, connection, self.name) +
                                          'DDS output connection number must be a integer less than 2.')
@@ -533,7 +534,7 @@ class PulseBlaster(PseudoClock):
         ampdicts = {}
         phasedicts = {}
         freqdicts = {}
-        group = hdf5_file.create_group('/devices/'+self.name)
+        group = hdf5_file['/devices/'+self.name]
         dds_dict = {}
         for output in dds_outputs:
             num = int(output.connection.split()[1])
@@ -598,7 +599,7 @@ class PulseBlaster(PseudoClock):
             
         return freqdicts, ampdicts, phasedicts
         
-    def convert_to_pb_inst(self, hdf5_file, dig_outputs, dds_outputs, freqs, amps, phases):
+    def convert_to_pb_inst(self, dig_outputs, dds_outputs, freqs, amps, phases):
         pb_inst = []
         # An array for storing the line numbers of the instructions at
         # which the slow clock ticks:
@@ -612,7 +613,7 @@ class PulseBlaster(PseudoClock):
         # We've delegated the initial two instructions off to BLACS, which
         # can ensure continuity with the state of the front panel. Thus
         # these two instructions don't actually do anything:
-        flags = [0]*12
+        flags = [0]*self.n_flags
         freqregs = [0]*2
         ampregs = [0]*2
         phaseregs = [0]*2
@@ -629,7 +630,7 @@ class PulseBlaster(PseudoClock):
                         'flags': ''.join([str(flag) for flag in flags]), 'instruction': 'STOP',
                         'data': 0, 'delay': 10.0/self.clock_limit*1e9})    
         j += 2
-        flagstring = '000000000000' # So that this variable is still defined if the for loop has no iterations
+        flagstring = '0'*self.n_flags # So that this variable is still defined if the for loop has no iterations
         for k, instruction in enumerate(self.clock):
             if instruction == 'WAIT':
                 # This is a wait instruction. Repeat the last instruction but with a 100ns delay and a WAIT op code:
@@ -640,7 +641,7 @@ class PulseBlaster(PseudoClock):
                 pb_inst.append(wait_instruction)
                 j += 1
                 continue
-            flags = [0]*12
+            flags = [0]*self.n_flags
             # The registers below are ones, not zeros, so that we don't
             # use the BLACS-inserted initial instructions. Instead
             # unused DDSs have a 'zero' in register one for freq, amp
@@ -736,6 +737,10 @@ class PulseBlaster(PseudoClock):
         pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs, 'enables':dds_enables,
                         'flags': flagstring, 'instruction': 'BRANCH',
                         'data': 0, 'delay': 10.0/self.clock_limit*1e9})  
+                        
+        return pb_inst, slow_clock_indices
+        
+    def write_pb_inst_to_h5(self, pb_inst, slow_clock_indices, hdf5_file):
         # OK now we squeeze the instructions into a numpy array ready for writing to hdf5:
         pb_dtype = [('freq0',int32), ('phase0',int32), ('amp0',int32), 
                     ('dds_en0',int32), ('phase_reset0',int32),
@@ -770,14 +775,62 @@ class PulseBlaster(PseudoClock):
     
     def generate_code(self, hdf5_file):
         # Generate the hardware instructions
+        hdf5_file.create_group('/devices/'+self.name)
         PseudoClock.generate_code(self, hdf5_file)
         dig_outputs, dds_outputs = self.get_direct_outputs()
         freqs, amps, phases = self.generate_registers(hdf5_file, dds_outputs)
-        self.convert_to_pb_inst(hdf5_file, dig_outputs, dds_outputs, freqs, amps, phases)
-        
-       
+        pb_inst, slow_clock_indices = self.convert_to_pb_inst(dig_outputs, dds_outputs, freqs, amps, phases)
+        self.write_pb_inst_to_h5(pb_inst, slow_clock_indices, hdf5_file)
+   
+   
+class PulseBlaster_No_DDS(PulseBlaster):
 
-            
+    description = 'generic DO only Pulseblaster'
+    clock_limit = 8.3e6 # can probably go faster
+    clock_resolution = 20e-9
+    n_flags = 24
+    
+    def write_pb_inst_to_h5(self, pb_inst, slow_clock_indices, hdf5_file):
+        # OK now we squeeze the instructions into a numpy array ready for writing to hdf5:
+        pb_dtype = [('flags',int32), ('inst',int32),
+                    ('inst_data',int32), ('length',float64)]
+        pb_inst_table = empty(len(pb_inst),dtype = pb_dtype)
+        for i,inst in enumerate(pb_inst):
+            flagint = int(inst['flags'][::-1],2)
+            instructionint = self.pb_instructions[inst['instruction']]
+            dataint = inst['data']
+            delaydouble = inst['delay']
+            pb_inst_table[i] = (flagint, instructionint, dataint, delaydouble)
+        slow_clock_indices = array(slow_clock_indices, dtype = uint32)                  
+        # Okey now write it to the file: 
+        group = hdf5_file['/devices/'+self.name]  
+        group.create_dataset('PULSE_PROGRAM', compression=config.compression,data = pb_inst_table)         
+        group.create_dataset('FAST_CLOCK', compression=config.compression,data = self.times)         
+        group.create_dataset('SLOW_CLOCK', compression=config.compression,data = self.change_times)   
+        group.create_dataset('CLOCK_INDICES', compression=config.compression,data = slow_clock_indices)  
+        group.attrs['stop_time'] = self.stop_time     
+        
+    def generate_code(self, hdf5_file):
+        # Generate the hardware instructions
+        hdf5_file.create_group('/devices/'+self.name)
+        PseudoClock.generate_code(self, hdf5_file)
+        dig_outputs, ignore = self.get_direct_outputs()
+        pb_inst, slow_clock_indices = self.convert_to_pb_inst(dig_outputs, [], {}, {}, {})
+        self.write_pb_inst_to_h5(pb_inst, slow_clock_indices, hdf5_file) 
+
+class PulseBlasterUSB(PulseBlaster_No_DDS):
+    description = 'SpinCore PulseBlasterUSB'        
+    clock_limit = 8.3e6 # can probably go faster
+    clock_resolution = 20e-9
+    n_flags = 24
+    
+# class PulseBlasterESRPro500(PulseBlaster_No_DDS):
+    # description = 'SpinCore PulseBlaster ESR-PRO-500'
+    # clock_limit = 50.0e6 # can probably go faster
+    # clock_resolution = 4e-9
+    # n_flags = 21
+    
+        
 class Output(Device):
     description = 'generic output'
     allowed_states = {}
