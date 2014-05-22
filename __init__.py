@@ -27,4 +27,4 @@ if not 'labscript_auto_init' in importing_locals or importing_locals['labscript_
     elif sys.argv[0]:
         labscript_init(sys.argv[0].replace('.py','.h5'), labscript_file=sys.argv[0], new=True)
         
-__version__ = '1.2.0'
+__version__ = '1.2.0-gated-clock-development'

@@ -314,18 +314,31 @@ class PseudoClock(Device):
         by any of the outputs. Also produces a higher level description
         of the clocking; self.clock. This list contains the information
         that facilitates programming a pseudo clock using loops."""
-        all_times = []
+        all_times = {}
+        clocks_in_use = []
+        for output in outputs:
+            if output.parent_device.clock_type not in all_times:
+                all_times[output.parent_device] = []
+            if output.parent_device.clock_type not in clocks_in_use:
+                clocks_in_use.append(output.parent_device.clock_type)
+        
         clock = []
         for i, time in enumerate(change_times):
             if time in self.trigger_times[1:]:
                 # A wait instruction:
                 clock.append('WAIT')
+                
+            # list of enabled clocks
+            enabled_clocks = []
+            
             # what's the fastest clock rate?
             maxrate = 0
             for output in outputs:
                 # Check if output is sweeping and has highest clock rate
                 # so far. If so, store its clock rate to max_rate:
                 if hasattr(output,'timeseries') and isinstance(output.timeseries[i],dict) and output.timeseries[i]['clock rate'] > maxrate:
+                    # find out what clock this is on so we can enable it
+                    enabled_clocks.append(output.parent_device.clock_type)
                     # It does have the highest clock rate? Then store that rate to max_rate:
                     maxrate = output.timeseries[i]['clock rate']
             if maxrate:
@@ -351,7 +364,12 @@ class PseudoClock(Device):
                     n_ticks += 1
                 duration = n_ticks/float(maxrate) # avoiding integer division
                 ticks = linspace(time,time + duration,n_ticks,endpoint=False)
-                all_times.append(ticks)
+                
+                for a_clock in clocks_in_use:
+                    if a_clock in enabled_clocks:  
+                        all_times[clock].append(ticks)
+                    else:
+                        all_times[clock].append(time)
                 if n_ticks > 1:
                     # If n_ticks is only one, then this step doesn't do
                     # anything, it has reps=0. So we should only include
@@ -362,19 +380,19 @@ class PseudoClock(Device):
                         #tick, during which the slow clock ticks, and
                         #the rest of the ramping time, during which the
                         #slow clock does not tick.
-                        clock.append({'start': time, 'reps': 1, 'step': 1/float(maxrate),'slow_clock_tick':True})
-                        clock.append({'start': time + 1/float(maxrate), 'reps': n_ticks-2, 'step': 1/float(maxrate),'slow_clock_tick':False})
+                        clock.append({'start': time, 'reps': 1, 'step': 1/float(maxrate),'slow_clock_tick':True, 'fast_clock':enabled_clocks})
+                        clock.append({'start': time + 1/float(maxrate), 'reps': n_ticks-2, 'step': 1/float(maxrate),'slow_clock_tick':False, 'fast_clock':enabled_clocks})
                     else:
-                        clock.append({'start': time, 'reps': n_ticks-1, 'step': 1/float(maxrate),'slow_clock_tick':True})
+                        clock.append({'start': time, 'reps': n_ticks-1, 'step': 1/float(maxrate),'slow_clock_tick':True, 'fast_clock':enabled_clocks})
                 # The last clock tick has a different duration depending
                 # on the next step. The slow clock must tick here if it
                 # hasn't ticked already, that is if n_ticks = 1.
-                clock.append({'start': ticks[-1], 'reps': 1, 'step': change_times[i+1] - ticks[-1],'slow_clock_tick': True if n_ticks == 1 else False})
+                clock.append({'start': ticks[-1], 'reps': 1, 'step': change_times[i+1] - ticks[-1],'slow_clock_tick': True if n_ticks == 1 else False, 'fast_clock':enabled_clocks})
             else:
                 all_times.append(time)
                 try: 
                     # If there was no ramping, here is a single clock tick:
-                    clock.append({'start': time, 'reps': 1, 'step': change_times[i+1] - time,'slow_clock_tick':True})
+                    clock.append({'start': time, 'reps': 1, 'step': change_times[i+1] - time,'slow_clock_tick':True, 'fast_clock':'all'})
                 except IndexError:
                     if i != len(change_times) - 1:
                         raise
@@ -394,7 +412,7 @@ class PseudoClock(Device):
                     # Output.raw_output arrays. We'll make this last
                     # cycle be at ten times the minimum step duration.
                     else:
-                        clock.append({'start': time, 'reps': 1, 'step': 10.0/self.clock_limit,'slow_clock_tick':True})
+                        clock.append({'start': time, 'reps': 1, 'step': 10.0/self.clock_limit,'slow_clock_tick':True, 'fast_clock':'all'})
         return all_times, clock
     
     def do_checks(self, outputs):
@@ -422,10 +440,13 @@ class PseudoClock(Device):
             output.make_timeseries(change_times)
         all_times, clock = self.expand_change_times(change_times, outputs)
         for output in outputs:
-            output.expand_timeseries(all_times)
+            output.expand_timeseries(all_times[output.parent_device.clock_type])
         self.clock = clock
         self.change_times = fastflatten(change_times, float)
-        self.times = fastflatten(all_times,float)
+        
+        self.times = {}
+        for clock_type, time_array in all_times.items():
+            self.times[clock_type] = fastflatten(time_array,float)
         
     def generate_code(self, hdf5_file):
         self.generate_clock()
@@ -466,22 +487,45 @@ class PulseBlaster(PseudoClock):
         self.firmware_version = firmware
         
         # slow clock flag must be either the integer 0-11 to indicate a flag, or None to indicate not in use.
-        if -1 < slow_clock_flag < self.n_flags or slow_clock_flag == None:
-            self.slow_clock_flag = slow_clock_flag
-        else:
-            raise LabscriptError('The slow clock flag for Pulseblaster %s must either be an integer between 0-11 to indicate slow clock output'%name +
-                                 ' on that flag or None to indicate the suppression of the slow clock')
+        if type(slow_clock_flag) == int:
+            slow_clock_flag = [slow_clock_flag]
+        if slow_clock_flag is not None:
+            for flag in slow_clock_flag:
+                if not self.flag_valid(flag):
+                    raise LabscriptError('The slow clock flag(s) for Pulseblaster %s must either be an integer between 0-%d to indicate slow clock output'%(name, self.n_flags-1) +
+                                         ' on that flag or None to indicate the suppression of the slow clock')
+        self.slow_clock_flag = slow_clock_flag
+            
+            
+        # if -1 < slow_clock_flag < self.n_flags or slow_clock_flag == None:
+            # self.slow_clock_flag = slow_clock_flag
+        # else:
+            # raise LabscriptError('The slow clock flag for Pulseblaster %s must either be an integer between 0-11 to indicate slow clock output'%name +
+                                 # ' on that flag or None to indicate the suppression of the slow clock')
         
         # fast clock flag must be either the integer 0-11 to indicate a flag, or None to indicate not in use.
-        if -1 < fast_clock_flag < self.n_flags or fast_clock_flag == None:
-            # the fast clock flag should not be the same as the slow clock flag
-            if fast_clock_flag == slow_clock_flag and fast_clock_flag != None:
-                raise LabscriptError('The fast clock flag for Pulseblaster %s must not be the same as the slow clock flag')
-            else:
-                self.fast_clock_flag = fast_clock_flag
-        else:
-            raise LabscriptError('The fast clock flag for Pulseblaster %s must either be an integer between 0-11 to indicate fast clock output'%name +
-                                 ' on that flag orNone to indicate the suppression of the fast clock')
+        if type(fast_clock_flag) == int:
+            fast_clock_flag = [fast_clock_flag]
+            
+        self.extra_clocks = []
+        if fast_clock_flag is not None:
+            for flag in fast_clock_flag:
+                if not self.flag_valid(flag) or (type(self.slow_clock_flag) == list and flag in self.slow_clock_flag):
+                    raise LabscriptError('The fast clock flag for Pulseblaster %s must either be an integer between 0-%d to indicate fast clock output'%(name, self.n_flags-1) +
+                                         ' on that flag orNone to indicate the suppression of the fast clock')
+                self.extra_clocks.append('flag %d'%flag)
+        self.fast_clock_flag = fast_clock_flag
+            
+        
+        # if -1 < fast_clock_flag < self.n_flags or fast_clock_flag == None:
+            # # the fast clock flag should not be the same as the slow clock flag
+            # if fast_clock_flag == slow_clock_flag and fast_clock_flag != None:
+                # raise LabscriptError('The fast clock flag for Pulseblaster %s must not be the same as the slow clock flag')
+            # else:
+                # self.fast_clock_flag = fast_clock_flag
+        # else:
+            # raise LabscriptError('The fast clock flag for Pulseblaster %s must either be an integer between 0-11 to indicate fast clock output'%name +
+                                 # ' on that flag orNone to indicate the suppression of the fast clock')
         
         # Only allow directly connected devices if we don't have a fast clock or a slow clock
         if slow_clock_flag == None and fast_clock_flag == None:
@@ -490,7 +534,20 @@ class PulseBlaster(PseudoClock):
             self.has_clocks = False
         else:
             self.has_clocks = True
+    
+    def flag_valid(self, flag):
+        if -1 < flag < self.n_flags:
+            return True
+        return False
         
+    def flag_is_clock(self, flag):
+        if type(self.slow_clock_flag) == list and flag in self.slow_clock_flag:
+            return True
+        elif type(self.fast_clock_flag == list and flag in self.fast_clock_flag:
+            return True
+        else:
+            return False        
+    
     def get_direct_outputs(self):
         """Finds out which outputs are directly attached to the PulseBlaster"""
         dig_outputs = []
@@ -517,7 +574,7 @@ class PulseBlaster(PseudoClock):
                 if prefix == 'dds' and not connection < 2:
                     raise LabscriptError('%s is set as connected to output connection %d of %s. '%(output.name, connection, self.name) +
                                          'DDS output connection number must be a integer less than 2.')
-                if prefix == 'flag' and connection in [self.slow_clock_flag, self.fast_clock_flag]:
+                if prefix == 'flag' and self.flag_is_clock(connection):
                     raise LabscriptError('%s is set as connected to flag %d of %s.'%(output.name, connection, self.name) +
                                          'This is one of the PulseBlaster\'s clock flags.')
                 for other_output in dig_outputs + dds_outputs:
@@ -660,9 +717,14 @@ class PulseBlaster(PseudoClock):
                 phaseregs[ddsnumber] = phases[ddsnumber][output.phase.raw_output[i]]
                 dds_enables[ddsnumber] = output.gate.raw_output[i]
             if self.fast_clock_flag is not None:
-                flags[self.fast_clock_flag] = 1
+                for fast_flag in self.fast_clock_flag:
+                    if (type(instruction['fast_clock']) == list and 'flad %d'%fast_flag in instruction['fast_clock']) or instruction['fast_clock'] == 'all':
+                        flags[fast_flag] = 1
+                    else:
+                        flags[fast_flag] = 0
             if self.slow_clock_flag is not None:
-                flags[self.slow_clock_flag] = 1 if instruction['slow_clock_tick'] else 0
+                for slow_flag in self.slow_clock_flag:
+                    flags[slow_flag] = 1 if instruction['slow_clock_tick'] else 0
             if instruction['slow_clock_tick']:
                 slow_clock_indices.append(j)
             flagstring = ''.join([str(flag) for flag in flags])
@@ -691,9 +753,11 @@ class PulseBlaster(PseudoClock):
                                 'flags': flagstring, 'instruction': 'LOOP',
                                 'data': instruction['reps'], 'delay': remainder*1e9})
                 if self.fast_clock_flag is not None:
-                    flags[self.fast_clock_flag] = 0
+                    for fast_flag in self.fast_clock_flag:
+                        flags[fast_flag] = 0
                 if self.slow_clock_flag is not None:
-                    flags[self.slow_clock_flag] = 0
+                    for slow_flag in self.slow_clock_flag:
+                        flags[slow_flag] = 0
                 flagstring = ''.join([str(flag) for flag in flags])
             
                 # If there was a nonzero quotient, let's wait twice that
@@ -767,8 +831,9 @@ class PulseBlaster(PseudoClock):
         slow_clock_indices = array(slow_clock_indices, dtype = uint32)                  
         # Okey now write it to the file: 
         group = hdf5_file['/devices/'+self.name]  
-        group.create_dataset('PULSE_PROGRAM', compression=config.compression,data = pb_inst_table)         
-        group.create_dataset('FAST_CLOCK', compression=config.compression,data = self.times)         
+        group.create_dataset('PULSE_PROGRAM', compression=config.compression,data = pb_inst_table)   
+        for clock_type, time_array in self.times.items():
+            group.create_dataset(clock_type, compression=config.compression,data = time_array)         
         group.create_dataset('SLOW_CLOCK', compression=config.compression,data = self.change_times)   
         group.create_dataset('CLOCK_INDICES', compression=config.compression,data = slow_clock_indices)  
         group.attrs['stop_time'] = self.stop_time       
@@ -805,7 +870,8 @@ class PulseBlaster_No_DDS(PulseBlaster):
         # Okey now write it to the file: 
         group = hdf5_file['/devices/'+self.name]  
         group.create_dataset('PULSE_PROGRAM', compression=config.compression,data = pb_inst_table)         
-        group.create_dataset('FAST_CLOCK', compression=config.compression,data = self.times)         
+        for clock_type, time_array in self.times.items():
+            group.create_dataset(clock_type, compression=config.compression,data = time_array)          
         group.create_dataset('SLOW_CLOCK', compression=config.compression,data = self.change_times)   
         group.create_dataset('CLOCK_INDICES', compression=config.compression,data = slow_clock_indices)  
         group.attrs['stop_time'] = self.stop_time     
@@ -1330,7 +1396,13 @@ class IntermediateDevice(Device):
     
     def __init__(self, name, parent_device,clock_type):
         self.name = name
-        if not clock_type in ['fast clock', 'slow clock']:
+        clock_valid = False
+        if isinstance(parent_device, PulseBlaster) 
+            if clock_type == 'fast clock':
+                clock_type == parent_device.extra_clocks[0]
+            if clock_type in parent_device.extra_clocks:
+                clock_valid = True
+        if not clock_type in ['fast clock', 'slow clock'] and not clock_valid:
             raise LabscriptError("Clock type for %s %s can only be 'slow clock' or 'fast clock'."%(self.name,self.description))
         Device.__init__(self, name, parent_device, clock_type)
         self.clock_type = clock_type
@@ -1384,7 +1456,7 @@ class NIBoard(IntermediateDevice):
                 inputs[device.connection] = device
             else:
                 raise Exception('Got unexpected device.')
-        analog_out_table = empty((len(self.parent_device.times),len(analogs)), dtype=float32)
+        analog_out_table = empty((len(self.parent_device.times[self.clock_type]),len(analogs)), dtype=float32)
         analog_connections = analogs.keys()
         analog_connections.sort()
         analog_out_attrs = []
@@ -1773,8 +1845,8 @@ class RFBlaster(PseudoClock):
         # Generate clock and save raw instructions to the h5 file:
         PseudoClock.generate_code(self, hdf5_file)
         dtypes = [('time',float),('amp0',float),('freq0',float),('phase0',float),('amp1',float),('freq1',float),('phase1',float)]
-        data = zeros(len(self.times),dtype=dtypes)
-        data['time'] = self.times
+        data = zeros(len(self.times[self.clock_type]),dtype=dtypes)
+        data['time'] = self.times[self.clock_type]
         for dds in self.child_devices:
             prefix, connection = dds.connection.split()
             data['freq%s'%connection] = dds.frequency.raw_output
@@ -1785,7 +1857,7 @@ class RFBlaster(PseudoClock):
         
         # Quantise the data and save it to the h5 file:
         quantised_dtypes = [('time',int64),('amp0',int32),('freq0',int32),('phase0',int32),('amp1',int32),('freq1',int32),('phase1',int32)]
-        quantised_data = zeros(len(self.times),dtype=quantised_dtypes)
+        quantised_data = zeros(len(self.times[self.clock_type]),dtype=quantised_dtypes)
         quantised_data['time'] = array(c.tT*1e6*data['time']+0.5)
         for dds in range(2):
             # TODO: bounds checking
@@ -1801,7 +1873,7 @@ class RFBlaster(PseudoClock):
         # When should the RFBlaster wait for a trigger?
         quantised_trigger_times = array([c.tT*1e6*t + 0.5 for t in self.trigger_times], dtype=int64)
         for dds in range(2):
-            abs_table = zeros((len(self.times), 4),dtype=int64)
+            abs_table = zeros((len(self.times[self.clock_type]), 4),dtype=int64)
             abs_table[:,0] = quantised_data['time']
             abs_table[:,1] = quantised_data['amp%d'%dds]
             abs_table[:,2] = quantised_data['freq%d'%dds]
@@ -1891,7 +1963,7 @@ class PineBlaster(PseudoClock):
         PseudoClock.generate_code(self, hdf5_file)
         group = hdf5_file['devices'].create_group(self.name)     
         # Store the clock tick times:
-        group.create_dataset('FAST_CLOCK',compression=config.compression, data=self.times)
+        group.create_dataset('FAST_CLOCK',compression=config.compression, data=self.times[self.clock_type])
         
         # compress clock instructions with the same period: This will
         # halve the number of instructions roughly, since the PineBlaster
@@ -1997,7 +2069,7 @@ class NovaTechDDS9M(IntermediateDevice):
         if self.clock_type == 'slow clock':
             times = self.parent_device.change_times
         else:
-            times = self.parent_device.times
+            times = self.parent_device.times[self.clock_type]
         out_table = zeros(len(times),dtype=dtypes)
         out_table['freq0'].fill(1)
         out_table['freq1'].fill(1)
