@@ -824,11 +824,11 @@ class PulseBlasterUSB(PulseBlaster_No_DDS):
     clock_resolution = 20e-9
     n_flags = 24
     
-# class PulseBlasterESRPro500(PulseBlaster_No_DDS):
-    # description = 'SpinCore PulseBlaster ESR-PRO-500'
-    # clock_limit = 50.0e6 # can probably go faster
-    # clock_resolution = 4e-9
-    # n_flags = 21
+class PulseBlasterESRPro500(PulseBlaster_No_DDS):
+    description = 'SpinCore PulseBlaster ESR-PRO-500'
+    clock_limit = 50.0e6 # can probably go faster
+    clock_resolution = 4e-9
+    n_flags = 21
     
         
 class Output(Device):
