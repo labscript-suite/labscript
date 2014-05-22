@@ -336,11 +336,12 @@ class PseudoClock(Device):
             for output in outputs:
                 # Check if output is sweeping and has highest clock rate
                 # so far. If so, store its clock rate to max_rate:
-                if hasattr(output,'timeseries') and isinstance(output.timeseries[i],dict) and output.timeseries[i]['clock rate'] > maxrate:
+                if hasattr(output,'timeseries') and isinstance(output.timeseries[i],dict):
                     # find out what clock this is on so we can enable it
                     enabled_clocks.append(output.parent_device.clock_type)
-                    # It does have the highest clock rate? Then store that rate to max_rate:
-                    maxrate = output.timeseries[i]['clock rate']
+                    if output.timeseries[i]['clock rate'] > maxrate:
+                        # It does have the highest clock rate? Then store that rate to max_rate:
+                        maxrate = output.timeseries[i]['clock rate']
             if maxrate:
                 # round to the nearest clock rate that the pseudoclock can actually support:
                 period = 1/maxrate
