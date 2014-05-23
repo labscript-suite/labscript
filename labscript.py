@@ -317,10 +317,11 @@ class PseudoClock(Device):
         all_times = {}
         clocks_in_use = []
         for output in outputs:
-            if output.parent_device.clock_type not in all_times:
-                all_times[output.parent_device] = []
-            if output.parent_device.clock_type not in clocks_in_use:
-                clocks_in_use.append(output.parent_device.clock_type)
+            if output.parent_device.clock_type != 'slow clock':            
+                if output.parent_device.clock_type not in all_times:
+                    all_times[output.parent_device.clock_type] = []
+                if output.parent_device.clock_type not in clocks_in_use:
+                    clocks_in_use.append(output.parent_device.clock_type)
         
         clock = []
         for i, time in enumerate(change_times):
@@ -368,9 +369,9 @@ class PseudoClock(Device):
                 
                 for a_clock in clocks_in_use:
                     if a_clock in enabled_clocks:  
-                        all_times[clock].append(ticks)
+                        all_times[a_clock].append(ticks)
                     else:
-                        all_times[clock].append(time)
+                        all_times[a_clock].append(time)
                 if n_ticks > 1:
                     # If n_ticks is only one, then this step doesn't do
                     # anything, it has reps=0. So we should only include
@@ -390,7 +391,8 @@ class PseudoClock(Device):
                 # hasn't ticked already, that is if n_ticks = 1.
                 clock.append({'start': ticks[-1], 'reps': 1, 'step': change_times[i+1] - ticks[-1],'slow_clock_tick': True if n_ticks == 1 else False, 'fast_clock':enabled_clocks})
             else:
-                all_times.append(time)
+                for a_clock in clocks_in_use:
+                    all_times[a_clock].append(time)
                 try: 
                     # If there was no ramping, here is a single clock tick:
                     clock.append({'start': time, 'reps': 1, 'step': change_times[i+1] - time,'slow_clock_tick':True, 'fast_clock':'all'})
@@ -441,7 +443,10 @@ class PseudoClock(Device):
             output.make_timeseries(change_times)
         all_times, clock = self.expand_change_times(change_times, outputs)
         for output in outputs:
-            output.expand_timeseries(all_times[output.parent_device.clock_type])
+            if output.parent_device.clock_type == 'slow clock':
+                output.expand_timeseries(change_times)
+            else:
+                output.expand_timeseries(all_times[output.parent_device.clock_type])
         self.clock = clock
         self.change_times = fastflatten(change_times, float)
         
@@ -544,7 +549,7 @@ class PulseBlaster(PseudoClock):
     def flag_is_clock(self, flag):
         if type(self.slow_clock_flag) == list and flag in self.slow_clock_flag:
             return True
-        elif type(self.fast_clock_flag == list and flag in self.fast_clock_flag:
+        elif type(self.fast_clock_flag) == list and flag in self.fast_clock_flag:
             return True
         else:
             return False        
@@ -678,9 +683,12 @@ class PulseBlaster(PseudoClock):
         dds_enables = [0]*2
         
         if self.fast_clock_flag is not None:
-            flags[self.fast_clock_flag] = 0
+            for fast_flag in self.fast_clock_flag:
+                flags[fast_flag] = 0
         if self.slow_clock_flag is not None:
-            flags[self.slow_clock_flag] = 0 
+            for slow_flag in self.slow_clock_flag:
+                flags[slow_flag] = 0
+            
         pb_inst.append({'freqs': freqregs, 'amps': ampregs, 'phases': phaseregs, 'enables':dds_enables,
                         'flags': ''.join([str(flag) for flag in flags]), 'instruction': 'STOP',
                         'data': 0, 'delay': 10.0/self.clock_limit*1e9})
@@ -719,7 +727,7 @@ class PulseBlaster(PseudoClock):
                 dds_enables[ddsnumber] = output.gate.raw_output[i]
             if self.fast_clock_flag is not None:
                 for fast_flag in self.fast_clock_flag:
-                    if (type(instruction['fast_clock']) == list and 'flad %d'%fast_flag in instruction['fast_clock']) or instruction['fast_clock'] == 'all':
+                    if (type(instruction['fast_clock']) == list and 'flag %d'%fast_flag in instruction['fast_clock']) or instruction['fast_clock'] == 'all':
                         flags[fast_flag] = 1
                     else:
                         flags[fast_flag] = 0
@@ -1403,9 +1411,9 @@ class IntermediateDevice(Device):
     def __init__(self, name, parent_device,clock_type):
         self.name = name
         clock_valid = False
-        if isinstance(parent_device, PulseBlaster) 
+        if isinstance(parent_device, PulseBlaster) :
             if clock_type == 'fast clock':
-                clock_type == parent_device.extra_clocks[0]
+                clock_type = parent_device.extra_clocks[0]
             if clock_type in parent_device.extra_clocks:
                 clock_valid = True
         if not clock_type in ['fast clock', 'slow clock'] and not clock_valid:
