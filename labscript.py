@@ -730,7 +730,7 @@ class PulseBlaster(PseudoClock):
                     if (type(instruction['fast_clock']) == list and 'flag %d'%fast_flag in instruction['fast_clock']) or instruction['fast_clock'] == 'all':
                         flags[fast_flag] = 1
                     else:
-                        flags[fast_flag] = 0
+                        flags[fast_flag] = 1 if instruction['slow_clock_tick'] else 0
             if self.slow_clock_flag is not None:
                 for slow_flag in self.slow_clock_flag:
                     flags[slow_flag] = 1 if instruction['slow_clock_tick'] else 0
