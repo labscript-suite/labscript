@@ -1217,7 +1217,7 @@ class AnalogQuantity(Output):
         if trunc is not False:
             if trunc_type == 'linear':
                 trunc_duration = duration*log((initial-zero)/(trunc-zero))/log((initial-zero)/(final-zero))
-            if trunc_type == 'exponential':
+            elif trunc_type == 'exponential':
                 trunc_duration = trunc * duration
                 # final = functions.exp_ramp(0, duration, initial, final, zero)(trunc_duration)
             else:
@@ -1229,11 +1229,16 @@ class AnalogQuantity(Output):
         
         return trunc_duration
      
-    def exp_ramp_t(self, t, duration, initial, final, time_constant, samplerate, trunc=False, units=None):
+    def exp_ramp_t(self, t, duration, initial, final, time_constant, samplerate, trunc=False, trunc_type='linear', units=None):
         # Exponential ramp set by the time constant. No truncation yet!
         zero = (final-initial*exp(-duration/time_constant)) / (1-exp(-duration/time_constant))
         if trunc is not False:
-            trunc_duration = time_constant * log((initial-zero)/(trunc-zero))
+            if trunc_type == 'linear':
+                trunc_duration = time_constant * log((initial-zero)/(trunc-zero))
+            elif trunc_type == 'exponential':
+                trunc_duration = trunc * duration
+            else:
+                raise LabscriptError('Truncation type for exp_ramp_t not supported. Must be either linear or exponential.')
         else:
             trunc_duration = duration
         self.add_instruction(t, {'function': functions.exp_ramp_t(duration, initial, final, time_constant), 'description':'exponential ramp with time consntant',
