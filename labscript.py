@@ -966,7 +966,7 @@ class IntermediateDevice(Device):
     def __init__(self, name, parent_device,clock_type):
         self.name = name
         clock_valid = False
-        if isinstance(parent_device, PulseBlaster) :
+        if hasattr(parent_device, 'extra_clocks') :
             if clock_type == 'fast clock':
                 clock_type = parent_device.extra_clocks[0]
             if clock_type in parent_device.extra_clocks:
