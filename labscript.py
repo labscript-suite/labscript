@@ -1408,7 +1408,7 @@ def labscript_init(hdf5_filename, labscript_file=None, new=False):
         # defer file creation until generate_code(), so that filesystem
         # is not littered with h5 files when the user merely imports
         # labscript
-        return
+        pass
     elif not os.path.exists(hdf5_filename):
         raise LabscriptError('Provided hdf5 filename %s doesn\'t exist.'%hdf5_filename)
     else:
