@@ -451,7 +451,7 @@ class PseudoClock(Device):
         self.change_times = fastflatten(change_times, float)
         
         # Dummy empty arrays in case there are no outputs on one or both clocks:
-        self.times = {'fast clock':array([]), 'slow clock':array([])}
+        self.times = {}
         for clock_type, time_array in all_times.items():
             self.times[clock_type] = fastflatten(time_array,float)
         
