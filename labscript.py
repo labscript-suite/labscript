@@ -23,8 +23,8 @@ from pylab import *
 import functions
 try:
     from labscript_utils.unitconversions import *
-except:
-    print 'Failed to import unit conversion classes'
+except ImportError:
+    sys.stderr.write('Warning: Failed to import unit conversion classes\n')
 
 ns = 1e-9
 us = 1e-6
@@ -117,14 +117,21 @@ def fastflatten(inarray, dtype):
 class Device(object):
     description = 'Generic Device'
     allowed_children = None
-    def __init__(self,name,parent_device,connection):
+    def __init__(self,name,parent_device,connection, call_parents_add_device=True):
         if self.allowed_children is None:
             allowed_children = [Device]
         self.name = name
         self.parent_device = parent_device
         self.connection = connection
         self.child_devices = []
-        if parent_device:
+        if parent_device and call_parents_add_device:
+            # This is optional by keyword argument, so that subclasses
+            # overriding __init__ can call call Device.__init__ early
+            # on and only call self.parent_device.add_device(self)
+            # a bit later, allowing for additional code in
+            # between. If setting call_parents_add_device=False,
+            # self.parent_device.add_device(self) *must* be called later
+            # on, it is not optional.
             parent_device.add_device(self)
         
         # Check that the name doesn't already exist in the python namespace
@@ -1066,34 +1073,50 @@ class DDS(Device):
     def __init__(self, name, parent_device, connection, digital_gate={}, freq_limits=None, freq_conv_class=None, freq_conv_params={},
                  amp_limits=None, amp_conv_class=None, amp_conv_params={}, phase_limits=None, phase_conv_class=None, phase_conv_params = {}):
         self.clock_type = parent_device.clock_type
-        Device.__init__(self, name, parent_device, connection)
         
-        if isinstance(self.parent_device, NovaTechDDS9M):
-            # create some default unit converstion classes if none are specified
+        # Here we set call_parents_add_device=False so that we
+        # can do additional initialisation before manually calling
+        # self.parent_device.add_device(self). This allows the parent's
+        # add_device method to perform checks based on the code below,
+        # whilst still providing us with the checks and attributes that
+        # Device.__init__ gives us in the meantime.
+        Device.__init__(self, name, parent_device, connection, call_parents_add_device=False)
+                
+        # Ask the parent device if it has default unit conversion classes it would like us to use:
+        if hasattr(parent_device, 'get_default_unit_conversion_classes'):
+            classes = self.parent_device.get_default_unit_conversion_classes(self)
+            default_freq_conv, default_amp_conv, default_phase_conv = classes
+            # If the user has not overridden, use these defaults. If
+            # the parent does not have a default for one or more of amp,
+            # freq or phase, it should return None for them.
             if freq_conv_class is None:
-                if 'NovaTechDDS9mFreqConversion' in globals():
-                    freq_conv_class = NovaTechDDS9mFreqConversion
+                freq_conv_class = default_freq_conv
             if amp_conv_class is None:
-                if 'NovaTechDDS9mAmpConversion' in globals():
-                    amp_conv_class = NovaTechDDS9mAmpConversion
+                amp_conv_class = default_amp_conv
+            if phase_conv_class is None:
+                phase_conv_class = default_phase_conv
         
         self.frequency = AnalogQuantity(self.name + '_freq', self, 'freq', freq_limits, freq_conv_class, freq_conv_params)
         self.amplitude = AnalogQuantity(self.name + '_amp', self, 'amp', amp_limits, amp_conv_class, amp_conv_params)
         self.phase = AnalogQuantity(self.name + '_phase', self, 'phase', phase_limits, phase_conv_class, phase_conv_params)
+
         self.gate = None
-        if isinstance(self.parent_device, NovaTechDDS9M):
-            self.frequency.default_value = 0.1
-            if 'device' in digital_gate and 'connection' in digital_gate:            
-                self.gate = DigitalOut(self.name + '_gate', digital_gate['device'], digital_gate['connection'])
-            # Did they only put one key in the dictionary, or use the wrong keywords?
-            elif len(digital_gate) > 0:
-                raise LabscriptError('You must specify the "device" and "connection" for the digital gate of %s.' % (self.name))
-        elif isinstance(self.parent_device, PulseBlaster):
-            if 'device' in digital_gate and 'connection' in digital_gate: 
-                raise LabscriptError('You cannot specify a digital gate for a DDS connected to %s. The digital gate is always internal to the Pulseblaster.' % (self.parent_device.name))
-            self.gate = DigitalQuantity(self.name + '_gate', self, 'gate')
-            
-            
+        if 'device' in digital_gate and 'connection' in digital_gate:            
+            self.gate = DigitalOut(name + '_gate', digital_gate['device'], digital_gate['connection'])
+        # Did they only put one key in the dictionary, or use the wrong keywords?
+        elif len(digital_gate) > 0:
+            raise LabscriptError('You must specify the "device" and "connection" for the digital gate of %s.' % (self.name))
+        
+        # If the user has not specified a gate, and the parent device
+        # supports gating of DDS output, it should add a gate to this
+        # instance in its add_device method, which is called below. If
+        # they *have* specified a gate device, but the parent device
+        # has its own gating (such as the PulseBlaster), it should
+        # check this and throw an error in its add_device method. See
+        # labscript_devices.PulseBlaster.PulseBlaster.add_device for an
+        # example of this.
+        self.parent_device.add_device(self)
+        
     def setamp(self, t, value, units=None):
         self.amplitude.constant(t, value, units)
         
@@ -1104,24 +1127,22 @@ class DDS(Device):
         self.phase.constant(t, value, units)
         
     def enable(self, t):
-        if self.gate:
-            self.gate.go_high(t)
-        else:
+        if self.gate is None:
             raise LabscriptError('DDS %s does not have a digital gate, so you cannot use the enable(t) method.' % (self.name))
-            
+        self.gate.go_high(t)
+
     def disable(self, t):
-        if self.gate:
-            self.gate.go_low(t)
-        else:
+        if self.gate is None:
             raise LabscriptError('DDS %s does not have a digital gate, so you cannot use the disable(t) method.' % (self.name))
+        self.gate.go_low(t)
             
     def pulse(self, duration, amplitude, frequency, phase=None, print_summary=True):
         if print_summary:
             print_time(t, '%s pulse at %.4f MHz for %.3f ms' % (self.name, frequency/MHz, duration/ms))
         self.setamp(t, amplitude)
-        if not frequency == None:
+        if frequency is not None:
             self.setfreq(t, frequency)
-        if not phase == None:
+        if phase is not None:
             self.setphase(t, phase)
         if amplitude != 0:
             self.enable(t)
@@ -1129,70 +1150,51 @@ class DDS(Device):
         self.setamp(t, 0)
         return duration
 
-        
+
 class StaticDDS(Device):
     description = 'Static RF'
     allowed_children = [StaticAnalogQuantity,DigitalOut,StaticDigitalOut]
     generation = 2
     def __init__(self,name,parent_device,connection,digital_gate = {},freq_limits = None,freq_conv_class = None,freq_conv_params = {},amp_limits=None,amp_conv_class = None,amp_conv_params = {},phase_limits=None,phase_conv_class = None,phase_conv_params = {}):
         self.clock_type = parent_device.clock_type
-        Device.__init__(self,name,parent_device,connection)
-        
+        # We tell Device.__init__ to not call
+        # self.parent.add_device(self), we'll do that ourselves later
+        # after further intitialisation, so that the parent can see the
+        # freq/amp/phase objects and manipulate or check them from within
+        # its add_device method.
+        Device.__init__(self,name,parent_device,connection, call_parents_add_device=False)
         self.frequency = StaticAnalogQuantity(self.name+'_freq',self,'freq',freq_limits,freq_conv_class,freq_conv_params)
+        self.amplitude = StaticAnalogQuantity(self.name+'_amp',self,'amp',amp_limits,amp_conv_class,amp_conv_params)
+        self.phase = StaticAnalogQuantity(self.name+'_phase',self,'phase',phase_limits,phase_conv_class,phase_conv_params)        
         
-        if not isinstance(self.parent_device,PhaseMatrixQuickSyn):
-            self.amplitude = StaticAnalogQuantity(self.name+'_amp',self,'amp',amp_limits,amp_conv_class,amp_conv_params)
-            self.phase = StaticAnalogQuantity(self.name+'_phase',self,'phase',phase_limits,phase_conv_class,phase_conv_params)        
+        if 'device' in digital_gate and 'connection' in digital_gate:            
+            self.gate = DigitalOut(self.name+'_gate',digital_gate['device'],digital_gate['connection'])
+        # Did they only put one key in the dictionary, or use the wrong keywords?
+        elif len(digital_gate) > 0:
+            raise LabscriptError('You must specify the "device" and "connection" for the digital gate of %s.'%(self.name))
+        # Now we call the parent's add_device method. This is a must, since we didn't do so earlier from Device.__init__.
+        self.parent_device.add_device(self)
         
-        
-        
-        if isinstance(self.parent_device,NovaTechDDS9M):
-            self.frequency.default_value = 0.1
-            if 'device' in digital_gate and 'connection' in digital_gate:            
-                self.gate = DigitalOut(self.name+'_gate',digital_gate['device'],digital_gate['connection'])
-            # Did they only put one key in the dictionary, or use the wrong keywords?
-            elif len(digital_gate) > 0:
-                raise LabscriptError('You must specify the "device" and "connection" for the digital gate of %s.'%(self.name))
-        
-        elif isinstance(self.parent_device,PhaseMatrixQuickSyn):
-            self.frequency.default_value = 0.5e9
-            self.gate = StaticDigitalOut(self.name+'_gate',self,'gate')
-            
-            
     def setamp(self,value,units=None):
-        if isinstance(self.parent_device,PhaseMatrixQuickSyn):
-            raise LabscriptError('You cannot set the amplitude of the QuickSyn')
-        else:
-            self.amplitude.constant(value,units)
+        self.amplitude.constant(value,units)
         
     def setfreq(self,value,units=None):
         self.frequency.constant(value,units)
         
     def setphase(self,value,units=None):
-        if isinstance(self.parent_device,PhaseMatrixQuickSyn):
-            raise LabscriptError('You cannot set the phase of the QuickSyn')
-        else:
-            self.phase.constant(value,units) 
+        self.phase.constant(value,units) 
             
     def enable(self,t=None):        
-        if isinstance(self.parent_device,PhaseMatrixQuickSyn):
-            self.gate.go_high()
-        
+        if self.gate:
+            self.gate.go_high(t)
         else:
-            if self.gate:
-                self.gate.go_high(t)
-            else:
-                raise LabscriptError('DDS %s does not have a digital gate, so you cannot use the enable(t) method.'%(self.name))
-                            
+            raise LabscriptError('DDS %s does not have a digital gate, so you cannot use the enable(t) method.'%(self.name))
+                        
     def disable(self,t=None):
-        if isinstance(self.parent_device,PhaseMatrixQuickSyn):
-            self.gate.go_low()
-        
+        if self.gate:
+            self.gate.go_low(t)
         else:
-            if self.gate:
-                self.gate.go_low(t)
-            else:
-                raise LabscriptError('DDS %s does not have a digital gate, so you cannot use the disable(t) method.'%(self.name))
+            raise LabscriptError('DDS %s does not have a digital gate, so you cannot use the disable(t) method.'%(self.name))
               
 class LabscriptError(Exception):
     pass
