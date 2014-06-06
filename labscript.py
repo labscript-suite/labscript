@@ -161,22 +161,34 @@ class Device(object):
             raise LabscriptError('Devices of type %s cannot be attached to devices of type %s.'%(device.description,self.description))
     
     @property    
-    def pseudoclock(self):
+    def pseudoclock_device(self):
         if isinstance(self, PseudoclockDevice):
-            return self
+            return self 
         parent = self.parent_device
         try:
             while not isinstance(parent,PseudoclockDevice):
                 parent = parent.parent_device
             return parent
         except Exception as e:
-            raise LabscriptError('Couldn\'t find parent pseudoclock of %s, what\'s going on? Original error was %s.'%(self.name, str(e)))
+            raise LabscriptError('Couldn\'t find parent pseudoclock device of %s, what\'s going on? Original error was %s.'%(self.name, str(e)))
+    
+    @property 
+    def parent_clock_line(self):
+        if isinstance(self, ClockLine):
+            return self
+        parent = self.parent_device
+        try:
+            while not isinstance(parent,ClockLine):
+                parent = parent.parent_device
+            return parent
+        except Exception as e:
+            raise LabscriptError('Couldn\'t find parent ClockLine of %s, what\'s going on? Original error was %s.'%(self.name, str(e)))
     
     @property
     def t0(self):
         """The earliest time output can be commanded from this device at the start of the experiment.
-        This is nonzeo on secondary pseudoclocks due to triggering delays."""
-        parent = self.pseudoclock
+        This is nonzeo on secondary pseudoclock devices due to triggering delays."""
+        parent = self.pseudoclock_device
         if parent.is_master_pseudoclock:
             return 0
         else:
@@ -221,8 +233,8 @@ class PseudoclockDevice(Device):
             connection = None
             for device in compiler.inventory:
                 if isinstance(device,PseudoclockDevice) and device.is_master_pseudoclock:
-                    raise LabscriptError('There is already a master pseudoclock: %s.'%device.name + 
-                                         'There cannot be multiple master pseudoclocks - please provide a trigger_device for one of them.')
+                    raise LabscriptError('There is already a master pseudoclock device: %s.'%device.name + 
+                                         'There cannot be multiple master pseudoclock devices - please provide a trigger_device for one of them.')
         else:
             # Instantiate a Trigger object to handle the generation
             # of edges for triggering this clock.  A trigger object is
@@ -230,9 +242,9 @@ class PseudoclockDevice(Device):
             self.trigger_device = Trigger(name + '_trigger', trigger_device, trigger_connection, self.trigger_edge_type)
             parent_device = self.trigger_device
             connection = 'trigger'
-            # Ensure that the parent pseudoclock is, in fact, the master pseudoclock.
-            if not trigger_device.pseudoclock.is_master_pseudoclock:
-                raise LabscriptError('All secondary pseudoclocks must be triggered by a device being clocked by the master pseudoclock.' +
+            # Ensure that the parent pseudoclock device is, in fact, the master pseudoclock device.
+            if not trigger_device.pseudoclock_device.is_master_pseudoclock:
+                raise LabscriptError('All secondary pseudoclock devices must be triggered by a device being clocked by the master pseudoclock device.' +
                                      'Pseudoclocks triggering each other in series is not supported.')
         Device.__init__(self, name, parent_device, connection)
         self.trigger_times = []
@@ -448,7 +460,7 @@ class Pseudoclock(Device):
             
             # what's the fastest clock rate?
             maxrate = 0
-            local_clock_limit = 1.0/self.clock_resolution # the Pseudoclock clock limit
+            local_clock_limit = 1.0/self.clock_limit # the Pseudoclock clock limit
             for clock_line in enabled_clocks:
                 for output in outputs_by_clockline[clock_line]:
                     # Check if output is sweeping and has highest clock rate
@@ -604,9 +616,10 @@ class ClockLine(Device):
     
     _clock_limit = None
     
-    def __init__(self, name, pseudoclock, connection):
+    def __init__(self, name, pseudoclock, connection, ramping_allowed = True):
         # TODO: Verify that connection is  valid connection of Pseudoclock.parent_device (the PseudoclockDevice)
         Device.__init__(self, name, pseudoclock, connection)
+        self.ramping_allowed = ramping_allowed
         
     def add_device(self, device):
         Device.add_device(self, device)
@@ -635,7 +648,6 @@ class Output(Device):
     def __init__(self,name,parent_device,connection,limits = None,unit_conversion_class = None,unit_conversion_parameters = None):
         self.instructions = {}
         self.ramp_limits = [] # For checking ramps don't overlap
-        self.clock_type = parent_device.clock_type
         if not unit_conversion_parameters:
             unit_conversion_parameters = {}
         self.unit_conversion_class = unit_conversion_class
@@ -667,14 +679,14 @@ class Output(Device):
     
     @property
     def clock_limit(self):
-        parent = self.pseudoclock
+        parent = self.clock_line
         return parent.clock_limit
     
     @property
     def trigger_delay(self):
         """The earliest time output can be commanded from this device after a trigger.
         This is nonzeo on secondary pseudoclocks due to triggering delays."""
-        parent = self.pseudoclock
+        parent = self.pseudoclock_device
         if parent.is_master_pseudoclock:
             return 0
         else:
@@ -688,7 +700,7 @@ class Output(Device):
         a minimum time has elapsed: compiler.wait_delay. This is so that if a wait is 
         extremely short, the child clock is actually ready for the trigger.
         """
-        delay = compiler.wait_delay if self.pseudoclock.is_master_pseudoclock else 0
+        delay = compiler.wait_delay if self.pseudoclock_device.is_master_pseudoclock else 0
         return self.trigger_delay + delay
             
     def apply_calibration(self,value,units):
@@ -725,7 +737,7 @@ class Output(Device):
         # Check that time is not negative or too soon after t=0:
         if time < self.t0:
             err = ' '.join([self.description, self.name, 'has an instruction at t=%ss,'%str(time),
-                 'Due to the delay in triggering its pseudoclock, the earliest output possible is at t=%s.'%str(self.t0)])
+                 'Due to the delay in triggering its pseudoclock device, the earliest output possible is at t=%s.'%str(self.t0)])
             raise LabscriptError(err)
         # Check that this doesn't collide with previous instructions:
         if time in self.instructions.keys():
@@ -737,8 +749,8 @@ class Output(Device):
         # Check that ramps don't collide
         if isinstance(instruction,dict):
             # No ramps allowed if this output is on a slow clock:
-            if self.clock_type == 'slow clock':
-                raise LabscriptError('%s %s is on a slow clock.'%(self.description, self.name) + 
+            if not self.parent_clock_line.ramping_allowed:
+                raise LabscriptError('%s %s is on clockline that does not support ramping. '%(self.description, self.name) + 
                                      'It cannot have a function ramp as an instruction.')
             for start, end in self.ramp_limits:
                 if start < time < end or start < instruction['end time'] < end:
@@ -879,9 +891,9 @@ class Output(Device):
         should update to on each clock tick, and are the raw values that
         should be used to program the output device.  They are stored
         in self.raw_output."""
-        # If this output is on the slow clock, then its timeseries should
+        # If this output is not ramping, then its timeseries should
         # not be expanded. It's already as expanded as it'll get.
-        if self.clock_type == 'slow clock':
+        if not self.parent_clock_line.ramping_allowed:
             self.raw_output = fastflatten(self.timeseries,self.dtype)
             return
         outputarray = []
@@ -1155,7 +1167,7 @@ class IntermediateDevice(Device):
             else:
                 parent_device_name = parent_device.name
             raise LabscriptError('Error instantiating device %s. The parent (%s) must be an instance of ClockLine.'%(name, parent_device_name)
-        Device.__init__(self, name, parent_device, 'internal')
+        Device.__init__(self, name, parent_device, 'internal') # This 'internal' should perhaps be more descriptive?
     
         
 class Shutter(DigitalOut):
@@ -1231,8 +1243,8 @@ class WaitMonitor(Trigger):
             raise LabscriptError("Cannot instantiate a second WaitMonitor: there can be only be one in the experiment")
         compiler.wait_monitor = self
         Trigger.__init__(self, name, parent_device, connection, trigger_edge_type='rising')
-        if not parent_device.pseudoclock.is_master_pseudoclock:
-            raise LabscriptError('The output device for monitoring wait durations must be clocked by the master pseudoclock')
+        if not parent_device.pseudoclock_device.is_master_pseudoclock:
+            raise LabscriptError('The output device for monitoring wait durations must be clocked by the master pseudoclock device')
         # TODO: acquisition_device must be the same as timeout_device at the moment (given the current BLACS implementation)
         self.acquisition_device = acquisition_device
         self.acquisition_connection = acquisition_connection 
