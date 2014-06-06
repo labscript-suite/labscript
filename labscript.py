@@ -162,11 +162,11 @@ class Device(object):
     
     @property    
     def pseudoclock(self):
-        if isinstance(self, PseudoClock):
+        if isinstance(self, PseudoclockDevice):
             return self
         parent = self.parent_device
         try:
-            while not isinstance(parent,PseudoClock):
+            while not isinstance(parent,PseudoclockDevice):
                 parent = parent.parent_device
             return parent
         except Exception as e:
@@ -203,9 +203,9 @@ class Device(object):
             device.generate_code(hdf5_file)
   
 
-class PseudoClock(Device):
-    description = 'Generic Pseudoclock'
-    allowed_children = [Device]
+class PseudoclockDevice(Device):
+    description = 'Generic Pseudoclock Device'
+    allowed_children = [Pseudoclock]
     generation = 0
     trigger_edge_type = 'rising'
     # How long after a trigger the next instruction is actually output:
@@ -220,7 +220,7 @@ class PseudoClock(Device):
             parent_device = None
             connection = None
             for device in compiler.inventory:
-                if isinstance(device,PseudoClock) and device.is_master_pseudoclock:
+                if isinstance(device,PseudoclockDevice) and device.is_master_pseudoclock:
                     raise LabscriptError('There is already a master pseudoclock: %s.'%device.name + 
                                          'There cannot be multiple master pseudoclocks - please provide a trigger_device for one of them.')
         else:
@@ -267,164 +267,7 @@ class PseudoClock(Device):
         else:
             self.trigger_device.trigger(t, duration)
             self.trigger_times.append(round(t + wait_delay,10))
-    
-    def collect_change_times(self, outputs):
-        """Asks all connected outputs for a list of times that they
-        change state. Takes the union of all of these times. Note
-        that at this point, a change from holding-a-constant-value
-        to ramping-through-values is considered a single state
-        change. The clocking times will be filled in later in the
-        expand_change_times function, and the ramp values filled in with
-        expand_timeseries."""
-        change_times = []
-        for output in outputs:
-            change_times.extend(output.get_change_times())
-        # Change to a set and back to get rid of duplicates:
-        change_times = list(set(change_times))
-        change_times.sort()
-        # Check that no two instructions are too close together:
-        for i, t in enumerate(change_times[:-1]):
-            dt = change_times[i+1] - t
-            if dt < 1.0/self.clock_limit:
-                raise LabscriptError('Commands have been issued to devices attached to %s at t= %s s and %s s. '%(self.name, str(t),str(change_times[i+1])) +
-                                     'One or more connected devices cannot support update delays shorter than %s sec.'%str(1.0/self.clock_limit))
-        # If the device has no children, we still need it to have a
-        # single instruction. So we'll add 0 as a change time:
-        if not change_times:
-            change_times.append(0)
-        # Also add the stop time as as change time. First check that it isn't too close to the time of the last instruction:
-        if not self.stop_time in change_times:
-            dt = self.stop_time - change_times[-1]
-            if abs(dt) < 1.0/self.clock_limit:
-                raise LabscriptError('The stop time of the experiment is t= %s s, but the last instruction for a device attached to %s is at t= %s s. '%( str(self.stop_time), self.name, str(change_times[-1])) +
-                                     'One or more connected devices cannot support update delays shorter than %s sec. Please set the stop_time a bit later.'%str(1.0/self.clock_limit))
-            change_times.append(self.stop_time)
-        # include trigger times in change_times, so that pseudoclocks always have an instruction immediately following a wait:
-        change_times.extend(self.trigger_times)
-        # Get rid of duplicates if trigger times were already in the list:
-        change_times = list(set(change_times))
-        # Sort change times so self.stop_time will be in the middle
-        # somewhere if it is prior to the last actual instruction. Whilst
-        # this means the user has set stop_time in error, not catching
-        # the error here allows it to be caught later by the specific
-        # device that has more instructions after self.stop_time. Thus
-        # we provide the user with sligtly more detailed error info.
-        change_times.sort()
-        return change_times
-    
-    def expand_change_times(self, change_times, outputs):
-        """For each time interval delimited by change_times, constructs
-        an array of times at which the clock for this device needs to
-        tick. If the interval has all outputs having constant values,
-        then only the start time is stored.  If one or more outputs are
-        ramping, then the clock ticks at the maximum clock rate requested
-        by any of the outputs. Also produces a higher level description
-        of the clocking; self.clock. This list contains the information
-        that facilitates programming a pseudo clock using loops."""
-        all_times = {}
-        clocks_in_use = []
-        for output in outputs:
-            if output.parent_device.clock_type != 'slow clock':            
-                if output.parent_device.clock_type not in all_times:
-                    all_times[output.parent_device.clock_type] = []
-                if output.parent_device.clock_type not in clocks_in_use:
-                    clocks_in_use.append(output.parent_device.clock_type)
-        
-        clock = []
-        for i, time in enumerate(change_times):
-            if time in self.trigger_times[1:]:
-                # A wait instruction:
-                clock.append('WAIT')
-                
-            # list of enabled clocks
-            enabled_clocks = []
             
-            # what's the fastest clock rate?
-            maxrate = 0
-            for output in outputs:
-                # Check if output is sweeping and has highest clock rate
-                # so far. If so, store its clock rate to max_rate:
-                if hasattr(output,'timeseries') and isinstance(output.timeseries[i],dict):
-                    # find out what clock this is on so we can enable it
-                    enabled_clocks.append(output.parent_device.clock_type)
-                    if output.timeseries[i]['clock rate'] > maxrate:
-                        # It does have the highest clock rate? Then store that rate to max_rate:
-                        maxrate = output.timeseries[i]['clock rate']
-            if maxrate:
-                # round to the nearest clock rate that the pseudoclock can actually support:
-                period = 1/maxrate
-                quantised_period = period/self.clock_resolution
-                quantised_period = round(quantised_period)
-                period = quantised_period*self.clock_resolution
-                maxrate = 1/period
-            if maxrate > self.clock_limit:
-                raise LabscriptError('At t = %s sec, a clock rate of %s Hz was requested. '%(str(time),str(maxrate)) + 
-                                    'One or more devices connected to %s cannot support clock rates higher than %sHz.'%(str(self.name),str(self.clock_limit)))
-                
-            if maxrate:
-                # If there was ramping at this timestep, how many clock ticks fit before the next instruction?
-                n_ticks, remainder = divmod((change_times[i+1] - time)*maxrate,1)
-                n_ticks = int(n_ticks)
-                # Can we squeeze the final clock cycle in at the end?
-                if remainder and remainder/float(maxrate) >= 1/float(self.clock_limit):
-                    # Yes we can. Clock speed will be as
-                    # requested. Otherwise the final clock cycle will
-                    # be too long, by the fraction 'remainder'.
-                    n_ticks += 1
-                duration = n_ticks/float(maxrate) # avoiding integer division
-                ticks = linspace(time,time + duration,n_ticks,endpoint=False)
-                
-                for a_clock in clocks_in_use:
-                    if a_clock in enabled_clocks:  
-                        all_times[a_clock].append(ticks)
-                    else:
-                        all_times[a_clock].append(time)
-                if n_ticks > 1:
-                    # If n_ticks is only one, then this step doesn't do
-                    # anything, it has reps=0. So we should only include
-                    # it if n_ticks > 1.
-                    if n_ticks > 2:
-                        #If there is more than one clock tick here,
-                        #then we split the ramp into an initial clock
-                        #tick, during which the slow clock ticks, and
-                        #the rest of the ramping time, during which the
-                        #slow clock does not tick.
-                        clock.append({'start': time, 'reps': 1, 'step': 1/float(maxrate),'slow_clock_tick':True, 'fast_clock':enabled_clocks})
-                        clock.append({'start': time + 1/float(maxrate), 'reps': n_ticks-2, 'step': 1/float(maxrate),'slow_clock_tick':False, 'fast_clock':enabled_clocks})
-                    else:
-                        clock.append({'start': time, 'reps': n_ticks-1, 'step': 1/float(maxrate),'slow_clock_tick':True, 'fast_clock':enabled_clocks})
-                # The last clock tick has a different duration depending
-                # on the next step. The slow clock must tick here if it
-                # hasn't ticked already, that is if n_ticks = 1.
-                clock.append({'start': ticks[-1], 'reps': 1, 'step': change_times[i+1] - ticks[-1],'slow_clock_tick': True if n_ticks == 1 else False, 'fast_clock':enabled_clocks})
-            else:
-                for a_clock in clocks_in_use:
-                    all_times[a_clock].append(time)
-                try: 
-                    # If there was no ramping, here is a single clock tick:
-                    clock.append({'start': time, 'reps': 1, 'step': change_times[i+1] - time,'slow_clock_tick':True, 'fast_clock':'all'})
-                except IndexError:
-                    if i != len(change_times) - 1:
-                        raise
-                    if self.stop_time > time:
-                        # There is no next instruction. Hold the last clock
-                        # tick until self.stop_time.
-                        raise Exception('This shouldn\'t happen -- stop_time should always be equal to the time of the last instruction. Please report a bug.')
-                        clock.append({'start': time, 'reps': 1, 'step': self.stop_time - time,'slow_clock_tick':True})
-                    # Error if self.stop_time has been set to less
-                    # than the time of the last instruction:
-                    elif self.stop_time < time:
-                        raise LabscriptError('%s %s has more instructions after the experiment\'s stop time.'%(self.description,self.name))
-                    # If self.stop_time is the same as the time of the last
-                    # instruction, then we'll get the last instruction
-                    # out still, so that the total number of clock
-                    # ticks matches the number of data points in the
-                    # Output.raw_output arrays. We'll make this last
-                    # cycle be at ten times the minimum step duration.
-                    else:
-                        clock.append({'start': time, 'reps': 1, 'step': 10.0/self.clock_limit,'slow_clock_tick':True, 'fast_clock':'all'})
-        return all_times, clock
-    
     def do_checks(self, outputs):
         """Basic error checking te ensure the user's instructions make sense"""
         for output in outputs:
@@ -441,32 +284,348 @@ class PseudoClock(Device):
             initial_trigger_time = self.trigger_times[0]
             self.trigger_times = [t - initial_trigger_time - i*self.trigger_delay for i, t in enumerate(self.trigger_times)]
                             
-    def generate_clock(self):
+    def generate_code(self, hdf5_file):
         outputs = self.get_all_outputs()
         self.do_checks(outputs)
         self.offset_instructions_from_trigger(outputs)
-        change_times = self.collect_change_times(outputs)
-        for output in outputs:
-            output.make_timeseries(change_times)
-        all_times, clock = self.expand_change_times(change_times, outputs)
-        for output in outputs:
-            if output.parent_device.clock_type == 'slow clock':
-                output.expand_timeseries(change_times)
-            else:
-                output.expand_timeseries(all_times[output.parent_device.clock_type])
-        self.clock = clock
-        self.change_times = fastflatten(change_times, float)
+        Device.generate_code(self, hdf5_file)
+    
+class Pseudoclock(Device):
+    description = 'Generic Pseudoclock'
+    allowed_children = [ClockLine]
+    generation = 0
+    
+    def __init__(self, name, pseudoclock_device, connection):
+        Device.__init__(self, name, pseudoclock_device, connection)
+        self.clock_resolution = pseudoclock_device.clock_resolution
         
-        # Dummy empty arrays in case there are no outputs on one or both clocks:
+    def add_device(self, device):
+        Device.add_device(self, device)
+        #TODO: Maybe verify here that device.connection (the ClockLine connection) is a valid connection of the parent PseudoClockDevice
+        #      Also see the same comment in ClockLine.__init__
+        # if device.connection not in self.clock_lines:
+            # self.clock_lines[
+
+    def collect_change_times(self, all_outputs, outputs_by_clockline):
+        """Asks all connected outputs for a list of times that they
+        change state. Takes the union of all of these times. Note
+        that at this point, a change from holding-a-constant-value
+        to ramping-through-values is considered a single state
+        change. The clocking times will be filled in later in the
+        expand_change_times function, and the ramp values filled in with
+        expand_timeseries."""
+        change_times = {}
+        all_change_times = []
+        ramps_by_clockline = {}
+        for clock_line, outputs in outputs_by_clockline.items():
+            change_times.setdefault(clock_line, [])
+            ramps_by_clockline.setdefault(clock_line, [])
+            for output in outputs:
+                output_change_times = output.get_change_times()
+                change_times[clock_line].extend(output_change_times)
+                all_change_times.extend(output_change_times)
+                ramps_by_clockline[clock_line].extend(output.get_ramp_times())
+        
+        # Change to a set and back to get rid of duplicates:
+        if not all_change_times:
+            all_change_times.append(0)
+        all_change_times.append(self.stop_time)
+        # include trigger times in change_times, so that pseudoclocks always have an instruction immediately following a wait:
+        all_change_times.extend(self.parent_device.trigger_times)
+        # Get rid of duplicates if trigger times were already in the list:
+        all_change_times = list(set(all_change_times))
+        all_change_times = list(set(all_change_times))
+        all_change_times.sort()
+        
+        # Check that the pseudoclock can handle updates this fast
+        for i, t in enumerate(all_change_times[:-1]):
+            dt = all_change_times[i+1] - t
+            if dt < 1.0/self.clock_limit:
+                raise LabscriptError('Commands have been issued to devices attached to %s at t= %s s and %s s. '%(self.name, str(t),str(all_change_times[i+1])) +
+                                     'This Pseudoclock cannot support update delays shorter than %s sec.'%(self.name, str(1.0/self.clock_limit)))
+        
+        ####################################################################################################
+        # Find out whether any other clockline has a change time during a ramp on another clockline.       #
+        # If it does, we need to let the ramping clockline know it needs to break it's loop at that time   #
+        ####################################################################################################
+        # convert all_change_times to a numpy array
+        all_change_times_numpy = array(all_change_times)
+        # Loop through each clockline
+        for clock_line, ramps in ramps_by_clockline.items():
+            # for each clockline, loop through the ramps on that clockline
+            for ramp_start_time, ramp_end_time in ramps:
+                # for each ramp, check to see if there is a change time in all_change_times which intersects
+                # with the ramp. If there is, add a change time into this clockline at that point
+                indices = np.where((ramp_start_time < all_change_times_numpy) & (all_change_times_numpy < ramp_end_time))
+                for idx in indices[0]:
+                    change_times[clock_line].append(all_change_times_numpy[idx])
+                
+        ####################################################################################################
+        # For each clockline, make sure we have a change time for triggers, stop_time, t=0 and             #
+        # check that no change tiems are too close together                                                #
+        ####################################################################################################
+        for clock_line, change_time_list in change_times.items():
+            # include trigger times in change_times, so that pseudoclocks always have an instruction immediately following a wait:
+            change_time_list.extend(self.parent_device.trigger_times)
+            # Get rid of duplicates if trigger times were already in the list:
+            change_time_list = list(set(change_time_list))
+            
+            change_time_list = list(set(change_time_list))
+            change_time_list.sort()
+        
+            # Check that no two instructions are too close together:
+            for i, t in enumerate(change_time_list[:-1]):
+                dt = change_time_list[i+1] - t
+                if dt < 1.0/clock_line.clock_limit:
+                    raise LabscriptError('Commands have been issued to devices attached to %s at t= %s s and %s s. '%(self.name, str(t),str(change_time_list[i+1])) +
+                                         'One or more connected devices on ClockLine %s cannot support update delays shorter than %s sec.'%(clock_line.name, str(1.0/clock_line.clock_limit)))
+            
+            # If the device has no children, we still need it to have a
+            # single instruction. So we'll add 0 as a change time:
+            if not change_time_list:
+                change_time_list.append(0)
+
+            # Also add the stop time as as change time. First check that it isn't too close to the time of the last instruction:
+            if not self.stop_time in change_time_list:
+                dt = self.stop_time - change_time_list[-1]
+                if abs(dt) < 1.0/clock_line.clock_limit:
+                    raise LabscriptError('The stop time of the experiment is t= %s s, but the last instruction for a device attached to %s is at t= %s s. '%( str(self.stop_time), self.name, str(change_time_list[-1])) +
+                                         'One or more connected devices cannot support update delays shorter than %s sec. Please set the stop_time a bit later.'%str(1.0/clock_line.clock_limit))
+                change_time_list.append(self.stop_time)
+                
+
+            # Sort change times so self.stop_time will be in the middle
+            # somewhere if it is prior to the last actual instruction. Whilst
+            # this means the user has set stop_time in error, not catching
+            # the error here allows it to be caught later by the specific
+            # device that has more instructions after self.stop_time. Thus
+            # we provide the user with sligtly more detailed error info.
+            change_time_list.sort()
+            
+        return all_change_times, change_times
+    
+    def expand_change_times(self, all_change_times, change_times, outputs_by_clockline):
+        """For each time interval delimited by change_times, constructs
+        an array of times at which the clock for this device needs to
+        tick. If the interval has all outputs having constant values,
+        then only the start time is stored.  If one or more outputs are
+        ramping, then the clock ticks at the maximum clock rate requested
+        by any of the outputs. Also produces a higher level description
+        of the clocking; self.clock. This list contains the information
+        that facilitates programming a pseudo clock using loops."""
+        all_times = {}
+        clocks_in_use = []
+        # for output in outputs:
+            # if output.parent_device.clock_type != 'slow clock':            
+                # if output.parent_device.clock_type not in all_times:
+                    # all_times[output.parent_device.clock_type] = []
+                # if output.parent_device.clock_type not in clocks_in_use:
+                    # clocks_in_use.append(output.parent_device.clock_type)
+        
+        clock = []
+        clock_line_current_indices = {}
+        for clock_line, outputs in outputs_by_clockline.items():
+            clock_line_current_indices[clock_line] = 0
+            all_times[clock_line] = []
+        
+        # iterate over all change times
+        for i, time in enumerate(all_change_times):
+            if time in self.trigger_times[1:]:
+                # A wait instruction:
+                clock.append('WAIT')
+                
+            # list of enabled clocks
+            enabled_clocks = []
+            
+            # update clock_line indices
+            for clock_line in clock_line_indices:
+                while change_times[clock_line][clock_line_indices[clock_line]] < time:
+                    clock_line_indices[clock_line] += 1
+                    
+                # Let's work out which clock_lines are enabled for this instruction
+                if time == change_times[clock_line][clock_line_indices[clock_line]]:
+                    enable_clocks.append(clock_line)
+            
+            # what's the fastest clock rate?
+            maxrate = 0
+            local_clock_limit = 1.0/self.clock_resolution # the Pseudoclock clock limit
+            for clock_line in enabled_clocks:
+                for output in outputs_by_clockline[clock_line]:
+                    # Check if output is sweeping and has highest clock rate
+                    # so far. If so, store its clock rate to max_rate:
+                    if hasattr(output,'timeseries') and isinstance(output.timeseries[clock_line_indices[clock_line]],dict):
+                        if output.timeseries[clock_line_indices[clock_line]]['clock rate'] > maxrate:
+                            # It does have the highest clock rate? Then store that rate to max_rate:
+                            maxrate = output.timeseries[clock_line_indices[clock_line]]['clock rate']
+                
+                        # only check this for ramping clock_lines
+                        # non-ramping clock-lines have already had the clock_limit checked within collect_change_times()
+                        if local_clock_limit > clock_line.clock_limit:
+                            local_clock_limit = clock_line.clock_limit
+                        
+            if maxrate:
+                # round to the nearest clock rate that the pseudoclock can actually support:
+                period = 1/maxrate
+                quantised_period = period/self.clock_resolution
+                quantised_period = round(quantised_period)
+                period = quantised_period*self.clock_resolution
+                maxrate = 1/period
+            if maxrate > local_clock_limit:
+                raise LabscriptError('At t = %s sec, a clock rate of %s Hz was requested. '%(str(time),str(maxrate)) + 
+                                    'One or more devices connected to %s cannot support clock rates higher than %sHz.'%(str(self.name),str(local_clock_limit)))
+                
+            if maxrate:
+                # If there was ramping at this timestep, how many clock ticks fit before the next instruction?
+                n_ticks, remainder = divmod((all_change_times[i+1] - time)*maxrate,1)
+                n_ticks = int(n_ticks)
+                # Can we squeeze the final clock cycle in at the end?
+                if remainder and remainder/float(maxrate) >= 1/float(local_clock_limit):
+                    # Yes we can. Clock speed will be as
+                    # requested. Otherwise the final clock cycle will
+                    # be too long, by the fraction 'remainder'.
+                    n_ticks += 1
+                duration = n_ticks/float(maxrate) # avoiding integer division
+                ticks = linspace(time,time + duration,n_ticks,endpoint=False)
+                
+                for clock_line in enabled_clocks:
+                    all_times[clock_line].append(ticks)
+                
+                if n_ticks > 1:
+                    # If n_ticks is only one, then this step doesn't do
+                    # anything, it has reps=0. So we should only include
+                    # it if n_ticks > 1.
+                    # if n_ticks > 2:
+                        # #If there is more than one clock tick here,
+                        # #then we split the ramp into an initial clock
+                        # #tick, during which the slow clock ticks, and
+                        # #the rest of the ramping time, during which the
+                        # #slow clock does not tick.
+                        # clock.append({'start': time, 'reps': 1, 'step': 1/float(maxrate), 'enabled_clocks':enabled_clocks})
+                        # clock.append({'start': time + 1/float(maxrate), 'reps': n_ticks-2, 'step': 1/float(maxrate), 'enabled_clocks':enabled_clocks})
+                    # else:
+                        # clock.append({'start': time, 'reps': n_ticks-1, 'step': 1/float(maxrate), 'enabled_clocks':enabled_clocks})
+                        
+                    clock.append({'start': time, 'reps': n_ticks-1, 'step': 1/float(maxrate), 'enabled_clocks':enabled_clocks})
+                # The last clock tick has a different duration depending on the next step. 
+                clock.append({'start': ticks[-1], 'reps': 1, 'step': all_change_times[i+1] - ticks[-1], 'enabled_clocks':enabled_clocks})
+            else:
+                for clock_line in enabled_clocks:
+                    all_times[clock_line].append(time)
+                    
+                try: 
+                    # If there was no ramping, here is a single clock tick:
+                    clock.append({'start': time, 'reps': 1, 'step': all_change_times[i+1] - time, 'fast_clock':enabled_clocks})
+                except IndexError:
+                    if i != len(all_change_times) - 1:
+                        raise
+                    if self.stop_time > time:
+                        # There is no next instruction. Hold the last clock
+                        # tick until self.stop_time.
+                        raise Exception('This shouldn\'t happen -- stop_time should always be equal to the time of the last instruction. Please report a bug.')
+                        # I commented this out because it is after a raised exception so never ran.... - Phil
+                        # clock.append({'start': time, 'reps': 1, 'step': self.stop_time - time,'slow_clock_tick':True}) 
+                    # Error if self.stop_time has been set to less
+                    # than the time of the last instruction:
+                    elif self.stop_time < time:
+                        raise LabscriptError('%s %s has more instructions after the experiment\'s stop time.'%(self.description,self.name))
+                    # If self.stop_time is the same as the time of the last
+                    # instruction, then we'll get the last instruction
+                    # out still, so that the total number of clock
+                    # ticks matches the number of data points in the
+                    # Output.raw_output arrays. We'll make this last
+                    # cycle be at ten times the minimum step duration.
+                    else:
+                        # find the slowest clock_limit
+                        enabled_clocks = []
+                        local_clock_limit = 1.0/self.clock_resolution # the Pseudoclock clock limit
+                        for clock_line, outputs in outputs_by_clockline.items():
+                            if local_clock_limit > clock_line.clock_limit:
+                                local_clock_limit = clock_line.clock_limit
+                            enabled_clocks.append(clock_line)
+                        clock.append({'start': time, 'reps': 1, 'step': 10.0/self.clock_limit, 'fast_clock':enabled_clocks})
+        return all_times, clock
+    
+    def get_outputs_by_clockline(self):
+        all_outputs = self.get_all_outputs()
+        
+        outputs_by_clockline = {}
+        for output in all_outputs:
+            # TODO: Make this a bit more robust (can we assume things always have this hierarchy?)
+            parent_device = output.parent_device
+            clock_line = parent_device.parent_device
+            assert clock_line.parent_device == self
+            outputs_by_clockline.setdefault(clockline, [])
+            outputs_by_clockline.append(output)
+            
+        return all_outputs, outputs_by_clockline
+    
+    def generate_clock(self):
+        all_outputs, outputs_by_clockline = self.get_outputs_by_clockline()
+        
+        # Get change_times for all outputs, and also grouped by clockline
+        all_change_times, change_times = self.collect_change_times(all_outputs, outputs_by_clockline)
+               
+        # for each clock line
+        for clock_line, clock_line_change_times in change_times.items():
+            # and for each output on the clockline
+            for output in outputs_by_clockline[clock_line]:
+                # call make_timeseries to expand the list of instructions for each change_time on this clock line
+                output.make_timeseries(clock_line_change_times)
+
+        # now generate the clock meta data for the Pseudoclock
+        # also generate everytime point each clock line will tick (expand ramps)
+        all_times, self.clock = self.expand_change_times(all_change_times, change_times, outputs_by_clockline)
+        
+        # for each clockline
+        for clock_line, outputs in outputs_by_clockline.items():
+            # and for each output
+            for output in outputs:
+                # evaluate the output at each time point the clock line will tick at
+                output.expand_timeseries(all_times[clock_line])
+                
+        # TODO: is this needed? Let's say no...
+        # self.all_change_times = fastflatten(all_change_times, float)
+        
+        # Flatten the clock line times for use by the child devices for writing instruction tables
+        # TODO: (if this needed or was it just for runviewer meta data that we don't need anymore?)
         self.times = {}
-        for clock_type, time_array in all_times.items():
-            self.times[clock_type] = fastflatten(time_array,float)
+        for clock_line, time_array in all_times.items():
+            self.times[clock_line] = fastflatten(time_array,float)
         
     def generate_code(self, hdf5_file):
         self.generate_clock()
         Device.generate_code(self, hdf5_file)
         
+
+class ClockLine(Device):
+    description = 'Generic ClockLine'
+    allowed_children = [Trigger, IntermediateDevice]
+    generation = 0
+    
+    _clock_limit = None
+    
+    def __init__(self, name, pseudoclock, connection):
+        # TODO: Verify that connection is  valid connection of Pseudoclock.parent_device (the PseudoclockDevice)
+        Device.__init__(self, name, pseudoclock, connection)
         
+    def add_device(self, device):
+        Device.add_device(self, device)
+        if hasattr(device, 'clock_limit') and (self._clock_limit is None or device.clock_limit < self.clock_limit):
+            self._clock_limit = device.clock_limit
+    
+    # define a property to make sure no children overwrite this value themselves
+    # The calculation of maximum clock_limit should be done by the add_device method above
+    @property
+    def clock_limit(self):
+        # If no child device has specified a clock limit
+        if self._clock_limit is None:
+            # return the Pseudoclock clock_limit
+            # TODO: Maybe raise an error instead?
+            #       Maybe all Intermediate devices should be required to have a clock_limit?
+            return self.parent_device.clock_limit
+        return self._clock_limit
+    
+    
 class Output(Device):
     description = 'generic output'
     allowed_states = {}
@@ -483,7 +642,7 @@ class Output(Device):
         self.unit_conversion_parameters = unit_conversion_parameters        
         Device.__init__(self,name,parent_device,connection)  
         
-        # Instatiate the calibration
+        # Instantiate the calibration
         if unit_conversion_class is not None:
             self.calibration = unit_conversion_class(unit_conversion_parameters)
             # Validate the calibration class
@@ -662,7 +821,19 @@ class Output(Device):
                 
             offset_instructions[t - offset] = offset_instruction
         self.instructions = offset_instructions
-                   
+            
+        # offset each of the ramp_limits for use in the calculation within Pseudoclock/ClockLine
+        # so that the times in list are consistent with the ones in self.instructions
+        for i, times in enumerate(self.ramp_limits):
+            n_triggers_prior = len([time for time in trigger_times if time < times[0]])
+            # The cumulative offset at this point in time:
+            offset = self.trigger_delay * n_triggers_prior + trigger_times[0]
+            
+            # offset start and end time of ramps
+            # NOTE: This assumes ramps cannot proceed across a trigger command
+            #       (for instance you cannot ramp an output across a WAIT)
+            self.ramp_limits[i] = (times[0]-offset, times[1]-offset)
+            
     def get_change_times(self):
         """If this function is being called, it means that the parent
         Pseudoclock has requested a list of times that this output changes
@@ -671,6 +842,9 @@ class Output(Device):
         times.sort()
         self.times = times
         return times
+        
+    def get_ramp_times(self):
+        return self.ramp_limits
     
     def make_timeseries(self, change_times):
         """If this is being called, then it means the parent Pseudoclock
@@ -970,19 +1144,18 @@ class AnalogIn(Device):
 class IntermediateDevice(Device):
     generation = 1
     
-    def __init__(self, name, parent_device,clock_type):
+    def __init__(self, name, parent_device):
         self.name = name
-        clock_valid = False
-        if hasattr(parent_device, 'extra_clocks') :
-            if clock_type == 'fast clock':
-                clock_type = parent_device.extra_clocks[0]
-            if clock_type in parent_device.extra_clocks:
-                clock_valid = True
-        if not clock_type in ['fast clock', 'slow clock'] and not clock_valid:
-            raise LabscriptError("Clock type for %s %s can only be 'slow clock' or 'fast clock'."%(self.name,self.description))
-        Device.__init__(self, name, parent_device, clock_type)
-        self.clock_type = clock_type
-        self.parent_device.clock_limit = min([self.parent_device.clock_limit,self.clock_limit])
+        # this should be checked here because it should only be connected a clockline
+        # The allowed_children attribute of parent classes doesn't prevent this from being connected to something that accepts 
+        # an instance of 'Device' as a child
+        if not isinstance(parent_device, ClockLine):
+            if not hasattr(parent_device, 'name'):
+                parent_device_name = 'Unknown: not an instance of a labscript device class'
+            else:
+                parent_device_name = parent_device.name
+            raise LabscriptError('Error instantiating device %s. The parent (%s) must be an instance of ClockLine.'%(name, parent_device_name)
+        Device.__init__(self, name, parent_device, 'internal')
     
         
 class Shutter(DigitalOut):
@@ -1030,7 +1203,7 @@ class Shutter(DigitalOut):
 class Trigger(DigitalOut):
     description = 'trigger device'
     allowed_states = {1:'high', 0:'low'}
-    allowed_children = [PseudoClock]
+    allowed_children = [PseudoclockDevice]
     def __init__(self, name, parent_device, connection, trigger_edge_type='rising'):
         DigitalOut.__init__(self,name,parent_device,connection)
         self.trigger_edge_type = trigger_edge_type
@@ -1060,6 +1233,7 @@ class WaitMonitor(Trigger):
         Trigger.__init__(self, name, parent_device, connection, trigger_edge_type='rising')
         if not parent_device.pseudoclock.is_master_pseudoclock:
             raise LabscriptError('The output device for monitoring wait durations must be clocked by the master pseudoclock')
+        # TODO: acquisition_device must be the same as timeout_device at the moment (given the current BLACS implementation)
         self.acquisition_device = acquisition_device
         self.acquisition_connection = acquisition_connection 
         self.timeout_device = timeout_device
@@ -1072,7 +1246,7 @@ class DDS(Device):
     generation = 2
     def __init__(self, name, parent_device, connection, digital_gate={}, freq_limits=None, freq_conv_class=None, freq_conv_params={},
                  amp_limits=None, amp_conv_class=None, amp_conv_params={}, phase_limits=None, phase_conv_class=None, phase_conv_params = {}):
-        self.clock_type = parent_device.clock_type
+        #self.clock_type = parent_device.clock_type # Don't see that this is needed anymore
         
         # Here we set call_parents_add_device=False so that we
         # can do additional initialisation before manually calling
@@ -1156,7 +1330,10 @@ class StaticDDS(Device):
     allowed_children = [StaticAnalogQuantity,DigitalOut,StaticDigitalOut]
     generation = 2
     def __init__(self,name,parent_device,connection,digital_gate = {},freq_limits = None,freq_conv_class = None,freq_conv_params = {},amp_limits=None,amp_conv_class = None,amp_conv_params = {},phase_limits=None,phase_conv_class = None,phase_conv_params = {}):
-        self.clock_type = parent_device.clock_type
+        #self.clock_type = parent_device.clock_type # Don't see that this is needed anymore
+        
+        #TODO: Add call to get default unit conversion classes from the parent
+        
         # We tell Device.__init__ to not call
         # self.parent.add_device(self), we'll do that ourselves later
         # after further intitialisation, so that the parent can see the
@@ -1363,7 +1540,8 @@ def wait(label, t, timeout=5):
 def start():
     compiler.start_called = True
     # Get and save some timing info about the pseudoclocks:
-    all_pseudoclocks = [device for device in compiler.inventory if isinstance(device, PseudoClock)]
+    # TODO: What if you need to trigger individual Pseudolocks on the one device, rather than the PseudoclockDevice as a whole?
+    all_pseudoclocks = [device for device in compiler.inventory if isinstance(device, PseudoclockDevice)]
     compiler.all_pseudoclocks = all_pseudoclocks
     master_pseudoclock, = [pseudoclock for pseudoclock in all_pseudoclocks if pseudoclock.is_master_pseudoclock]
     compiler.master_pseudoclock = master_pseudoclock
@@ -1383,7 +1561,7 @@ def stop(t):
     if t == 0:
         raise LabscriptError('Stop time cannot be t=0. Please make your run a finite duration')
     for device in compiler.inventory:
-        if isinstance(device, PseudoClock):
+        if isinstance(device, PseudoclockDevice):
             device.stop_time = t
     generate_code()
 

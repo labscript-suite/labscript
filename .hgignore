@@ -4,4 +4,4 @@ syntax: glob
 docs/labscript-dev/main.aux
 *.aux
 *.toc
-*.pyg
+*.pyc
