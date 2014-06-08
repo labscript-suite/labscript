@@ -550,8 +550,7 @@ class Pseudoclock(Device):
         outputs_by_clockline = {}
         for output in all_outputs:
             # TODO: Make this a bit more robust (can we assume things always have this hierarchy?)
-            parent_device = output.parent_device
-            clock_line = parent_device.parent_device
+            clock_line = output.parent_clock_line
             assert clock_line.parent_device == self
             outputs_by_clockline.setdefault(clock_line, [])
             outputs_by_clockline[clock_line].append(output)
@@ -724,7 +723,7 @@ class Output(Device):
     
     @property
     def clock_limit(self):
-        parent = self.clock_line
+        parent = self.parent_clock_line
         return parent.clock_limit
     
     @property
@@ -1587,8 +1586,13 @@ def start():
     compiler.master_pseudoclock = master_pseudoclock
     # Which pseudoclock requires the longest pulse in order to trigger it?
     compiler.trigger_duration = max_or_zero([pseudoclock.trigger_minimum_duration for pseudoclock in all_pseudoclocks if not pseudoclock.is_master_pseudoclock])
+    
+    min_clock_limit = min([pseudoclock.trigger_device.clock_limit for pseudoclock in all_pseudoclocks if not pseudoclock.is_master_pseudoclock])
+    
+    min_clock_limit = min([min_clock_limit, master_pseudoclock.clock_limit])
+    
     # Provide this, or the minimum possible pulse, whichever is longer:
-    compiler.trigger_duration = max(2.0/master_pseudoclock.clock_limit, compiler.trigger_duration)
+    compiler.trigger_duration = max(2.0/min_clock_limit, compiler.trigger_duration)
     # Must wait this long before providing a trigger, in case child clocks aren't ready yet:
     compiler.wait_delay = max_or_zero([pseudoclock.wait_delay for pseudoclock in all_pseudoclocks if not pseudoclock.is_master_pseudoclock])
     
