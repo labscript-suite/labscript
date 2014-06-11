@@ -18,17 +18,17 @@ from labscript import *
 # before importing labscript. If you do this, you'll need to call
 # labscript_init() yourself:
 
-import inspect
-importing_frame = inspect.currentframe()
-importing_locals = importing_frame.f_back.f_locals
-if not 'labscript_auto_init' in importing_locals or importing_locals['labscript_auto_init']:
-    overwrite = False
-    if '-f' in sys.argv:
-        overwrite = True
-        sys.argv.remove('-f')
-    if len(sys.argv) > 1:
-        labscript_init(sys.argv[1],labscript_file=sys.argv[0])
-    elif sys.argv[0]:
-        labscript_init(sys.argv[0].replace('.py','.h5'), labscript_file=sys.argv[0], new=True, overwrite=overwrite)
+#import inspect
+#importing_frame = inspect.currentframe()
+#importing_locals = importing_frame.f_back.f_locals
+#if not 'labscript_auto_init' in importing_locals or importing_locals['labscript_auto_init']:
+#    overwrite = False
+#    if '-f' in sys.argv:
+#        overwrite = True
+#        sys.argv.remove('-f')
+#    if len(sys.argv) > 1:
+#        labscript_init(sys.argv[1],labscript_file=sys.argv[0])
+#    elif sys.argv[0]:
+#        labscript_init(sys.argv[0].replace('.py','.h5'), labscript_file=sys.argv[0], new=True, overwrite=overwrite)
         
 __version__ = '1.2.0-gated-clock-development'
