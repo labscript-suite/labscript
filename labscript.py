@@ -1587,9 +1587,13 @@ def start():
     # Which pseudoclock requires the longest pulse in order to trigger it?
     compiler.trigger_duration = max_or_zero([pseudoclock.trigger_minimum_duration for pseudoclock in all_pseudoclocks if not pseudoclock.is_master_pseudoclock])
     
-    min_clock_limit = min([pseudoclock.trigger_device.clock_limit for pseudoclock in all_pseudoclocks if not pseudoclock.is_master_pseudoclock])
+    trigger_clock_limit = [pseudoclock.trigger_device.clock_limit for pseudoclock in all_pseudoclocks if not pseudoclock.is_master_pseudoclock]
+    if len(trigger_clock_limit) > 0:
+        min_clock_limit = min(trigger_clock_limit)
+        min_clock_limit = min([min_clock_limit, master_pseudoclock.clock_limit])
+    else:
+        min_clock_limit = master_pseudoclock.clock_limit
     
-    min_clock_limit = min([min_clock_limit, master_pseudoclock.clock_limit])
     
     # Provide this, or the minimum possible pulse, whichever is longer:
     compiler.trigger_duration = max(2.0/min_clock_limit, compiler.trigger_duration)
