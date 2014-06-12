@@ -425,8 +425,17 @@ class Pseudoclock(Device):
             
             # update clock_line indices
             for clock_line in clock_line_current_indices:
-                while change_times[clock_line][clock_line_current_indices[clock_line]] < time:
-                    clock_line_current_indices[clock_line] += 1
+                try:
+                    while change_times[clock_line][clock_line_current_indices[clock_line]] < time:
+                        clock_line_current_indices[clock_line] += 1
+                except IndexError:
+                    # Fix the index to the last one
+                    clock_line_current_indices[clock_line] = len(change_times[clock_line]) - 1
+                    # print a warning
+                    message = ''.join(['WARNING: ClockLine %s has it\'s last change time at t=%.10f but another ClockLine has a change time at t=%.10f. '%(clock_line.name, change_times[clock_line][-1], time), 
+                              'This should never happen, as the last change time should always be the time passed to stop(). ', 
+                              'Perhaps you have an instruction after the stop time of the experiment?'])
+                    sys.stderr.write(message+'\n')
                     
                 # Let's work out which clock_lines are enabled for this instruction
                 if time == change_times[clock_line][clock_line_current_indices[clock_line]]:
