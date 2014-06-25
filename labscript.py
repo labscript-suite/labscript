@@ -513,7 +513,7 @@ class Pseudoclock(Device):
                         
                     # clock.append({'start': time, 'reps': n_ticks-1, 'step': 1/float(maxrate), 'enabled_clocks':enabled_clocks})
                 # The last clock tick has a different duration depending on the next step. 
-                clock.append({'start': ticks[-1], 'reps': 1, 'step': all_change_times[i+1] - ticks[-1], 'enabled_clocks':enabled_looping_clocks})
+                clock.append({'start': ticks[-1], 'reps': 1, 'step': all_change_times[i+1] - ticks[-1], 'enabled_clocks':enabled_clocks if n_ticks == 1 else enabled_looping_clocks})
             else:
                 for clock_line in enabled_clocks:
                     all_times[clock_line].append(time)
