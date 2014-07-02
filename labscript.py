@@ -347,8 +347,6 @@ class Pseudoclock(Device):
             change_time_list.extend(self.parent_device.trigger_times)
             # Get rid of duplicates if trigger times were already in the list:
             change_time_list = list(set(change_time_list))
-            
-            change_time_list = list(set(change_time_list))
             change_time_list.sort()
         
             # Check that no two instructions are too close together:
