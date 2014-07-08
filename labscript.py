@@ -823,7 +823,7 @@ class Output(Device):
                 instruction = self.apply_calibration(instruction,units)
             # if we have limits, check the value is valid
             if self.limits:
-                if (instruction <= self.limits[0]) or (instruction >= self.limits[1]):
+                if (instruction < self.limits[0]) or (instruction > self.limits[1]):
                     raise LabscriptError('You cannot program the value %d (base units) to %s as it falls outside the limits (%d to %d)'%(instruction, self.name, self.limits[0], self.limits[1]))
         self.instructions[time] = instruction
     
@@ -1085,7 +1085,7 @@ class StaticAnalogQuantity(Output):
                 value = self.apply_calibration(value,units)
             # if we have limits, check the value is valid
             if self.limits:
-                if (instruction <= self.limits[0]) or (instruction >= self.limits[1]):
+                if (instruction < self.limits[0]) or (instruction > self.limits[1]):
                     raise LabscriptError('You cannot program the value %d (base units) to %s as it falls outside the limits (%d to %d)'%(value, self.name, self.limits[0], self.limits[1]))
         
             
