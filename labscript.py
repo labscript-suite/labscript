@@ -693,7 +693,7 @@ class PseudoclockDevice(Device):
 class Output(Device):
     description = 'generic output'
     allowed_states = {}
-    dtype = float32
+    dtype = float64
     scale_factor = 1
     generation = 3
     def __init__(self,name,parent_device,connection,limits = None,unit_conversion_class = None,unit_conversion_parameters = None):
