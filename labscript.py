@@ -17,6 +17,7 @@ import sys
 import subprocess
 import keyword
 
+import runmanager
 import labscript_utils.h5_lock, h5py
 from pylab import *
 
@@ -1624,8 +1625,8 @@ def stop(t):
     generate_code()
 
 def load_globals(hdf5_filename):
+    params = runmanager.get_shot_globals(hdf5_filename)
     with h5py.File(hdf5_filename,'r') as hdf5_file:
-        params = dict(hdf5_file['globals'].attrs)
         for name in params.keys():
             if name in globals() or name in locals() or name in _builtins_dict:
                 raise LabscriptError('Error whilst parsing globals from %s. \'%s\''%(hdf5_filename,name) +
@@ -1648,7 +1649,9 @@ def load_globals(hdf5_filename):
             # match python's builtin True and False when compared with 'is':
             if type(params[name]) == bool_: # bool_ is numpy.bool_, imported from pylab
                 params[name] = bool(params[name])                         
-            
+            # 'None' is stored as an h5py null object reference:
+            if isinstance(params[name], h5py.Reference) and not params[name]:
+                params[name] = None
             _builtins_dict[name] = params[name]
             
             
