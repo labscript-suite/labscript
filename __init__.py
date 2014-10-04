@@ -30,5 +30,5 @@ from labscript import *
 #        labscript_init(sys.argv[1],labscript_file=sys.argv[0])
 #    elif sys.argv[0]:
 #        labscript_init(sys.argv[0].replace('.py','.h5'), labscript_file=sys.argv[0], new=True, overwrite=overwrite)
-        
-__version__ = '1.2.0-gated-clock-development'
+
+__version__ = '2.0.0'
