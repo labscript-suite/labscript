@@ -13,18 +13,26 @@
 
 import __init__ # only have to do this because we're inside the labscript directory
 from labscript import *
+from labscript_devices.PulseBlaster import PulseBlaster
+from labscript_devices.NI_PCIe_6363 import NI_PCIe_6363
+from labscript_devices.NovaTechDDS9M import NovaTechDDS9M
+from labscript_devices.Camera import Camera
+from labscript_devices.PineBlaster import PineBlaster
+from labscript_devices.NI_PCI_6733 import NI_PCI_6733
 from labscript_utils.unitconversions import *
 
 PulseBlaster(name='pulseblaster_0', board_number=0)
-NI_PCIe_6363(name='ni_card_0',  parent_device=pulseblaster_0, clock_type='fast clock', clock_terminal='ni_pcie_6363_0/PFI0', MAX_name='ni_pcie_6363_0', acquisition_rate=100e3)
-NovaTechDDS9M(name='novatechdds9m_0', parent_device=pulseblaster_0, clock_type='slow clock', com_port="com10")
+ClockLine(name='pulseblaster_0_clockline_fast', pseudoclock=pulseblaster_0.pseudoclock, connection='flag 0')
+ClockLine(name='pulseblaster_0_clockline_slow', pseudoclock=pulseblaster_0.pseudoclock, connection='flag 1')
+NI_PCIe_6363(name='ni_card_0',  parent_device=pulseblaster_0_clockline_fast, clock_terminal='ni_pcie_6363_0/PFI0', MAX_name='ni_pcie_6363_0', acquisition_rate=100e3)
+NovaTechDDS9M(name='novatechdds9m_0', parent_device=pulseblaster_0_clockline_slow, com_port="com10")
 
 # Create a BIAS Camera, tirggered to take photos with flag 3 of pulseblaster_0
-Camera('andor_ixon_0', pulseblaster_0,   'flag 3',BIAS_port = 42520,serial_number="0000", SDK="IMAQdx", effective_pixel_size = 4.6e-6, exposuretime=.1, orientation='top')
+Camera('andor_ixon_0', pulseblaster_0.direct_outputs,   'flag 3',BIAS_port = 42520,serial_number="0000", SDK="IMAQdx", effective_pixel_size = 4.6e-6, exposuretime=.1, orientation='top')
 
 # A second pseudoclock to just clock a NI_PCI_6733 Card
 PineBlaster(name='pineblaster_0', trigger_device=ni_card_0, trigger_connection='port0/line15', usbport='COM7')
-NI_PCI_6733(name='ni_card_1',  parent_device=pulseblaster_0, clock_type='fast clock', clock_terminal='ni_pcie_6733_0/PFI0', MAX_name='ni_pci_6733_0')
+NI_PCI_6733(name='ni_card_1',  parent_device=pineblaster_0.clockline, clock_terminal='ni_pcie_6733_0/PFI0', MAX_name='ni_pci_6733_0')
 
 # Create the output/input channels on the above devices
 AnalogOut( 'analog0',  ni_card_1,         'ao0',         unit_conversion_class=example1) # use the example1 conversion class located in pythonlib/unitconversions/example.py with default paremeters
@@ -34,15 +42,15 @@ AnalogOut( 'analog1',  ni_card_1,         'ao1',         unit_conversion_class=e
 AnalogOut( 'analog2',  ni_card_0,         'ao2')
 AnalogIn(   'input1',  ni_card_0,         'ai0')
 Shutter(  'shutter1',  ni_card_0,         'port0/line1', delay=(0,0))
-Shutter(  'shutter2',  pulseblaster_0,    'flag 2',      delay=(0,0))
-DigitalOut( 'switch',  pulseblaster_0,    'flag 4')
+Shutter(  'shutter2',  pulseblaster_0.direct_outputs,    'flag 2',      delay=(0,0))
+DigitalOut( 'switch',  pulseblaster_0.direct_outputs,    'flag 4')
 
 DDS(          'dds1',  novatechdds9m_0,   'channel 0')
 DDS(          'dds2',  novatechdds9m_0,   'channel 1')
 StaticDDS(    'dds5',  novatechdds9m_0,   'channel 2')
 # The next DDS is special because it has the frequency and amplitude calibrated using example2 and example3 classes from pythonlib/unitconversions/example.py
-DDS(          'dds3',  pulseblaster_0,    'dds 0',       freq_conv_class=example2,freq_conv_params={'a':4,'b':6},amp_conv_class=example3,amp_conv_params={'a':2,'b':22,'magnitudes':['m']})
-DDS(          'dds4',  pulseblaster_0,    'dds 1')
+DDS(          'dds3',  pulseblaster_0.direct_outputs,    'dds 0',       freq_conv_class=example2,freq_conv_params={'a':4,'b':6},amp_conv_class=example3,amp_conv_params={'a':2,'b':22,'magnitudes':['m']})
+DDS(          'dds4',  pulseblaster_0.direct_outputs,    'dds 1')
 
 # This sets up the inputs/counters/etc that will monitor
 # The first paremeter is the name for the WaitMonitor device
@@ -110,7 +118,7 @@ analog2.constant(t,3)
 analog1.sine(analog1.t0,duration=6,amplitude=5,angfreq=2*pi,phase=0,dc_offset=0.0,samplerate=rate)
 
 # Let's increment our time variable!
-t += 1
+t += max(1,analog0.t0)
 
 # Open the shutter, enable the DDS, ramp an analog output!
 shutter2.open(t)
@@ -123,7 +131,7 @@ andor_ixon_0.expose('exposure_1',t+1,'atoms')
 
 # Do some more things at various times!
 # (these are ignoring the t variable)
-analog2.ramp(t=2, duration=3, initial=3, final=4, samplerate=rate)
+analog2.ramp(t=2.25, duration=3, initial=3, final=4, samplerate=rate)
 shutter1.open(t=5.89)
 analog2.constant(t=5.9,value=5)
 analog2.constant(t=7,value=4)
