@@ -125,6 +125,7 @@ class Device(object):
         self.parent_device = parent_device
         self.connection = connection
         self.child_devices = []
+        self.connection_table_properties = {}
         if parent_device and call_parents_add_device:
             # This is optional by keyword argument, so that subclasses
             # overriding __init__ can call call Device.__init__ early
@@ -154,7 +155,66 @@ class Device(object):
         
         # Add self to the compiler's device inventory
         compiler.inventory.append(self)
+    
+    # Method to set a property for this device. 
+    #
+    # The property will be stored in the connection table and be used 
+    # during connection table comparisons.
+    #
+    # The value must satisfy eval(repr(value)) == value
+    #
+    # You cannot overwrite an existing property unless you set the 
+    # overwrite flag to True on subsequent calls to this method
+    def set_property(self, name, value, overwrite = False):
+        if name in self.connection_table_properties and not overwrite:
+            raise LabscriptError('Device %s has had the property %s set more than once. This is not allowed unless the overwrite flag is explicitly set'%(self.name, name))
         
+        # make sure the value can be stored as a string
+        try:
+            assert(eval(repr(value)) == value)
+        except(AssertionError,SyntaxError):
+            raise LabscriptError('The value set for property %s on device %s is too complex to store as a string in the connection table. Ensure that eval(repr(value)) == value is True'%(name, self.name))
+        
+        self.connection_table_properties[name] = value
+    
+    # Method to get a property of this device already set using Device.set_property
+    #
+    # If the property is not already set, a default value will be returned 
+    # if specified as the argument after 'name' if there is only one argument
+    # after 'name' and the argument is either not a keyword argument or is a 
+    # keyword argument with the name 'default'
+    #
+    # If the property is not already set, or one of the above conventions is
+    # violated, a LabscriptError will be raised
+    #
+    # Example acceptable signatures:
+    #
+    # get_property('example')            # 'example will be returned if set, or an exception will be raised
+    # get_property('example', 7)         # 7 will be returned if 'example' is not set
+    # get_property('example', default=7) # 7 will be returned is 'example' is not set
+    #
+    #
+    # Example signatures that WILL ALWAYS RAISE AN EXCEPTION:
+    # get_property('example', 7, 8)
+    # get_property('example', 7, default=9)
+    # get_property('example', default=7, x=9)
+    def get_property(self, name, *args, **kwargs):#default = None):
+        if len(kwargs) == 1 and 'default' not in kwargs:
+            raise LabscriptError('A call to %s.get_property had a keyword argument that was not name or default'%self.name)
+        if len(args) + len(kwargs) > 1:
+            raise LabscriptError('A call to %s.get_property has too many arguments and/or keyword arguments'%self.name)
+            
+        if name in self.connection_table_properties:
+            return self.connection_table_properties[name]
+            
+        if 'default' in kwargs:
+            return kwargs['default']
+        elif len(args) == 1:
+            return args[0]
+        else:
+            raise LabscriptError('The property %s has not been set for device %s'%(name, self.name))
+            
+    
     def add_device(self,device):
         if any([isinstance(device,DeviceClass) for DeviceClass in self.allowed_children]):
             self.child_devices.append(device)
@@ -1433,6 +1493,8 @@ def generate_connection_table(hdf5_file):
     # This starts at 4 to accomodate "None"
     max_cal_param_length = 4
     max_BLACS_conn_length = 1
+    # This starts at 2 to accomodate "{}"
+    max_properties_length = 2
     for device in compiler.inventory:
         devicedict[device.name] = device
         
@@ -1450,6 +1512,19 @@ def generate_connection_table(hdf5_file):
                 max_cal_param_length = len(cal_params)
         else:
             cal_params = str(None)
+            
+        # The attribute should always exist, but in case it doesn't inherit from device for soe reason, we'l check this anyway and default it to {} if it doesn't exist        
+        if hasattr(device, 'connection_table_properties'):
+            try:                
+                assert(eval(repr(device.connection_table_properties)) == device.connection_table_properties)
+            except(AssertionError,SyntaxError):
+                raise LabscriptError('The properties for device "%s" are too complex to store as a string in the connection table'%device.name)
+                
+            properties = repr(device.connection_table_properties)
+            if len(properties) > max_properties_length:
+                max_properties_length = len(properties)
+        else:
+            properties = repr({})
         
         
         # If the device has a BLACS_connection atribute, then check to see if it is longer than the size of the hdf5 column
@@ -1466,12 +1541,14 @@ def generate_connection_table(hdf5_file):
                                  str(device.connection if device.parent_device else str(None)),
                                  device.unit_conversion_class.__name__ if hasattr(device,"unit_conversion_class") and device.unit_conversion_class is not None else str(None),
                                  cal_params,
-                                 BLACS_connection))
+                                 BLACS_connection,
+                                 properties))
     
     connection_table.sort(key=sortkey)
     connection_table_dtypes = [('name','a256'), ('class','a256'), ('parent','a256'), ('parent port','a256'),
                                ('unit conversion class','a256'), ('unit conversion params','a'+str(max_cal_param_length)), 
-                               ('BLACS_connection','a'+str(max_BLACS_conn_length))]
+                               ('BLACS_connection','a'+str(max_BLACS_conn_length)),
+                               ('properties', 'a%s'%max_properties_length)]
     connection_table_array = empty(len(connection_table),dtype=connection_table_dtypes)
     for i, row in enumerate(connection_table):
         connection_table_array[i] = row
