@@ -879,7 +879,7 @@ class Output(Device):
             # if we have limits, check the value is valid
             if self.limits:
                 if (instruction < self.limits[0]) or (instruction > self.limits[1]):
-                    raise LabscriptError('You cannot program the value %d (base units) to %s as it falls outside the limits (%d to %d)'%(instruction, self.name, self.limits[0], self.limits[1]))
+                    raise LabscriptError('You cannot program the value %s (base units) to %s as it falls outside the limits (%d to %d)'%(str(instruction), self.name, self.limits[0], self.limits[1]))
         self.instructions[time] = instruction
     
     def do_checks(self, trigger_times):
@@ -1139,8 +1139,9 @@ class StaticAnalogQuantity(Output):
                 value = self.apply_calibration(value, units)
             # if we have limits, check the value is valid
             if self.limits:
-                if (instruction < self.limits[0]) or (instruction > self.limits[1]):
-                    raise LabscriptError('You cannot program the value %d (base units) to %s as it falls outside the limits (%d to %d)'%(value, self.name, self.limits[0], self.limits[1]))
+                minval, maxval = self.limits
+                if not minval <= value <= maxval:
+                    raise LabscriptError('You cannot program the value %s (base units) to %s as it falls outside the limits (%s to %s)'%(str(value), self.name, str(self.limits[0]), str(self.limits[1])))
             self._static_value = value
         else:
             raise LabscriptError('%s %s has already been set to %s (base units). It cannot also be set to %s (%s).'%(self.description, self.name, str(self._static_value), str(value),units if units is not None else "base units"))
