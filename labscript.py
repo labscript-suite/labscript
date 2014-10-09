@@ -1536,7 +1536,13 @@ def generate_connection_table(hdf5_file):
     for i, row in enumerate(connection_table):
         connection_table_array[i] = row
     dataset = hdf5_file.create_dataset('connection table', compression=config.compression, data=connection_table_array, maxshape=(None,))
-    dataset.attrs['master_pseudoclock'] = compiler.master_pseudoclock.name
+    
+    if compiler.master_pseudoclock is None:
+        master_pseudoclock_name = 'None'
+    else:
+        master_pseudoclock_name = compiler.master_pseudoclock.name
+    dataset.attrs['master_pseudoclock'] = master_pseudoclock_name
+  
   
 def save_labscripts(hdf5_file):
     if compiler.labscript_file is not None:
@@ -1658,7 +1664,7 @@ def start():
         raise LabscriptError('No toplevel devices and no master pseudoclock found')
     elif pseudoclocks:
         (master_pseudoclock,) = master_pseudoclocks
-        compiler.master_pseudoclock, = master_pseudoclock
+        compiler.master_pseudoclock = master_pseudoclock
         # Which pseudoclock requires the longest pulse in order to trigger it?
         compiler.trigger_duration = max_or_zero([pseudoclock.trigger_minimum_duration for pseudoclock in pseudoclocks if not pseudoclock.is_master_pseudoclock])
         
