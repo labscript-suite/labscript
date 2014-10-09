@@ -277,7 +277,6 @@ class Device(object):
   
 
 class IntermediateDevice(Device):
-    generation = 1
     
     def __init__(self, name, parent_device):
         self.name = name
@@ -296,8 +295,6 @@ class IntermediateDevice(Device):
 class ClockLine(Device):
     description = 'Generic ClockLine'
     allowed_children = [IntermediateDevice]
-    generation = 0
-    
     _clock_limit = None
     
     def __init__(self, name, pseudoclock, connection, ramping_allowed = True):
@@ -326,7 +323,6 @@ class ClockLine(Device):
 class Pseudoclock(Device):
     description = 'Generic Pseudoclock'
     allowed_children = [ClockLine]
-    generation = 0
     
     def __init__(self, name, pseudoclock_device, connection):
         Device.__init__(self, name, pseudoclock_device, connection)
@@ -666,7 +662,6 @@ class Pseudoclock(Device):
 class PseudoclockDevice(Device):
     description = 'Generic Pseudoclock Device'
     allowed_children = [Pseudoclock]
-    generation = 0
     trigger_edge_type = 'rising'
     # How long after a trigger the next instruction is actually output:
     trigger_delay = 0
@@ -756,7 +751,6 @@ class Output(Device):
     allowed_states = {}
     dtype = float64
     scale_factor = 1
-    generation = 3
     def __init__(self,name,parent_device,connection,limits = None,unit_conversion_class = None,unit_conversion_parameters = None):
         self.instructions = {}
         self.ramp_limits = [] # For checking ramps don't overlap
@@ -1132,14 +1126,12 @@ class AnalogOut(AnalogQuantity):
 class StaticAnalogQuantity(Output):
     description = 'static analog quantity'
     default_value = 0.0
-    
-    value_set = False
-    
-    def constant(self,value,units=None):
-        if not self.value_set:
-            # Since this is a StaticAnalogOut, we set the instruction to be at t=0.0
-            #self.add_instruction(0.0,value,units)
-            
+    def __init__(self, *args, **kwargs):
+        Output.__init__(self, *args, **kwargs)
+        self.static_value = None
+        
+    def constant(self, value, units=None):
+        if self.static_value is None:
             # If we have units specified, convert the value
             if units is not None:
                 # Apply the unit calibration now
@@ -1148,9 +1140,6 @@ class StaticAnalogQuantity(Output):
             if self.limits:
                 if (instruction < self.limits[0]) or (instruction > self.limits[1]):
                     raise LabscriptError('You cannot program the value %d (base units) to %s as it falls outside the limits (%d to %d)'%(value, self.name, self.limits[0], self.limits[1]))
-        
-            
-            self.value_set = True
             self.static_value = value
         else:
             raise LabscriptError('%s %s has already been set to %s (base units). It cannot also be set to %s (%s).'%(self.description, self.name, str(self.static_value), str(value),units if units is not None else "base units"))
@@ -1248,7 +1237,6 @@ class StaticDigitalOut(StaticDigitalQuantity):
         
 class AnalogIn(Device):
     description = 'Analog Input'
-    generation = 3
     def __init__(self,name,parent_device,connection,scale_factor=1.0,units='Volts'):
          self.acquisitions = []
          self.scale_factor = scale_factor
@@ -1350,7 +1338,6 @@ class WaitMonitor(Trigger):
 class DDS(Device):
     description = 'DDS'
     allowed_children = [AnalogQuantity,DigitalOut,DigitalQuantity] # Adds its own children when initialised
-    generation = 2
     def __init__(self, name, parent_device, connection, digital_gate={}, freq_limits=None, freq_conv_class=None, freq_conv_params={},
                  amp_limits=None, amp_conv_class=None, amp_conv_params={}, phase_limits=None, phase_conv_class=None, phase_conv_params = {}):
         #self.clock_type = parent_device.clock_type # Don't see that this is needed anymore
@@ -1435,7 +1422,6 @@ class DDS(Device):
 class StaticDDS(Device):
     description = 'Static RF'
     allowed_children = [StaticAnalogQuantity,DigitalOut,StaticDigitalOut]
-    generation = 2
     def __init__(self,name,parent_device,connection,digital_gate = {},freq_limits = None,freq_conv_class = None,freq_conv_params = {},amp_limits=None,amp_conv_class = None,amp_conv_params = {},phase_limits=None,phase_conv_class = None,phase_conv_params = {}):
         #self.clock_type = parent_device.clock_type # Don't see that this is needed anymore
         
@@ -1486,9 +1472,6 @@ class LabscriptError(Exception):
 def generate_connection_table(hdf5_file):
     connection_table = []
     devicedict = {}
-    def sortkey(row):
-        device = devicedict[row[0]]
-        return str(device.generation) + device.name
     
     # This starts at 4 to accomodate "None"
     max_cal_param_length = 4
@@ -1544,7 +1527,7 @@ def generate_connection_table(hdf5_file):
                                  BLACS_connection,
                                  properties))
     
-    connection_table.sort(key=sortkey)
+    connection_table.sort()
     connection_table_dtypes = [('name','a256'), ('class','a256'), ('parent','a256'), ('parent port','a256'),
                                ('unit conversion class','a256'), ('unit conversion params','a'+str(max_cal_param_length)), 
                                ('BLACS_connection','a'+str(max_BLACS_conn_length)),
