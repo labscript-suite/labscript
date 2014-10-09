@@ -1123,39 +1123,45 @@ class AnalogQuantity(Output):
 class AnalogOut(AnalogQuantity):
     description = 'analog output'
     
+    
 class StaticAnalogQuantity(Output):
     description = 'static analog quantity'
     default_value = 0.0
     def __init__(self, *args, **kwargs):
         Output.__init__(self, *args, **kwargs)
-        self.static_value = None
+        self._static_value = None
         
     def constant(self, value, units=None):
-        if self.static_value is None:
+        if self._static_value is None:
             # If we have units specified, convert the value
             if units is not None:
                 # Apply the unit calibration now
-                value = self.apply_calibration(value,units)
+                value = self.apply_calibration(value, units)
             # if we have limits, check the value is valid
             if self.limits:
                 if (instruction < self.limits[0]) or (instruction > self.limits[1]):
                     raise LabscriptError('You cannot program the value %d (base units) to %s as it falls outside the limits (%d to %d)'%(value, self.name, self.limits[0], self.limits[1]))
-            self.static_value = value
+            self._static_value = value
         else:
-            raise LabscriptError('%s %s has already been set to %s (base units). It cannot also be set to %s (%s).'%(self.description, self.name, str(self.static_value), str(value),units if units is not None else "base units"))
+            raise LabscriptError('%s %s has already been set to %s (base units). It cannot also be set to %s (%s).'%(self.description, self.name, str(self._static_value), str(value),units if units is not None else "base units"))
     
     def get_change_times(self):
-        if not hasattr(self,'static_value'):
-            self.static_value = self.default_value
-            
-        return [] # Return an empty list as the calling function at the pseudoclock level expects a list
-    
+        return []  # Return an empty list as the calling function at the pseudoclock level expects a list
+        
     def make_timeseries(self,change_times):
         pass
     
     def expand_timeseries(self,*args,**kwargs):
-        self.raw_output = array([self.static_value])
-
+        self.raw_output = array([self._static_value])
+    
+    @property
+    def static_value(self):
+        if self._static_value is None:
+            if not config.suppress_mild_warnings and not config.suppress_all_warnings:
+                sys.stderr.write(' '.join(['WARNING:', self.name, 'has no value set. It will be set to %s.\n'%self.instruction_to_string(self.default_value)]))
+            self._static_value = self.default_value
+        return self._static_value
+        
 class StaticAnalogOut(StaticAnalogQuantity):
     description = 'static analog output'
         
@@ -1200,37 +1206,48 @@ class DigitalQuantity(Output):
         
         return duration
 
+        
 class DigitalOut(DigitalQuantity):
     description = 'digital output'
 
+    
 class StaticDigitalQuantity(DigitalQuantity):
     description = 'static digital quantity'
-    value_set = False
+    default_value = 0
     
+    def __init__(self, *args, **kwargs):
+        DigitalQuantity.__init__(self, *args, **kwargs)
+        self._static_value = None
+        
     def go_high(self):
-        if not self.value_set:
+        if self._static_value is not None:
             self.add_instruction(0,1)
-            self.value_set = True
-            self.static_value = 1
+            self._static_value = 1
+            
     def go_low(self):
-        if not self.value_set:
+        if self._static_value is not None:
             self.add_instruction(0,0) 
-            self.value_set = True
-            self.static_value = 0
+            self._static_value = 0
         else:
-            raise LabscriptError('%s %s has already been set to %s. It cannot also be set to %s.'%(self.description, self.name, self.instruction_to_string[self.static_value], self.instruction_to_string[value]))
+            raise LabscriptError('%s %s has already been set to %s. It cannot also be set to %s.'%(self.description, self.name, self.instruction_to_string[self._static_value], self.instruction_to_string[value]))
     
     def get_change_times(self):
-        if not hasattr(self,'static_value'):
-            self.static_value = self.default_value
-            
-        return [] # Return an empty list as the calling function at the pseudoclock level expects a list
+        return []  # Return an empty list as the calling function at the pseudoclock level expects a list
     
     def make_timeseries(self,change_times):
         pass
     
     def expand_timeseries(self,*args,**kwargs):
-        self.raw_output = array([self.static_value])
+        self.raw_output = array([self._static_value])
+        
+    @property
+    def static_value(self):
+        if self._static_value is None:
+            if not config.suppress_mild_warnings and not config.suppress_all_warnings:
+                sys.stderr.write(' '.join(['WARNING:', self.name, 'has no value set. It will be set to %s.\n'%self.instruction_to_string(self.default_value)]))
+            self._static_value = self.default_value
+        return self._static_value
+    
 
 class StaticDigitalOut(StaticDigitalQuantity):
     description = 'static digital output'
