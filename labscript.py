@@ -658,8 +658,31 @@ class Pseudoclock(Device):
         self.generate_clock()
         Device.generate_code(self, hdf5_file)
         
-        
-class PseudoclockDevice(Device):
+
+class TriggerableDevice(Device):
+    trigger_edge_type = 'rising'
+    # A class devices should inherit if they do
+    # not require a pseudoclock, but do require a trigger.
+    # This enables them to have a Trigger divice as a parent
+    def __init__(self, name, parent_device, connection parentless=False):
+        if None in [parent_device, connection] and not parentless:
+            raise LabscriptError('No parent specified. If this device does not require a parent, set parentless=True')
+        if isinstance(parent_device, Trigger):
+            if self.trigger_edge_type != parent_device.trigger_edge_type:
+                raise LabscriptError('Trigger edge type for %s is \'%s\' specified, ' % (self.name, trigger_edge_type) + 
+                                      'but existing Trigger object %s ' % parent_device.name +
+                                      'has edge type \'%s\'' % parent_device.trigger_edge_type)
+            self.trigger_device = parent
+            self.trigger_edge_type = trigger_edge_type
+            Device.__init__(self, name, parent_device, connection)
+        else:
+            if trigger_edge_type is None:
+                self.trigger_edge_type = 'rising' # default
+            # Instantiate a trigger object to be our parent:
+            self.trigger_device = Trigger(name + '_trigger', trigger_device, trigger_connection, self.trigger_edge_type)
+    
+    
+class PseudoclockDevice(TriggerableDevice):
     description = 'Generic Pseudoclock Device'
     allowed_children = [Pseudoclock]
     trigger_edge_type = 'rising'
@@ -670,7 +693,7 @@ class PseudoclockDevice(Device):
     # How long after the start of a wait instruction the device is actually capable of resuming:
     wait_delay = 0
     
-    def __init__(self,name,trigger_device=None,trigger_connection=None):
+    def __init__(self,name,trigger_device=None, trigger_connection=None):
         if trigger_device is None:
             parent_device = None
             connection = None
@@ -678,18 +701,15 @@ class PseudoclockDevice(Device):
                 if isinstance(device,PseudoclockDevice) and device.is_master_pseudoclock:
                     raise LabscriptError('There is already a master pseudoclock device: %s.'%device.name + 
                                          'There cannot be multiple master pseudoclock devices - please provide a trigger_device for one of them.')
+            TriggerableDevice.__init__(self, name, parent_device=None, connection=None, parentless=True)
         else:
-            # Instantiate a Trigger object to handle the generation
-            # of edges for triggering this clock.  A trigger object is
-            # basically just a digital output:
-            self.trigger_device = Trigger(name + '_trigger', trigger_device, trigger_connection, self.trigger_edge_type)
-            parent_device = self.trigger_device
-            connection = 'trigger'
+            # The parent device declared was a digital output channel: the following will
+            # automatically instantiate a Trigger for it and set it as self.trigger_device:
+            TriggerableDevice.__init__(self, name, parent_device=parent_device, connection='trigger')
             # Ensure that the parent pseudoclock device is, in fact, the master pseudoclock device.
-            if not trigger_device.pseudoclock_device.is_master_pseudoclock:
+            if not self.trigger_device.pseudoclock_device.is_master_pseudoclock:
                 raise LabscriptError('All secondary pseudoclock devices must be triggered by a device being clocked by the master pseudoclock device.' +
                                      'Pseudoclocks triggering each other in series is not supported.')
-        Device.__init__(self, name, parent_device, connection)
         self.trigger_times = []
         self.wait_times = []
         self.initial_trigger_time = 0
@@ -1316,7 +1336,7 @@ class Shutter(DigitalOut):
 class Trigger(DigitalOut):
     description = 'trigger device'
     allowed_states = {1:'high', 0:'low'}
-    allowed_children = [PseudoclockDevice]
+    allowed_children = [TriggerableDevice]
     def __init__(self, name, parent_device, connection, trigger_edge_type='rising'):
         DigitalOut.__init__(self,name,parent_device,connection)
         self.trigger_edge_type = trigger_edge_type
@@ -1337,7 +1357,13 @@ class Trigger(DigitalOut):
         self.enable(t)
         self.disable(t + duration)
 
+    def add_device(self, device):
+        if not device.connection == 'trigger':
+            raise LabscriptError('The \'connection\' string of device %s '%device.name + 
+                                 'to %s must be \'trigger\', not \'%s\''%(self.name, repr(device.connection))
+        DigitalOut.add_device(self, device)
 
+        
 class WaitMonitor(Trigger):
      def __init__(self, name, parent_device, connection, acquisition_device, acquisition_connection, timeout_device, timeout_connection):
         if compiler.wait_monitor is not None:
