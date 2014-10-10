@@ -664,7 +664,7 @@ class TriggerableDevice(Device):
     # A class devices should inherit if they do
     # not require a pseudoclock, but do require a trigger.
     # This enables them to have a Trigger divice as a parent
-    def __init__(self, name, parent_device, connection parentless=False):
+    def __init__(self, name, parent_device, connection, parentless=False):
         if None in [parent_device, connection] and not parentless:
             raise LabscriptError('No parent specified. If this device does not require a parent, set parentless=True')
         if isinstance(parent_device, Trigger):
@@ -672,15 +672,13 @@ class TriggerableDevice(Device):
                 raise LabscriptError('Trigger edge type for %s is \'%s\' specified, ' % (self.name, trigger_edge_type) + 
                                       'but existing Trigger object %s ' % parent_device.name +
                                       'has edge type \'%s\'' % parent_device.trigger_edge_type)
-            self.trigger_device = parent
-            self.trigger_edge_type = trigger_edge_type
-            Device.__init__(self, name, parent_device, connection)
-        else:
-            if trigger_edge_type is None:
-                self.trigger_edge_type = 'rising' # default
+            self.trigger_device = parent_device
+        elif parent_device is not None:
             # Instantiate a trigger object to be our parent:
-            self.trigger_device = Trigger(name + '_trigger', trigger_device, trigger_connection, self.trigger_edge_type)
-    
+            self.trigger_device = Trigger(name + '_trigger', parent_device, connection, self.trigger_edge_type)
+            parent_device = self.trigger_device
+            connection = 'trigger'
+        Device.__init__(self, name, parent_device, connection)
     
 class PseudoclockDevice(TriggerableDevice):
     description = 'Generic Pseudoclock Device'
@@ -693,19 +691,19 @@ class PseudoclockDevice(TriggerableDevice):
     # How long after the start of a wait instruction the device is actually capable of resuming:
     wait_delay = 0
     
-    def __init__(self,name,trigger_device=None, trigger_connection=None):
+    def __init__(self, name, trigger_device=None, trigger_connection=None):
         if trigger_device is None:
             parent_device = None
             connection = None
             for device in compiler.inventory:
-                if isinstance(device,PseudoclockDevice) and device.is_master_pseudoclock:
+                if isinstance(device, PseudoclockDevice) and device.is_master_pseudoclock:
                     raise LabscriptError('There is already a master pseudoclock device: %s.'%device.name + 
                                          'There cannot be multiple master pseudoclock devices - please provide a trigger_device for one of them.')
             TriggerableDevice.__init__(self, name, parent_device=None, connection=None, parentless=True)
         else:
             # The parent device declared was a digital output channel: the following will
             # automatically instantiate a Trigger for it and set it as self.trigger_device:
-            TriggerableDevice.__init__(self, name, parent_device=parent_device, connection='trigger')
+            TriggerableDevice.__init__(self, name, parent_device=parent_device, connection=trigger_connection)
             # Ensure that the parent pseudoclock device is, in fact, the master pseudoclock device.
             if not self.trigger_device.pseudoclock_device.is_master_pseudoclock:
                 raise LabscriptError('All secondary pseudoclock devices must be triggered by a device being clocked by the master pseudoclock device.' +
@@ -1134,8 +1132,9 @@ class AnalogQuantity(Output):
                 
         return duration
     
-    def customramp(self, t, duration, function, samplerate, *args, **kwargs):
+    def customramp(self, t, duration, function, *args, **kwargs):
         units = kwargs.pop('units', None)
+        samplerate = kwargs.pop('samplerate')
         
         def custom_ramp_func(t_rel):
             """The function that will return the result of the user's function,
@@ -1371,7 +1370,7 @@ class Trigger(DigitalOut):
     def add_device(self, device):
         if not device.connection == 'trigger':
             raise LabscriptError('The \'connection\' string of device %s '%device.name + 
-                                 'to %s must be \'trigger\', not \'%s\''%(self.name, repr(device.connection))
+                                 'to %s must be \'trigger\', not \'%s\''%(self.name, repr(device.connection)))
         DigitalOut.add_device(self, device)
 
         
@@ -1737,7 +1736,7 @@ def start():
         # Provide this, or the minimum possible pulse, whichever is longer:
         compiler.trigger_duration = max(2.0/min_clock_limit, compiler.trigger_duration)
         # Must wait this long before providing a trigger, in case child clocks aren't ready yet:
-        compiler.wait_delay = max_or_zero([pseudoclock.wait_delay for pseudoclock in all_pseudoclocks if not pseudoclock.is_master_pseudoclock])
+        compiler.wait_delay = max_or_zero([pseudoclock.wait_delay for pseudoclock in pseudoclocks if not pseudoclock.is_master_pseudoclock])
         
         # Have the master clock trigger pseudoclocks at t = 0:
         max_delay = trigger_all_pseudoclocks()
