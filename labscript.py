@@ -1711,7 +1711,7 @@ def start():
         # Provide this, or the minimum possible pulse, whichever is longer:
         compiler.trigger_duration = max(2.0/min_clock_limit, compiler.trigger_duration)
         # Must wait this long before providing a trigger, in case child clocks aren't ready yet:
-        compiler.wait_delay = max_or_zero([pseudoclock.wait_delay for pseudoclock in all_pseudoclocks if not pseudoclock.is_master_pseudoclock])
+        compiler.wait_delay = max_or_zero([pseudoclock.wait_delay for pseudoclock in pseudoclocks if not pseudoclock.is_master_pseudoclock])
         
         # Have the master clock trigger pseudoclocks at t = 0:
         max_delay = trigger_all_pseudoclocks()
