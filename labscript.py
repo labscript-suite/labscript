@@ -1114,8 +1114,9 @@ class AnalogQuantity(Output):
                 
         return duration
     
-    def customramp(self, t, duration, function, samplerate, *args, **kwargs):
+    def customramp(self, t, duration, function, *args, **kwargs):
         units = kwargs.pop('units', None)
+        samplerate = kwargs.pop('samplerate')
         
         def custom_ramp_func(t_rel):
             """The function that will return the result of the user's function,
@@ -1123,8 +1124,8 @@ class AnalogQuantity(Output):
             return function(t_rel, duration, *args, **kwargs)
             
         self.add_instruction(t, {'function': customramp, 'description':'custom ramp: %s' % function.__name__,
-                                 'initial time':t, 'end time': t + duration, 'clock rate': samplerate, 'units': units})   
-        
+                                 'initial time':t, 'end time': t + duration, 'clock rate': samplerate, 'units': units})
+                                 
     def constant(self,t,value,units=None):
         # verify that value can be converted to float
         val = float(value)
