@@ -215,7 +215,7 @@ class Device(object):
             raise LabscriptError('The property %s has not been set for device %s'%(name, self.name))
             
     
-    def add_device(self,device):
+    def add_device(self, device):
         if any([isinstance(device,DeviceClass) for DeviceClass in self.allowed_children]):
             self.child_devices.append(device)
         else:
@@ -680,6 +680,7 @@ class TriggerableDevice(Device):
             connection = 'trigger'
         Device.__init__(self, name, parent_device, connection)
     
+    
 class PseudoclockDevice(TriggerableDevice):
     description = 'Generic Pseudoclock Device'
     allowed_children = [Pseudoclock]
@@ -742,7 +743,7 @@ class PseudoclockDevice(TriggerableDevice):
             self.trigger_times.append(round(t + wait_delay,10))
             
     def do_checks(self, outputs):
-        """Basic error checking te ensure the user's instructions make sense"""
+        """Basic error checking to ensure the user's instructions make sense"""
         for output in outputs:
             output.do_checks(self.trigger_times)
             
@@ -1360,12 +1361,26 @@ class Trigger(DigitalOut):
             self.allowed_states = {1:'disabled', 0:'enabled'}
         else:
             raise ValueError('trigger_edge_type must be \'rising\' or \'falling\', not \'%s\'.'%trigger_edge_type)
-
+        # A list of the times this trigger has been asked to trigger:
+        self.triggerings = []
+        
+        
     def trigger(self, t, duration):
+        assert duration > 0, "Negative or zero trigger duration given"
         if t != self.t0 and self.t0 not in self.instructions:
             self.disable(self.t0)
+        
+        start = t
+        end = t + duration
+        for other_start, other_duration in self.triggerings:
+            other_end = other_start + other_duration
+            # Check for overlapping exposures:
+            if not (end < other_start or start > other_end):
+                raise LabscriptError('%s %s has two overlapping triggerings: ' %(self.description, self.name) + \
+                                     'one at t = %fs for %fs, and another at t = %fs for %fs.'%(start, duration, other_start, other_duration))
         self.enable(t)
         self.disable(t + duration)
+        self.triggerings.append((t, duration))
 
     def add_device(self, device):
         if not device.connection == 'trigger':
@@ -1800,6 +1815,9 @@ def labscript_init(hdf5_filename, labscript_file=None, new=False, overwrite=Fals
     else:
         load_globals(hdf5_filename)
     compiler.hdf5_filename = hdf5_filename
+    if labscript_file is None:
+        import __main__
+        labscript_file = __main__.__file__
     compiler.labscript_file = os.path.abspath(labscript_file)
 
 def labscript_cleanup():
