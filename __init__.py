@@ -31,4 +31,4 @@ from labscript import *
 #    elif sys.argv[0]:
 #        labscript_init(sys.argv[0].replace('.py','.h5'), labscript_file=sys.argv[0], new=True, overwrite=overwrite)
 
-__version__ = '2.0.0'
+__version__ = '2.0.1'
