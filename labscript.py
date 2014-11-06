@@ -902,7 +902,7 @@ class Output(Device):
         self.instructions[time] = instruction
     
     def do_checks(self, trigger_times):
-        """Basic error checking te ensure the user's instructions make sense"""
+        """Basic error checking to ensure the user's instructions make sense"""
         # Check if there are no instructions. Generate a warning and insert an
         # instruction telling the output to remain at its default value.
         if not self.instructions:
@@ -1142,8 +1142,9 @@ class AnalogQuantity(Output):
             evaluated at relative times t_rel from 0 to duration"""
             return function(t_rel, duration, *args, **kwargs)
             
-        self.add_instruction(t, {'function': customramp, 'description':'custom ramp: %s' % function.__name__,
+        self.add_instruction(t, {'function': custom_ramp_func, 'description':'custom ramp: %s' % function.__name__,
                                  'initial time':t, 'end time': t + duration, 'clock rate': samplerate, 'units': units})   
+        return duration
         
     def constant(self,t,value,units=None):
         # verify that value can be converted to float
@@ -1619,8 +1620,8 @@ def save_labscripts(hdf5_file):
     else:
         script_text = ''
     script = hdf5_file.create_dataset('script',data=script_text)
-    script.attrs['name'] = os.path.basename(compiler.labscript_file) if compiler.labscript_file is not None else ''
-    script.attrs['path'] = os.path.dirname(compiler.labscript_file) if compiler.labscript_file is not None else sys.path[0]
+    script.attrs['name'] = os.path.basename(compiler.labscript_file).encode() if compiler.labscript_file is not None else ''
+    script.attrs['path'] = os.path.dirname(compiler.labscript_file).encode() if compiler.labscript_file is not None else sys.path[0]
     try:
         import labscriptlib
         prefix = os.path.dirname(labscriptlib.__file__)
