@@ -694,8 +694,6 @@ class PseudoclockDevice(TriggerableDevice):
     
     def __init__(self, name, trigger_device=None, trigger_connection=None):
         if trigger_device is None:
-            parent_device = None
-            connection = None
             for device in compiler.inventory:
                 if isinstance(device, PseudoclockDevice) and device.is_master_pseudoclock:
                     raise LabscriptError('There is already a master pseudoclock device: %s.'%device.name + 
@@ -704,7 +702,7 @@ class PseudoclockDevice(TriggerableDevice):
         else:
             # The parent device declared was a digital output channel: the following will
             # automatically instantiate a Trigger for it and set it as self.trigger_device:
-            TriggerableDevice.__init__(self, name, parent_device=parent_device, connection=trigger_connection)
+            TriggerableDevice.__init__(self, name, parent_device=trigger_device, connection=trigger_connection)
             # Ensure that the parent pseudoclock device is, in fact, the master pseudoclock device.
             if not self.trigger_device.pseudoclock_device.is_master_pseudoclock:
                 raise LabscriptError('All secondary pseudoclock devices must be triggered by a device being clocked by the master pseudoclock device.' +
