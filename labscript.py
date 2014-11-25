@@ -669,7 +669,7 @@ class TriggerableDevice(Device):
             raise LabscriptError('No parent specified. If this device does not require a parent, set parentless=True')
         if isinstance(parent_device, Trigger):
             if self.trigger_edge_type != parent_device.trigger_edge_type:
-                raise LabscriptError('Trigger edge type for %s is \'%s\' specified, ' % (self.name, trigger_edge_type) + 
+                raise LabscriptError('Trigger edge type for %s is \'%s\', ' % (name, self.trigger_edge_type) + 
                                       'but existing Trigger object %s ' % parent_device.name +
                                       'has edge type \'%s\'' % parent_device.trigger_edge_type)
             self.trigger_device = parent_device
