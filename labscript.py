@@ -176,6 +176,13 @@ class Device(object):
             raise LabscriptError('The value set for property %s on device %s is too complex to store as a string in the connection table. Ensure that eval(repr(value)) == value is True'%(name, self.name))
         
         self.connection_table_properties[name] = value
+
+    def add_properties(self, properties_dict, overwrite = False):
+        """
+        Add one or a bunch of properties packed into a dictionary
+        """
+        for (name, value) in properties_dict.items():
+            self.set_property(name, value, overwrite = overwrite)
     
     # Method to get a property of this device already set using Device.set_property
     #
@@ -213,6 +220,14 @@ class Device(object):
             return args[0]
         else:
             raise LabscriptError('The property %s has not been set for device %s'%(name, self.name))
+
+    def get_properties(self, properties_dict):
+        """
+        Get properties associatred with the keys in properties_dict, use the 
+        defaults from the dictionary
+        """
+
+        return {name: self.get_property(name, value) for (name, value) in properties_dict.items()}
             
     
     def add_device(self, device):
