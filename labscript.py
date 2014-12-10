@@ -118,7 +118,8 @@ def fastflatten(inarray, dtype):
 class Device(object):
     description = 'Generic Device'
     allowed_children = None
-    def __init__(self,name,parent_device,connection, call_parents_add_device=True):
+    
+    def __init__(self,name,parent_device,connection, call_parents_add_device=True, properties_dict = {}, **kwargs):
         if self.allowed_children is None:
             allowed_children = [Device]
         self.name = name
@@ -126,6 +127,12 @@ class Device(object):
         self.connection = connection
         self.child_devices = []
         self.connection_table_properties = {}
+
+        # Verify that no invalid kwargs were passed and the set properties
+        if len(kwargs) != 0:        
+            raise LabscriptError('Invalid keyword arguments: %s.'%kwargs)
+        self.set_properties(properties_dict)
+
         if parent_device and call_parents_add_device:
             # This is optional by keyword argument, so that subclasses
             # overriding __init__ can call call Device.__init__ early
@@ -135,7 +142,7 @@ class Device(object):
             # self.parent_device.add_device(self) *must* be called later
             # on, it is not optional.
             parent_device.add_device(self)
-        
+            
         # Check that the name doesn't already exist in the python namespace
         if name in locals() or name in globals() or name in _builtins_dict:
             raise LabscriptError('The device name %s already exists in the Python namespace. Please choose another.'%name)
@@ -155,6 +162,17 @@ class Device(object):
         
         # Add self to the compiler's device inventory
         compiler.inventory.append(self)
+        
+
+    def clean_properties(self, properties_dict, strip_names):
+        """
+        Returns properties_dict with all elements with name in the iterable
+        "strip_names" removed.
+        """
+        for strip_name in strip_names:  
+            properties_dict.pop(strip_name)
+
+        return properties_dict
     
     # Method to set a property for this device. 
     #
@@ -177,7 +195,7 @@ class Device(object):
         
         self.connection_table_properties[name] = value
 
-    def add_properties(self, properties_dict, overwrite = False):
+    def set_properties(self, properties_dict, overwrite = False):
         """
         Add one or a bunch of properties packed into a dictionary
         """
@@ -293,7 +311,14 @@ class Device(object):
 
 class IntermediateDevice(Device):
     
-    def __init__(self, name, parent_device):
+    def __init__(self, name, parent_device, properties_dict = {}, **kwargs):
+
+        # Assume that all accepted kwarguments are things that we want to know
+        # about and save in the parameters dictionary, and strip off everything else
+        properties_dict.update(locals().copy())
+        properties_dict = self.clean_properties(properties_dict,
+                ["name", "parent_device", "parameters_dict", "kwargs"])
+
         self.name = name
         # this should be checked here because it should only be connected a clockline
         # The allowed_children attribute of parent classes doesn't prevent this from being connected to something that accepts 
@@ -304,7 +329,7 @@ class IntermediateDevice(Device):
             else:
                 parent_device_name = parent_device.name
             raise LabscriptError('Error instantiating device %s. The parent (%s) must be an instance of ClockLine.'%(name, parent_device_name))
-        Device.__init__(self, name, parent_device, 'internal') # This 'internal' should perhaps be more descriptive?
+        Device.__init__(self, name, parent_device, 'internal', properties_dict = {}, **kwargs) # This 'internal' should perhaps be more descriptive?
  
   
 class ClockLine(Device):
@@ -679,7 +704,14 @@ class TriggerableDevice(Device):
     # A class devices should inherit if they do
     # not require a pseudoclock, but do require a trigger.
     # This enables them to have a Trigger divice as a parent
-    def __init__(self, name, parent_device, connection, parentless=False):
+    def __init__(self, name, parent_device, connection, parentless=False, properties_dict = {}, **kwargs):
+
+        # Assume that all accepted kwarguments are things that we want to know
+        # about and save in the parameters dictionary, and strip off everything else
+        properties_dict.update(locals().copy())
+        properties_dict = self.clean_properties(properties_dict,
+                ["name", "parent_device", "connection", "parameters_dict", "kwargs", "parentless"])
+
         if None in [parent_device, connection] and not parentless:
             raise LabscriptError('No parent specified. If this device does not require a parent, set parentless=True')
         if isinstance(parent_device, Trigger):
@@ -693,7 +725,8 @@ class TriggerableDevice(Device):
             self.trigger_device = Trigger(name + '_trigger', parent_device, connection, self.trigger_edge_type)
             parent_device = self.trigger_device
             connection = 'trigger'
-        Device.__init__(self, name, parent_device, connection)
+            
+        Device.__init__(self, name, parent_device, connection, properties_dict = properties_dict, **kwargs)
     
     
 class PseudoclockDevice(TriggerableDevice):
