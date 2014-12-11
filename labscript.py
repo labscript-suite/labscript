@@ -119,7 +119,12 @@ class Device(object):
     description = 'Generic Device'
     allowed_children = None
     
-    def __init__(self,name,parent_device,connection, call_parents_add_device=True, properties_dict = {}, **kwargs):
+    def __init__(self,name,parent_device,connection, call_parents_add_device=True, properties_dict={}, **kwargs):
+        # Verify that no invalid kwargs were passed and the set properties
+        if len(kwargs) != 0:        
+            raise LabscriptError('Invalid keyword arguments: %s.'%kwargs)
+        self.set_properties(properties_dict)
+
         if self.allowed_children is None:
             allowed_children = [Device]
         self.name = name
@@ -127,11 +132,6 @@ class Device(object):
         self.connection = connection
         self.child_devices = []
         self.connection_table_properties = {}
-
-        # Verify that no invalid kwargs were passed and the set properties
-        if len(kwargs) != 0:        
-            raise LabscriptError('Invalid keyword arguments: %s.'%kwargs)
-        self.set_properties(properties_dict)
 
         if parent_device and call_parents_add_device:
             # This is optional by keyword argument, so that subclasses
@@ -317,7 +317,7 @@ class IntermediateDevice(Device):
         # about and save in the parameters dictionary, and strip off everything else
         properties_dict.update(locals().copy())
         properties_dict = self.clean_properties(properties_dict,
-                ["name", "parent_device", "parameters_dict", "kwargs"])
+                ["name", "parent_device", "properties_dict", "kwargs"])
 
         self.name = name
         # this should be checked here because it should only be connected a clockline
@@ -364,8 +364,13 @@ class Pseudoclock(Device):
     description = 'Generic Pseudoclock'
     allowed_children = [ClockLine]
     
-    def __init__(self, name, pseudoclock_device, connection):
-        Device.__init__(self, name, pseudoclock_device, connection)
+    def __init__(self, name, pseudoclock_device, connection, properties_dict={}, **kwargs):
+        # strip off named parameters that we do not want in the properties field
+        properties_dict.update(locals().copy())
+        properties_dict = self.clean_properties(properties_dict,
+                ["name", "pseudoclock_device", "connection", "properties_dict", "kwargs"])
+
+        Device.__init__(self, name, pseudoclock_device, connection, properties_dict=properties_dict, **kwargs)
         self.clock_limit = pseudoclock_device.clock_limit
         self.clock_resolution = pseudoclock_device.clock_resolution
         
@@ -704,13 +709,11 @@ class TriggerableDevice(Device):
     # A class devices should inherit if they do
     # not require a pseudoclock, but do require a trigger.
     # This enables them to have a Trigger divice as a parent
-    def __init__(self, name, parent_device, connection, parentless=False, properties_dict = {}, **kwargs):
-
-        # Assume that all accepted kwarguments are things that we want to know
-        # about and save in the parameters dictionary, and strip off everything else
+    def __init__(self, name, parent_device, connection, parentless=False, properties_dict={}, **kwargs):
+        # strip off named parameters that we do not want in the properties field
         properties_dict.update(locals().copy())
         properties_dict = self.clean_properties(properties_dict,
-                ["name", "parent_device", "connection", "parameters_dict", "kwargs", "parentless"])
+                ["name", "parent_device", "connection", "properties_dict", "kwargs", "parentless"])
 
         if None in [parent_device, connection] and not parentless:
             raise LabscriptError('No parent specified. If this device does not require a parent, set parentless=True')
@@ -726,7 +729,7 @@ class TriggerableDevice(Device):
             parent_device = self.trigger_device
             connection = 'trigger'
             
-        Device.__init__(self, name, parent_device, connection, properties_dict = properties_dict, **kwargs)
+        Device.__init__(self, name, parent_device, connection, properties_dict=properties_dict, **kwargs)
     
     
 class PseudoclockDevice(TriggerableDevice):
@@ -740,17 +743,22 @@ class PseudoclockDevice(TriggerableDevice):
     # How long after the start of a wait instruction the device is actually capable of resuming:
     wait_delay = 0
     
-    def __init__(self, name, trigger_device=None, trigger_connection=None):
+    def __init__(self, name, trigger_device=None, trigger_connection=None, properties_dict={}, **kwargs):
+        # strip off named parameters that we do not want in the properties field
+        properties_dict.update(locals().copy())
+        properties_dict = self.clean_properties(properties_dict,
+                ["name", "trigger_device", "trigger_connection", "properties_dict", "kwargs"])
+
         if trigger_device is None:
             for device in compiler.inventory:
                 if isinstance(device, PseudoclockDevice) and device.is_master_pseudoclock:
                     raise LabscriptError('There is already a master pseudoclock device: %s.'%device.name + 
                                          'There cannot be multiple master pseudoclock devices - please provide a trigger_device for one of them.')
-            TriggerableDevice.__init__(self, name, parent_device=None, connection=None, parentless=True)
+            TriggerableDevice.__init__(self, name, parent_device=None, connection=None, parentless=True, properties_dict=properties_dict, **kwargs)
         else:
             # The parent device declared was a digital output channel: the following will
             # automatically instantiate a Trigger for it and set it as self.trigger_device:
-            TriggerableDevice.__init__(self, name, parent_device=trigger_device, connection=trigger_connection)
+            TriggerableDevice.__init__(self, name, parent_device=trigger_device, connection=trigger_connection, properties_dict=properties_dict, **kwargs)
             # Ensure that the parent pseudoclock device is, in fact, the master pseudoclock device.
             if not self.trigger_device.pseudoclock_device.is_master_pseudoclock:
                 raise LabscriptError('All secondary pseudoclock devices must be triggered by a device being clocked by the master pseudoclock device.' +
@@ -816,14 +824,20 @@ class Output(Device):
     allowed_states = {}
     dtype = float64
     scale_factor = 1
-    def __init__(self,name,parent_device,connection,limits = None,unit_conversion_class = None,unit_conversion_parameters = None):
+    def __init__(self,name,parent_device,connection,limits = None,unit_conversion_class = None,unit_conversion_parameters = None,
+                 properties_dict={}, **kwargs):
+        # strip off named parameters that we do not want in the properties field
+        properties_dict.update(locals().copy())
+        properties_dict = self.clean_properties(properties_dict,
+                ["name", "parent_device", "connection", "limits", "unit_conversion_class", "unit_conversion_parameters","properties_dict", "kwargs"])
+
         self.instructions = {}
         self.ramp_limits = [] # For checking ramps don't overlap
         if not unit_conversion_parameters:
             unit_conversion_parameters = {}
         self.unit_conversion_class = unit_conversion_class
         self.unit_conversion_parameters = unit_conversion_parameters        
-        Device.__init__(self,name,parent_device,connection)  
+        Device.__init__(self,name,parent_device,connection, properties_dict=properties_dict, **kwargs)  
         
         # Instantiate the calibration
         if unit_conversion_class is not None:
@@ -1251,8 +1265,14 @@ class DigitalQuantity(Output):
     dtype = uint32
     
     # Redefine __init__ so that you cannot define a limit or calibration for DO
-    def __init__(self,name,parent_device,connection):
-        Output.__init__(self,name,parent_device,connection)
+    def __init__(self, name, parent_device, connection, properties_dict={}, **kwargs):
+        # strip off named parameters that we do not want in the properties field
+        properties_dict.update(locals().copy())
+        properties_dict = self.clean_properties(properties_dict,
+                ["name", "parent_device", "connection","properties_dict", "kwargs"])
+                
+        Output.__init__(self,name,parent_device,connection,properties_dict=properties_dict, **kwargs)
+        
     def go_high(self,t):
         self.add_instruction(t,1)
     def go_low(self,t):
@@ -1333,11 +1353,17 @@ class StaticDigitalOut(StaticDigitalQuantity):
         
 class AnalogIn(Device):
     description = 'Analog Input'
-    def __init__(self,name,parent_device,connection,scale_factor=1.0,units='Volts'):
-         self.acquisitions = []
-         self.scale_factor = scale_factor
-         self.units=units
-         Device.__init__(self,name,parent_device,connection)
+    def __init__(self,name,parent_device,connection,scale_factor=1.0,units='Volts',
+                 properties_dict={}, **kwargs):
+        # strip off named parameters that we do not want in the properties field
+        properties_dict.update(locals().copy())
+        properties_dict = self.clean_properties(properties_dict,
+                ["name", "parent_device", "connection","scale_factor", "units", "properties_dict", "kwargs"])
+                
+        self.acquisitions = []
+        self.scale_factor = scale_factor
+        self.units=units
+        Device.__init__(self,name,parent_device,connection, properties_dict=properties_dict, **kwargs)
    
     def acquire(self,label,start_time,end_time,wait_label='',scale_factor=None,units=None):
         if scale_factor is None:
@@ -1352,8 +1378,14 @@ class AnalogIn(Device):
 class Shutter(DigitalOut):
     description = 'shutter'
     
-    def __init__(self,name,parent_device,connection,delay=(0,0),open_state=1):
-        DigitalOut.__init__(self, name, parent_device, connection)
+    def __init__(self,name,parent_device,connection,delay=(0,0),open_state=1,
+                 properties_dict={}, **kwargs):
+        # strip off named parameters that we do not want in the properties field
+        properties_dict.update(locals().copy())
+        properties_dict = self.clean_properties(properties_dict,
+                ["name", "parent_device", "connection","delay", "open_state", "properties_dict", "kwargs"])
+
+        DigitalOut.__init__(self, name, parent_device, connection, properties_dict, **kwargs)
         self.open_delay, self.close_delay = delay
         self.open_state = open_state
         if self.open_state == 1:
@@ -1395,8 +1427,14 @@ class Trigger(DigitalOut):
     description = 'trigger device'
     allowed_states = {1:'high', 0:'low'}
     allowed_children = [TriggerableDevice]
-    def __init__(self, name, parent_device, connection, trigger_edge_type='rising'):
-        DigitalOut.__init__(self,name,parent_device,connection)
+    def __init__(self, name, parent_device, connection, trigger_edge_type='rising',
+                 properties_dict={}, **kwargs):
+        # strip off named parameters that we do not want in the properties field
+        properties_dict.update(locals().copy())
+        properties_dict = self.clean_properties(properties_dict,
+                ["name", "parent_device", "connection","trigger_edge_type", "properties_dict", "kwargs"])
+
+        DigitalOut.__init__(self,name,parent_device,connection,properties_dict=properties_dict, **kwargs)
         self.trigger_edge_type = trigger_edge_type
         if self.trigger_edge_type == 'rising':
             self.enable = self.go_high
@@ -1437,11 +1475,17 @@ class Trigger(DigitalOut):
 
         
 class WaitMonitor(Trigger):
-     def __init__(self, name, parent_device, connection, acquisition_device, acquisition_connection, timeout_device, timeout_connection):
+     def __init__(self, name, parent_device, connection, acquisition_device, acquisition_connection, timeout_device, timeout_connection,
+                  properties_dict={}, **kwargs):
+        # strip off named parameters that we do not want in the properties field
+        properties_dict.update(locals().copy())
+        properties_dict = self.clean_properties(properties_dict,
+                ["name", "parent_device", "connection","acquisition_device", "timeout_device", "timeout_connection", "properties_dict", "kwargs"])
+
         if compiler.wait_monitor is not None:
             raise LabscriptError("Cannot instantiate a second WaitMonitor: there can be only be one in the experiment")
         compiler.wait_monitor = self
-        Trigger.__init__(self, name, parent_device, connection, trigger_edge_type='rising')
+        Trigger.__init__(self, name, parent_device, connection, trigger_edge_type='rising', properties_dict=properties_dict, **kwargs)
         if not parent_device.pseudoclock_device.is_master_pseudoclock:
             raise LabscriptError('The output device for monitoring wait durations must be clocked by the master pseudoclock device')
         # TODO: acquisition_device must be the same as timeout_device at the moment (given the current BLACS implementation)
@@ -1455,7 +1499,8 @@ class DDS(Device):
     description = 'DDS'
     allowed_children = [AnalogQuantity,DigitalOut,DigitalQuantity] # Adds its own children when initialised
     def __init__(self, name, parent_device, connection, digital_gate={}, freq_limits=None, freq_conv_class=None, freq_conv_params={},
-                 amp_limits=None, amp_conv_class=None, amp_conv_params={}, phase_limits=None, phase_conv_class=None, phase_conv_params = {}):
+                 amp_limits=None, amp_conv_class=None, amp_conv_params={}, phase_limits=None, phase_conv_class=None, phase_conv_params = {},
+                 properties_dict={}, **kwargs):
         #self.clock_type = parent_device.clock_type # Don't see that this is needed anymore
         
         # Here we set call_parents_add_device=False so that we
@@ -1464,7 +1509,7 @@ class DDS(Device):
         # add_device method to perform checks based on the code below,
         # whilst still providing us with the checks and attributes that
         # Device.__init__ gives us in the meantime.
-        Device.__init__(self, name, parent_device, connection, call_parents_add_device=False)
+        Device.__init__(self, name, parent_device, connection, call_parents_add_device=False, properties_dict=properties_dict, **kwargs)
                 
         # Ask the parent device if it has default unit conversion classes it would like us to use:
         if hasattr(parent_device, 'get_default_unit_conversion_classes'):
@@ -1538,7 +1583,8 @@ class DDS(Device):
 class StaticDDS(Device):
     description = 'Static RF'
     allowed_children = [StaticAnalogQuantity,DigitalOut,StaticDigitalOut]
-    def __init__(self,name,parent_device,connection,digital_gate = {},freq_limits = None,freq_conv_class = None,freq_conv_params = {},amp_limits=None,amp_conv_class = None,amp_conv_params = {},phase_limits=None,phase_conv_class = None,phase_conv_params = {}):
+    def __init__(self,name,parent_device,connection,digital_gate = {},freq_limits = None,freq_conv_class = None,freq_conv_params = {},amp_limits=None,amp_conv_class = None,amp_conv_params = {},phase_limits=None,phase_conv_class = None,phase_conv_params = {},
+                 properties_dict={}, **kwargs):
         #self.clock_type = parent_device.clock_type # Don't see that this is needed anymore
         
         #TODO: Add call to get default unit conversion classes from the parent
@@ -1548,7 +1594,7 @@ class StaticDDS(Device):
         # after further intitialisation, so that the parent can see the
         # freq/amp/phase objects and manipulate or check them from within
         # its add_device method.
-        Device.__init__(self,name,parent_device,connection, call_parents_add_device=False)
+        Device.__init__(self,name,parent_device,connection, call_parents_add_device=False, properties_dict=properties_dict, **kwargs)
         self.frequency = StaticAnalogQuantity(self.name+'_freq',self,'freq',freq_limits,freq_conv_class,freq_conv_params)
         self.amplitude = StaticAnalogQuantity(self.name+'_amp',self,'amp',amp_limits,amp_conv_class,amp_conv_params)
         self.phase = StaticAnalogQuantity(self.name+'_phase',self,'phase',phase_limits,phase_conv_class,phase_conv_params)        
