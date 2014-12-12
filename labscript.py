@@ -162,7 +162,7 @@ class Device(object):
             raise LabscriptError('Invalid keyword arguments: %s.'%kwargs)
 
         if self.allowed_children is None:
-            allowed_children = [Device]
+            self.allowed_children = [Device]
         self.name = name
         self.parent_device = parent_device
         self.connection = connection
