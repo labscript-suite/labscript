@@ -211,7 +211,7 @@ class Device(object):
         
         # if this try failes then self.connection_table_properties may not
         # be instantiated yet
-        print "Setting:", name, value
+        # print "Setting:", name, value
         if not hasattr(self, "connection_table_properties"):
             self.connection_table_properties = {}          
         
