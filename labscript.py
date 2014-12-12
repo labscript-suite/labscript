@@ -137,7 +137,12 @@ def set_passed_properties(strip_names = None, keep_names = None):
                 keywords_dict = {key:val for key,val in zip(a.args[-len(a.defaults):],a.defaults)}
             else:
                 keywords_dict = {}
-            keywords_dict.update(kwargs)
+                
+            # Update this list with the values from the passed keywords
+            for key,val in keywords_dict.items():
+                if key in kwargs:
+                    keywords_dict[key] = kwargs[key]
+
             inst.set_properties(keywords_dict, strip_names=strip_names, keep_names=keep_names)
             return func(inst, *args, **kwargs)
     
@@ -211,7 +216,6 @@ class Device(object):
         
         # if this try failes then self.connection_table_properties may not
         # be instantiated yet
-        # print "Setting:", name, value
         if not hasattr(self, "connection_table_properties"):
             self.connection_table_properties = {}          
         
@@ -222,6 +226,7 @@ class Device(object):
         try:
             assert(eval(repr(value)) == value)
         except(AssertionError,SyntaxError):
+            print value, " ->", repr(value)
             raise LabscriptError('The value set for property %s on device %s is too complex to store as a string in the connection table. Ensure that eval(repr(value)) == value is True'%(name, self.name))
         
         self.connection_table_properties[name] = value
