@@ -135,16 +135,17 @@ def set_passed_properties(property_names = {}):
             # Introspect arguments and named arguments functions.  in python 3 this is
             # a pair of func.__something__ calls and no import from argspec is needed
             a = getargspec(func)
-            args_dict = {key:val for key,val in zip(a.args[0:-len(a.defaults)],args)}
             
             if a.defaults is not None:
-                args_dict.update({key:val for key,val in zip(a.args[-len(a.defaults):],a.defaults)})
-            
+                args_dict = {key:val for key,val in zip(a.args[-len(a.defaults):],a.defaults)}
+            else:
+                args_dict = {}
+                
             # Update this list with the values from the passed keywords
-            for key,val in keywords_dict.items():
-                if key in kwargs:
-                    args_dict[key] = kwargs[key]
+            args_dict.update(kwargs)
 
+            # print args_dict
+            # print property_names
             inst.set_properties(args_dict, property_names)
             
             return func(inst, *args, **kwargs)
@@ -157,7 +158,7 @@ def set_passed_properties(property_names = {}):
 class Device(object):
     description = 'Generic Device'
     allowed_children = None
-    valid_property_destinations = ["con_table_properties", "device_properties"]    
+    valid_property_destinations = {"con_table_properties", "device_properties"}   
     
     @set_passed_properties(
         property_names = {"device_properties":"added_properties"}
@@ -175,9 +176,9 @@ class Device(object):
         self.connection = connection
         self.child_devices = []
         
-        # self.connection_table_properties may be instantiated already
-        if not hasattr(self, "connection_table_properties"):
-            self.connection_table_properties = {}          
+        # self._properties may be instantiated already
+        if not hasattr(self, "_properties"):
+            self._properties = {}          
 
         if parent_device and call_parents_add_device:
             # This is optional by keyword argument, so that subclasses
@@ -227,13 +228,13 @@ class Device(object):
             raise LabscriptError('Device %s requests invalid property assignment %s for property %s'%(self.name, destination, name))
             
         # if this try failes then self."destination" may not be instantiated
-        if not hasattr(self, "__properties"):
-            setattr(self, __properties, {})
+        if not hasattr(self, "_properties"):
+            self._properties = {}
 
-        if destination not in self.__properties:
-            self.__properties[destination] = {}
+        if destination not in self._properties:
+            self._properties[destination] = {}
 
-        selected_properties = self.__properties[destination]
+        selected_properties = self._properties[destination]
         
         if name in selected_properties and not overwrite:
             raise LabscriptError('Device %s has had the property %s set more than once. This is not allowed unless the overwrite flag is explicitly set'%(self.name, name))
@@ -256,7 +257,7 @@ class Device(object):
             properties_dict and added to the property with name key (it's destination)
         """
         
-        for destination, names in property_names:
+        for destination, names in property_names.items():
             temp_dict = {key:val for key, val in properties_dict.items() if key in names}                  
             for (name, value) in temp_dict.items():
                 self.set_property(name, value, 
@@ -296,12 +297,12 @@ class Device(object):
         if (destination is not None) and (destination not in self.valid_property_destinations):
             raise LabscriptError('Device %s requests invalid property read destination %s'%(self.name, destination))
             
-        # self.__properties may not be instantiated
-        if not hasattr(self, "__properties"):
-            setattr(self, __properties, {})
+        # self._properties may not be instantiated
+        if not hasattr(self, "_properties"):
+            self._properties =  {}
         
         # Run through all keys of interest
-        for key, val in self.__properties.items():
+        for key, val in self._properties.items():
             if (destination is None or key == destination) and (name in val):
                return val[name]
             
@@ -1712,15 +1713,15 @@ def generate_connection_table(hdf5_file):
             
         # The attribute should always exist, but in case it doesn't inherit from device for smoe reason, 
         # we'll check this anyway and default it to {} if it doesn't exist        
-        if hasattr(device, '__properties'):
+        if hasattr(device, '_properties'):
             
-            connection_table_properties = self.__properties.get("connection_table_properties", {})
+            con_table_properties = device._properties.get("con_table_properties", {})
             try:                
-                assert(eval(repr(connection_table_properties)) == connection_table_properties)
+                assert(eval(repr(con_table_properties)) == con_table_properties)
             except(AssertionError,SyntaxError):
                 raise LabscriptError('The properties for device "%s" are too complex to store as a string in the connection table'%device.name)
                 
-            properties = repr(connection_table_properties)
+            properties = repr(con_table_properties)
             if len(properties) > max_properties_length:
                 max_properties_length = len(properties)
         else:
