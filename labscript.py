@@ -117,33 +117,36 @@ def fastflatten(inarray, dtype):
             i += 1
     return flat
 
-def set_passed_properties(strip_names = None, keep_names = None):
+def set_passed_properties(property_names = {}):
     """
     This decorator is intended to wrap the __init__ functions and to
-    write any selected kwargs into the properties
-    Everything in properties_dict is accepted
-    while strip_names and keep_names are applied to the kwargs
+    write any selected kwargs into the properties.  
+    
+    names is a dictionary {key:val}, where each val
+        is a list [var1, var2, ...] of variables to be pulled from
+        properties_dict and added to the property with name key (it's destination)
+        
+    internally they are all accessed by calling self.get_property()
     """
     def decorator(func):
         @wraps(func)
         def new_function(inst, *args, **kwargs):
-            properties_dict = kwargs.pop('properties_dict',{})
-            inst.set_properties(properties_dict)
 
-            # Introspect keyword arguments of functions.  in python 3 this is
-            # a func.__something__ call
+            # Introspect arguments and named arguments functions.  in python 3 this is
+            # a pair of func.__something__ calls and no import from argspec is needed
             a = getargspec(func)
+            args_dict = {key:val for key,val in zip(a.args[0:-len(a.defaults)],args)}
+            
             if a.defaults is not None:
-                keywords_dict = {key:val for key,val in zip(a.args[-len(a.defaults):],a.defaults)}
-            else:
-                keywords_dict = {}
-                
+                args_dict.update({key:val for key,val in zip(a.args[-len(a.defaults):],a.defaults)})
+            
             # Update this list with the values from the passed keywords
             for key,val in keywords_dict.items():
                 if key in kwargs:
-                    keywords_dict[key] = kwargs[key]
+                    args_dict[key] = kwargs[key]
 
-            inst.set_properties(keywords_dict, strip_names=strip_names, keep_names=keep_names)
+            inst.set_properties(args_dict, property_names)
+            
             return func(inst, *args, **kwargs)
     
         return new_function
@@ -154,9 +157,13 @@ def set_passed_properties(strip_names = None, keep_names = None):
 class Device(object):
     description = 'Generic Device'
     allowed_children = None
+    valid_property_destinations = ["con_table_properties", "device_properties"]    
     
-    @set_passed_properties(keep_names = [])
-    def __init__(self,name,parent_device,connection, call_parents_add_device=True, **kwargs):
+    @set_passed_properties(
+        property_names = {"device_properties":"added_properties"}
+        )
+    def __init__(self,name,parent_device,connection, call_parents_add_device=True, 
+                 added_properties = {}, **kwargs):
         # Verify that no invalid kwargs were passed and the set properties
         if len(kwargs) != 0:        
             raise LabscriptError('Invalid keyword arguments: %s.'%kwargs)
@@ -212,14 +219,23 @@ class Device(object):
     #
     # You cannot overwrite an existing property unless you set the 
     # overwrite flag to True on subsequent calls to this method
-    def set_property(self, name, value, overwrite = False):
+    # 
+    # you can specify a destination = "device_properties" or "con_table_properties"
+    # to set where these are stored.
+    def set_property(self, name, value, overwrite = False, destination = None):
+        if destination is None or destination not in self.valid_property_destinations:
+            raise LabscriptError('Device %s requests invalid property assignment %s for property %s'%(self.name, destination, name))
+            
+        # if this try failes then self."destination" may not be instantiated
+        if not hasattr(self, "__properties"):
+            setattr(self, __properties, {})
+
+        if destination not in self.__properties:
+            self.__properties[destination] = {}
+
+        selected_properties = self.__properties[destination]
         
-        # if this try failes then self.connection_table_properties may not
-        # be instantiated yet
-        if not hasattr(self, "connection_table_properties"):
-            self.connection_table_properties = {}          
-        
-        if name in self.connection_table_properties and not overwrite:
+        if name in selected_properties and not overwrite:
             raise LabscriptError('Device %s has had the property %s set more than once. This is not allowed unless the overwrite flag is explicitly set'%(self.name, name))
 
         # make sure the value can be stored as a string
@@ -229,30 +245,23 @@ class Device(object):
             print value, " ->", repr(value)
             raise LabscriptError('The value set for property %s on device %s is too complex to store as a string in the connection table. Ensure that eval(repr(value)) == value is True'%(name, self.name))
         
-        self.connection_table_properties[name] = value
+        selected_properties[name] = value
 
-    def set_properties(self, properties_dict, strip_names = None, keep_names = None, overwrite = False):
+    def set_properties(self, properties_dict, property_names, overwrite = False):
         """
-        Add one or a bunch of properties packed into a dictionary if they are
-        not in strip_names (if not None) and are in keep_names (if not None)
-        
-        Generally you would use one option or the other, but both are possible
+        Add one or a bunch of properties packed into properties_dict
 
-        If keep_name is not in new_dict we will not throw any errors.
+        names is a dictionary {key:val, ...} where each val
+            is a list [var1, var2, ...] of variables to be pulled from
+            properties_dict and added to the property with name key (it's destination)
         """
-
-        # Dictionaries are passed by reference, don't change what was passed        
-        temp_dict = properties_dict.copy()
         
-        if strip_names is not None:
-            temp_dict = {key:val for key, val in temp_dict.items() if key not in keep_names}  
-        
-        if keep_names is not None:
-            temp_dict = {key:val for key, val in temp_dict.items() if key in keep_names}  
-                
-        for (name, value) in temp_dict.items():
-            self.set_property(name, value, overwrite = overwrite)
-
+        for destination, names in property_names:
+            temp_dict = {key:val for key, val in properties_dict.items() if key in names}                  
+            for (name, value) in temp_dict.items():
+                self.set_property(name, value, 
+                                  overwrite = overwrite, 
+                                  destination = destination)
     
     # Method to get a property of this device already set using Device.set_property
     #
@@ -275,18 +284,26 @@ class Device(object):
     # get_property('example', 7, 8)
     # get_property('example', 7, default=9)
     # get_property('example', default=7, x=9)
-    def get_property(self, name, *args, **kwargs):#default = None):
+    #
+    # the named argument destination, if passed, requests the keyword be searched
+    # from only that destination
+    def get_property(self, name, destination = None, *args, **kwargs):#default = None):
         if len(kwargs) == 1 and 'default' not in kwargs:
             raise LabscriptError('A call to %s.get_property had a keyword argument that was not name or default'%self.name)
         if len(args) + len(kwargs) > 1:
             raise LabscriptError('A call to %s.get_property has too many arguments and/or keyword arguments'%self.name)
 
-        # self.connection_table_properties may not be instantiated yet
-        if not hasattr(self, "connection_table_properties"):
-            self.connection_table_properties = {}          
-
-        if name in self.connection_table_properties:
-            return self.connection_table_properties[name]
+        if (destination is not None) and (destination not in self.valid_property_destinations):
+            raise LabscriptError('Device %s requests invalid property read destination %s'%(self.name, destination))
+            
+        # self.__properties may not be instantiated
+        if not hasattr(self, "__properties"):
+            setattr(self, __properties, {})
+        
+        # Run through all keys of interest
+        for key, val in self.__properties.items():
+            if (destination is None or key == destination) and (name in val):
+               return val[name]
             
         if 'default' in kwargs:
             return kwargs['default']
@@ -295,13 +312,13 @@ class Device(object):
         else:
             raise LabscriptError('The property %s has not been set for device %s'%(name, self.name))
 
-    def get_properties(self, properties_dict):
+    def get_properties(self, properties_dict, destination = None):
         """
         Get properties associatred with the keys in properties_dict, use the 
         defaults from the dictionary
         """
 
-        return {name: self.get_property(name, value) for (name, value) in properties_dict.items()}
+        return {name: self.get_property(name, value, destination = destination) for (name, value) in properties_dict.items()}
             
     
     def add_device(self, device):
@@ -367,7 +384,7 @@ class Device(object):
 
 class IntermediateDevice(Device):
     
-    @set_passed_properties(keep_names = [])
+    @set_passed_properties(property_names = {})
     def __init__(self, name, parent_device, **kwargs):
 
         self.name = name
@@ -388,7 +405,7 @@ class ClockLine(Device):
     allowed_children = [IntermediateDevice]
     _clock_limit = None
     
-    @set_passed_properties(keep_names = [])
+    @set_passed_properties(property_names = {})
     def __init__(self, name, pseudoclock, connection, ramping_allowed = True, **kwargs):
         
         # TODO: Verify that connection is  valid connection of Pseudoclock.parent_device (the PseudoclockDevice)
@@ -417,7 +434,7 @@ class Pseudoclock(Device):
     description = 'Generic Pseudoclock'
     allowed_children = [ClockLine]
     
-    @set_passed_properties(keep_names = [])
+    @set_passed_properties(property_names = {})
     def __init__(self, name, pseudoclock_device, connection, **kwargs):
 
         Device.__init__(self, name, pseudoclock_device, connection, **kwargs)
@@ -760,7 +777,7 @@ class TriggerableDevice(Device):
     # not require a pseudoclock, but do require a trigger.
     # This enables them to have a Trigger divice as a parent
     
-    @set_passed_properties(keep_names = [])
+    @set_passed_properties(property_names = {})
     def __init__(self, name, parent_device, connection, parentless=False, **kwargs):
 
         if None in [parent_device, connection] and not parentless:
@@ -791,7 +808,7 @@ class PseudoclockDevice(TriggerableDevice):
     # How long after the start of a wait instruction the device is actually capable of resuming:
     wait_delay = 0
     
-    @set_passed_properties(keep_names = [])
+    @set_passed_properties(property_names = {})
     def __init__(self, name, trigger_device=None, trigger_connection=None, **kwargs):
 
         if trigger_device is None:
@@ -870,7 +887,7 @@ class Output(Device):
     dtype = float64
     scale_factor = 1
     
-    @set_passed_properties(keep_names = [])
+    @set_passed_properties(property_names = {})
     def __init__(self,name,parent_device,connection,limits = None,unit_conversion_class = None,unit_conversion_parameters = None, **kwargs):
 
         self.instructions = {}
@@ -1262,7 +1279,7 @@ class StaticAnalogQuantity(Output):
     description = 'static analog quantity'
     default_value = 0.0
     
-    @set_passed_properties(keep_names = [])
+    @set_passed_properties(property_names = {})
     def __init__(self, *args, **kwargs):
         Output.__init__(self, *args, **kwargs)
         self._static_value = None
@@ -1309,7 +1326,7 @@ class DigitalQuantity(Output):
     dtype = uint32
     
     # Redefine __init__ so that you cannot define a limit or calibration for DO
-    @set_passed_properties(keep_names = [])
+    @set_passed_properties(property_names = {})
     def __init__(self, name, parent_device, connection, **kwargs):                
         Output.__init__(self,name,parent_device,connection, **kwargs)
         
@@ -1354,7 +1371,7 @@ class StaticDigitalQuantity(DigitalQuantity):
     description = 'static digital quantity'
     default_value = 0
     
-    @set_passed_properties(keep_names = [])
+    @set_passed_properties(property_names = {})
     def __init__(self, *args, **kwargs):
         DigitalQuantity.__init__(self, *args, **kwargs)
         self._static_value = None
@@ -1395,7 +1412,7 @@ class StaticDigitalOut(StaticDigitalQuantity):
 class AnalogIn(Device):
     description = 'Analog Input'
     
-    @set_passed_properties(keep_names = [])
+    @set_passed_properties(property_names = {})
     def __init__(self,name,parent_device,connection,scale_factor=1.0,units='Volts',**kwargs):
                 
         self.acquisitions = []
@@ -1416,7 +1433,7 @@ class AnalogIn(Device):
 class Shutter(DigitalOut):
     description = 'shutter'
     
-    @set_passed_properties(keep_names = [])
+    @set_passed_properties(property_names = {})
     def __init__(self,name,parent_device,connection,delay=(0,0),open_state=1,
                  **kwargs):
 
@@ -1463,7 +1480,7 @@ class Trigger(DigitalOut):
     allowed_states = {1:'high', 0:'low'}
     allowed_children = [TriggerableDevice]
 
-    @set_passed_properties(keep_names = [])
+    @set_passed_properties(property_names = {})
     def __init__(self, name, parent_device, connection, trigger_edge_type='rising',
                  **kwargs):
 
@@ -1509,7 +1526,7 @@ class Trigger(DigitalOut):
         
 class WaitMonitor(Trigger):
     
-    @set_passed_properties(keep_names = [])
+    @set_passed_properties(property_names = {})
     def __init__(self, name, parent_device, connection, acquisition_device, acquisition_connection, timeout_device, timeout_connection,
                   **kwargs):
 
@@ -1530,7 +1547,7 @@ class DDS(Device):
     description = 'DDS'
     allowed_children = [AnalogQuantity,DigitalOut,DigitalQuantity] # Adds its own children when initialised
 
-    @set_passed_properties(keep_names = [])
+    @set_passed_properties(property_names = {})
     def __init__(self, name, parent_device, connection, digital_gate={}, freq_limits=None, freq_conv_class=None, freq_conv_params={},
                  amp_limits=None, amp_conv_class=None, amp_conv_params={}, phase_limits=None, phase_conv_class=None, phase_conv_params = {},
                  **kwargs):
@@ -1617,7 +1634,7 @@ class StaticDDS(Device):
     description = 'Static RF'
     allowed_children = [StaticAnalogQuantity,DigitalOut,StaticDigitalOut]
     
-    @set_passed_properties(keep_names = [])
+    @set_passed_properties(property_names = {})
     def __init__(self,name,parent_device,connection,digital_gate = {},freq_limits = None,freq_conv_class = None,freq_conv_params = {},amp_limits=None,amp_conv_class = None,amp_conv_params = {},phase_limits=None,phase_conv_class = None,phase_conv_params = {},
                  **kwargs):
         #self.clock_type = parent_device.clock_type # Don't see that this is needed anymore
@@ -1693,14 +1710,17 @@ def generate_connection_table(hdf5_file):
         else:
             cal_params = str(None)
             
-        # The attribute should always exist, but in case it doesn't inherit from device for soe reason, we'l check this anyway and default it to {} if it doesn't exist        
-        if hasattr(device, 'connection_table_properties'):
+        # The attribute should always exist, but in case it doesn't inherit from device for smoe reason, 
+        # we'll check this anyway and default it to {} if it doesn't exist        
+        if hasattr(device, '__properties'):
+            
+            connection_table_properties = self.__properties.get("connection_table_properties", {})
             try:                
-                assert(eval(repr(device.connection_table_properties)) == device.connection_table_properties)
+                assert(eval(repr(connection_table_properties)) == connection_table_properties)
             except(AssertionError,SyntaxError):
                 raise LabscriptError('The properties for device "%s" are too complex to store as a string in the connection table'%device.name)
                 
-            properties = repr(device.connection_table_properties)
+            properties = repr(connection_table_properties)
             if len(properties) > max_properties_length:
                 max_properties_length = len(properties)
         else:
