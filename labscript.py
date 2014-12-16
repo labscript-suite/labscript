@@ -158,7 +158,11 @@ def set_passed_properties(property_names = {}):
 class Device(object):
     description = 'Generic Device'
     allowed_children = None
-    valid_property_destinations = {"con_table_properties", "device_properties"}   
+    valid_property_destinations = {
+        "con_table_properties", 
+        "device_properties", 
+        "unit_conversion_parameters",
+        "unit_conversion_class"}   
     
     @set_passed_properties(
         property_names = {"device_properties":"added_properties"}
@@ -313,14 +317,42 @@ class Device(object):
         else:
             raise LabscriptError('The property %s has not been set for device %s'%(name, self.name))
 
-    def get_properties(self, properties_dict, destination = None):
+    def get_properties(self, destination = None):
         """
-        Get properties associatred with the keys in properties_dict, use the 
-        defaults from the dictionary
+        Get all properties in destination
+        
+        If destination is None we return all keys
         """
+    
+        # self._properties may not be instantiated
+        if not hasattr(self, "_properties"):
+            self._properties =  {}
 
-        return {name: self.get_property(name, value, destination = destination) for (name, value) in properties_dict.items()}
-            
+        if destination is not None:
+            temp_dict = self._properties.get(destination, {})
+        else:
+            temp_dict = {}
+            for key,val in self._properties.items(): temp_dict.update(val)
+                
+        return temp_dict
+
+
+    def get_properties_string(self, destination = None):
+        """
+        turn all properties in destination into a string
+        
+        If destination is none we return all keys
+        """
+        
+        temp_dict = self.get_properties(destination = destination)
+
+        try:                
+            assert(eval(repr(temp_dict)) == temp_dict)
+        except(AssertionError,SyntaxError):
+            raise LabscriptError('The properties for device "%s" are too complex to store as a string'%self.name)
+        
+        return repr(temp_dict)          
+        
     
     def add_device(self, device):
         if any([isinstance(device,DeviceClass) for DeviceClass in self.allowed_children]):
@@ -379,9 +411,14 @@ class Device(object):
         return all_children
 
     def generate_code(self, hdf5_file):
+        
         for device in self.child_devices:
             device.generate_code(hdf5_file)
-  
+
+    def init_device_group(self, hdf5_file):
+        group = hdf5_file['/devices'].create_group(self.name)
+        group.attrs['device_properties'] = self.get_properties_string('device_properties')
+        return group
 
 class IntermediateDevice(Device):
     
@@ -889,14 +926,14 @@ class Output(Device):
     scale_factor = 1
     
     @set_passed_properties(property_names = {})
-    def __init__(self,name,parent_device,connection,limits = None,unit_conversion_class = None,unit_conversion_parameters = None, **kwargs):
+    def __init__(self,name,parent_device,connection,limits = None,unit_conversion_class = None, unit_conversion_parameters = None, **kwargs):
 
         self.instructions = {}
         self.ramp_limits = [] # For checking ramps don't overlap
         if not unit_conversion_parameters:
             unit_conversion_parameters = {}
         self.unit_conversion_class = unit_conversion_class
-        self.unit_conversion_parameters = unit_conversion_parameters        
+        self.unit_conversion_parameters = unit_conversion_parameters
         Device.__init__(self,name,parent_device,connection, **kwargs)  
         
         # Instantiate the calibration
@@ -1697,6 +1734,8 @@ def generate_connection_table(hdf5_file):
         devicedict[device.name] = device
         
         # If the device has calibration parameters, then run some checks
+        # TODO: move unit_conversion_parameters as unit_conversion_properties 
+        # in the _properties dictionary
         if hasattr(device,"unit_conversion_parameters"):
             try:
                 # Are we able to store the calibration parameter dictionary in the h5 file as a string?
@@ -1711,22 +1750,9 @@ def generate_connection_table(hdf5_file):
         else:
             cal_params = str(None)
             
-        # The attribute should always exist, but in case it doesn't inherit from device for smoe reason, 
-        # we'll check this anyway and default it to {} if it doesn't exist        
-        if hasattr(device, '_properties'):
-            
-            con_table_properties = device._properties.get("con_table_properties", {})
-            try:                
-                assert(eval(repr(con_table_properties)) == con_table_properties)
-            except(AssertionError,SyntaxError):
-                raise LabscriptError('The properties for device "%s" are too complex to store as a string in the connection table'%device.name)
-                
-            properties = repr(con_table_properties)
-            if len(properties) > max_properties_length:
-                max_properties_length = len(properties)
-        else:
-            properties = repr({})
-        
+        properties = device.get_properties_string(destination = "con_table_properties")                       
+        if len(properties) > max_properties_length:
+            max_properties_length = len(properties)        
         
         # If the device has a BLACS_connection atribute, then check to see if it is longer than the size of the hdf5 column
         if hasattr(device,"BLACS_connection"):
