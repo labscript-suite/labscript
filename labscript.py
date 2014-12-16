@@ -57,7 +57,7 @@ else:
 class config:
     suppress_mild_warnings = True
     suppress_all_warnings = False
-    compression = None # set to 'gzip' for compression 
+    compression = 'gzip'  # set to 'gzip' for compression 
    
     
 class NoWarnings(object):
