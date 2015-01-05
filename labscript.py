@@ -21,6 +21,7 @@ from functools import wraps
 
 import runmanager
 import labscript_utils.h5_lock, h5py
+import labscript_utils.properties
 from pylab import *
 
 import functions
@@ -124,13 +125,15 @@ def set_passed_properties(property_names = {}):
     
     names is a dictionary {key:val}, where each val
         is a list [var1, var2, ...] of variables to be pulled from
-        properties_dict and added to the property with name key (it's destination)
+        properties_dict and added to the property with name key (it's location)
         
     internally they are all accessed by calling self.get_property()
     """
     def decorator(func):
         @wraps(func)
         def new_function(inst, *args, **kwargs):
+
+            return_value = func(inst, *args, **kwargs)
 
             # Introspect arguments and named arguments functions.  in python 3 this is
             # a pair of func.__something__ calls and no import from argspec is needed
@@ -147,9 +150,9 @@ def set_passed_properties(property_names = {}):
             # print args_dict
             # print property_names
             inst.set_properties(args_dict, property_names)
-            
-            return func(inst, *args, **kwargs)
-    
+
+            return return_value
+
         return new_function
     
     return decorator
@@ -158,14 +161,9 @@ def set_passed_properties(property_names = {}):
 class Device(object):
     description = 'Generic Device'
     allowed_children = None
-    valid_property_destinations = {
-        "con_table_properties", 
-        "device_properties", 
-        "unit_conversion_parameters",
-        "unit_conversion_class"}   
     
     @set_passed_properties(
-        property_names = {"device_properties":"added_properties"}
+        property_names = {"device_properties": ["added_properties"]}
         )
     def __init__(self,name,parent_device,connection, call_parents_add_device=True, 
                  added_properties = {}, **kwargs):
@@ -182,7 +180,10 @@ class Device(object):
         
         # self._properties may be instantiated already
         if not hasattr(self, "_properties"):
-            self._properties = {}          
+            self._properties = {}
+        for location in labscript_utils.properties.VALID_PROPERTY_LOCATIONS:
+            if location not in self._properties:
+                self._properties[location] = {}
 
         if parent_device and call_parents_add_device:
             # This is optional by keyword argument, so that subclasses
@@ -225,48 +226,42 @@ class Device(object):
     # You cannot overwrite an existing property unless you set the 
     # overwrite flag to True on subsequent calls to this method
     # 
-    # you can specify a destination = "device_properties" or "con_table_properties"
+    # you can specify a location = "device_properties" or "connection_table_properties"
     # to set where these are stored.
-    def set_property(self, name, value, overwrite = False, destination = None):
-        if destination is None or destination not in self.valid_property_destinations:
-            raise LabscriptError('Device %s requests invalid property assignment %s for property %s'%(self.name, destination, name))
+    def set_property(self, name, value, overwrite = False, location = None):
+        if location is None or location not in labscript_utils.properties.VALID_PROPERTY_LOCATIONS:
+            raise LabscriptError('Device %s requests invalid property assignment %s for property %s'%(self.name, location, name))
             
-        # if this try failes then self."destination" may not be instantiated
+        # if this try failes then self."location" may not be instantiated
         if not hasattr(self, "_properties"):
             self._properties = {}
 
-        if destination not in self._properties:
-            self._properties[destination] = {}
+        if location not in self._properties:
+            self._properties[location] = {}
 
-        selected_properties = self._properties[destination]
+        selected_properties = self._properties[location]
         
         if name in selected_properties and not overwrite:
             raise LabscriptError('Device %s has had the property %s set more than once. This is not allowed unless the overwrite flag is explicitly set'%(self.name, name))
 
-        # make sure the value can be stored as a string
-        try:
-            assert(eval(repr(value)) == value)
-        except(AssertionError,SyntaxError):
-            print value, " ->", repr(value)
-            raise LabscriptError('The value set for property %s on device %s is too complex to store as a string in the connection table. Ensure that eval(repr(value)) == value is True'%(name, self.name))
-        
         selected_properties[name] = value
 
     def set_properties(self, properties_dict, property_names, overwrite = False):
         """
         Add one or a bunch of properties packed into properties_dict
 
-        names is a dictionary {key:val, ...} where each val
+        property_names is a dictionary {key:val, ...} where each val
             is a list [var1, var2, ...] of variables to be pulled from
-            properties_dict and added to the property with name key (it's destination)
+            properties_dict and added to the property with name key (it's location)
         """
-        
-        for destination, names in property_names.items():
+        for location, names in property_names.items():
+            if not isinstance(names, list) and not isinstance(names, tuple):
+                raise TypeError('%s names (%s) must be list or tuple, not %s'%(location, repr(names), str(type(names))))
             temp_dict = {key:val for key, val in properties_dict.items() if key in names}                  
             for (name, value) in temp_dict.items():
                 self.set_property(name, value, 
                                   overwrite = overwrite, 
-                                  destination = destination)
+                                  location = location)
     
     # Method to get a property of this device already set using Device.set_property
     #
@@ -290,16 +285,16 @@ class Device(object):
     # get_property('example', 7, default=9)
     # get_property('example', default=7, x=9)
     #
-    # the named argument destination, if passed, requests the keyword be searched
-    # from only that destination
-    def get_property(self, name, destination = None, *args, **kwargs):#default = None):
+    # the named argument location, if passed, requests the keyword be searched
+    # from only that location
+    def get_property(self, name, location = None, *args, **kwargs):#default = None):
         if len(kwargs) == 1 and 'default' not in kwargs:
             raise LabscriptError('A call to %s.get_property had a keyword argument that was not name or default'%self.name)
         if len(args) + len(kwargs) > 1:
             raise LabscriptError('A call to %s.get_property has too many arguments and/or keyword arguments'%self.name)
 
-        if (destination is not None) and (destination not in self.valid_property_destinations):
-            raise LabscriptError('Device %s requests invalid property read destination %s'%(self.name, destination))
+        if (location is not None) and (location not in labscript_utils.properties.VALID_PROPERTY_LOCATIONS):
+            raise LabscriptError('Device %s requests invalid property read location %s'%(self.name, location))
             
         # self._properties may not be instantiated
         if not hasattr(self, "_properties"):
@@ -307,7 +302,7 @@ class Device(object):
         
         # Run through all keys of interest
         for key, val in self._properties.items():
-            if (destination is None or key == destination) and (name in val):
+            if (location is None or key == location) and (name in val):
                return val[name]
             
         if 'default' in kwargs:
@@ -317,43 +312,25 @@ class Device(object):
         else:
             raise LabscriptError('The property %s has not been set for device %s'%(name, self.name))
 
-    def get_properties(self, destination = None):
+    def get_properties(self, location = None):
         """
-        Get all properties in destination
+        Get all properties in location
         
-        If destination is None we return all keys
+        If location is None we return all keys
         """
     
         # self._properties may not be instantiated
         if not hasattr(self, "_properties"):
             self._properties =  {}
 
-        if destination is not None:
-            temp_dict = self._properties.get(destination, {})
+        if location is not None:
+            temp_dict = self._properties.get(location, {})
         else:
             temp_dict = {}
             for key,val in self._properties.items(): temp_dict.update(val)
                 
         return temp_dict
 
-
-    def get_properties_string(self, destination = None):
-        """
-        turn all properties in destination into a string
-        
-        If destination is none we return all keys
-        """
-        
-        temp_dict = self.get_properties(destination = destination)
-
-        try:                
-            assert(eval(repr(temp_dict)) == temp_dict)
-        except(AssertionError,SyntaxError):
-            raise LabscriptError('The properties for device "%s" are too complex to store as a string'%self.name)
-        
-        return repr(temp_dict)          
-        
-    
     def add_device(self, device):
         if any([isinstance(device,DeviceClass) for DeviceClass in self.allowed_children]):
             self.child_devices.append(device)
@@ -417,8 +394,8 @@ class Device(object):
 
     def init_device_group(self, hdf5_file):
         group = hdf5_file['/devices'].create_group(self.name)
-        group.attrs['device_properties'] = self.get_properties_string('device_properties')
         return group
+
 
 class IntermediateDevice(Device):
     
@@ -927,14 +904,15 @@ class Output(Device):
     
     @set_passed_properties(property_names = {})
     def __init__(self,name,parent_device,connection,limits = None,unit_conversion_class = None, unit_conversion_parameters = None, **kwargs):
+        Device.__init__(self,name,parent_device,connection, **kwargs)
 
         self.instructions = {}
         self.ramp_limits = [] # For checking ramps don't overlap
         if not unit_conversion_parameters:
             unit_conversion_parameters = {}
         self.unit_conversion_class = unit_conversion_class
-        self.unit_conversion_parameters = unit_conversion_parameters
-        Device.__init__(self,name,parent_device,connection, **kwargs)  
+        self.set_properties(unit_conversion_parameters,
+                            {'unit_conversion_parameters': unit_conversion_parameters.keys()})
         
         # Instantiate the calibration
         if unit_conversion_class is not None:
@@ -1725,34 +1703,17 @@ def generate_connection_table(hdf5_file):
     connection_table = []
     devicedict = {}
     
-    # This starts at 4 to accomodate "None"
-    max_cal_param_length = 4
-    max_BLACS_conn_length = 1
-    # This starts at 2 to accomodate "{}"
-    max_properties_length = 2
+    # Only use a string dtype as long as is needed:
+    max_BLACS_conn_length = -1
+
     for device in compiler.inventory:
         devicedict[device.name] = device
-        
-        # If the device has calibration parameters, then run some checks
-        # TODO: move unit_conversion_parameters as unit_conversion_properties 
-        # in the _properties dictionary
-        if hasattr(device,"unit_conversion_parameters"):
-            try:
-                # Are we able to store the calibration parameter dictionary in the h5 file as a string?
-                assert(eval(repr(device.unit_conversion_parameters)) == device.unit_conversion_parameters)
-            except(AssertionError,SyntaxError):
-                raise LabscriptError('The calibration parameters for device "%s" are too complex to store as a string in the connection table'%device.name)
-                            
-            # Find the logest parameter string
-            cal_params = repr(device.unit_conversion_parameters)
-            if len(cal_params) > max_cal_param_length:
-                max_cal_param_length = len(cal_params)
-        else:
-            cal_params = str(None)
-            
-        properties = device.get_properties_string(destination = "con_table_properties")                       
-        if len(properties) > max_properties_length:
-            max_properties_length = len(properties)        
+
+        unit_conversion_parameters = device._properties['unit_conversion_parameters']
+        serialised_unit_conversion_parameters = labscript_utils.properties.serialise(unit_conversion_parameters)
+
+        properties = device._properties["connection_table_properties"]
+        serialised_properties = labscript_utils.properties.serialise(properties)
         
         # If the device has a BLACS_connection atribute, then check to see if it is longer than the size of the hdf5 column
         if hasattr(device,"BLACS_connection"):
@@ -1767,15 +1728,16 @@ def generate_connection_table(hdf5_file):
                                  device.parent_device.name if device.parent_device else str(None),
                                  str(device.connection if device.parent_device else str(None)),
                                  device.unit_conversion_class.__name__ if hasattr(device,"unit_conversion_class") and device.unit_conversion_class is not None else str(None),
-                                 cal_params,
+                                 serialised_unit_conversion_parameters,
                                  BLACS_connection,
-                                 properties))
+                                 serialised_properties))
     
     connection_table.sort()
+    vlenstring = h5py.special_dtype(vlen=unicode)
     connection_table_dtypes = [('name','a256'), ('class','a256'), ('parent','a256'), ('parent port','a256'),
-                               ('unit conversion class','a256'), ('unit conversion params','a'+str(max_cal_param_length)), 
+                               ('unit conversion class','a256'), ('unit conversion params', vlenstring),
                                ('BLACS_connection','a'+str(max_BLACS_conn_length)),
-                               ('properties', 'a%s'%max_properties_length)]
+                               ('properties', vlenstring)]
     connection_table_array = empty(len(connection_table),dtype=connection_table_dtypes)
     for i, row in enumerate(connection_table):
         connection_table_array[i] = row
@@ -1818,7 +1780,24 @@ def save_labscripts(hdf5_file):
         pass
     except WindowsError if os.name == 'nt' else None:
         sys.stderr.write('Warning: Cannot save SVN data for imported scripts. Check that the svn command can be run from the command line\n')
-        
+
+
+def write_device_properties(hdf5_file):
+    for device in compiler.inventory:
+        device_properties = device._properties["device_properties"]
+        # Special case: We don't create the group if the only property is an
+        # empty dict called 'added properties'. This is because this property
+        # is present in all devices, and represents a place to pass in
+        # arbitrary data from labscript experiment scripts. We don't want a
+        # group for every device if nothing is actually being passed in, so we
+        # ignore this case.
+        if device_properties and device_properties != {'added_properties':{}}:
+            # Create group if doesn't exist:
+            if not device.name in hdf5_file['devices']:
+                hdf5_file['/devices'].create_group(device.name)
+            labscript_utils.properties.set_device_properties(hdf5_file, device.name, device_properties)
+
+
 def generate_wait_table(hdf5_file):
     dtypes = [('label','a256'), ('time', float), ('timeout', float)]
     data_array = zeros(len(compiler.wait_table), dtype=dtypes)
@@ -1861,6 +1840,7 @@ def generate_code():
             if device.parent_device is None:
                 device.generate_code(hdf5_file)
         generate_connection_table(hdf5_file)
+        write_device_properties(hdf5_file)
         generate_wait_table(hdf5_file)
         save_labscripts(hdf5_file)
 
