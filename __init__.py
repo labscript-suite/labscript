@@ -13,6 +13,10 @@
 
 from labscript import *
 
+from labscript_utils import check_version
+check_version('labscript_utils', '2.2', '3')
+
+
 # Initialisation, runs at import. Can be suppressed by setting
 # labscript_auto_init = False in the locals of the importing scope
 # before importing labscript. If you do this, you'll need to call
