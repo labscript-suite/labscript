@@ -228,7 +228,7 @@ class Device(object):
     # 
     # you can specify a location = "device_properties" or "connection_table_properties"
     # to set where these are stored.
-    def set_property(self, name, value, overwrite = False, location = None):
+    def set_property(self, name, value, location=None, overwrite=False):
         if location is None or location not in labscript_utils.properties.VALID_PROPERTY_LOCATIONS:
             raise LabscriptError('Device %s requests invalid property assignment %s for property %s'%(self.name, location, name))
             

@@ -13,7 +13,11 @@
 
 from labscript import *
 
-from labscript_utils import check_version
+try:
+    from labscript_utils import check_version
+except ImportError:
+    raise ImportError('Require labscript_utils > 2.1.0')
+
 check_version('labscript_utils', '2.2', '3')
 
 
@@ -35,4 +39,4 @@ check_version('labscript_utils', '2.2', '3')
 #    elif sys.argv[0]:
 #        labscript_init(sys.argv[0].replace('.py','.h5'), labscript_file=sys.argv[0], new=True, overwrite=overwrite)
 
-__version__ = '2.0.1'
+__version__ = '2.1.0'
