@@ -546,13 +546,12 @@ class Pseudoclock(Device):
                 change_time_list.append(0)
 
             # Also add the stop time as as change time. First check that it isn't too close to the time of the last instruction:
-            if not self.parent_device.stop_time in change_time_list:
-                dt = self.parent_device.stop_time - change_time_list[-1]
-                if abs(dt) < 1.0/clock_line.clock_limit:
-                    raise LabscriptError('The stop time of the experiment is t= %s s, but the last instruction for a device attached to %s is at t= %s s. '%( str(self.stop_time), self.name, str(change_time_list[-1])) +
-                                         'One or more connected devices cannot support update delays shorter than %s sec. Please set the stop_time a bit later.'%str(1.0/clock_line.clock_limit))
-                
-                change_time_list.append(self.parent_device.stop_time)
+            dt = self.parent_device.stop_time - change_time_list[-1]
+            if abs(dt) < 1.0/clock_line.clock_limit:
+                raise LabscriptError('The stop time of the experiment is t= %s s, but the last instruction for a device attached to %s is at t= %s s. '%( str(self.stop_time), self.name, str(change_time_list[-1])) +
+                                     'One or more connected devices cannot support update delays shorter than %s sec. Please set the stop_time a bit later.'%str(1.0/clock_line.clock_limit))
+
+            change_time_list.append(self.parent_device.stop_time)
 
             # Sort change times so self.stop_time will be in the middle
             # somewhere if it is prior to the last actual instruction. Whilst
@@ -714,8 +713,10 @@ class Pseudoclock(Device):
                         # clock.append({'start': time, 'reps': 1, 'step': self.parent_device.stop_time - time,'slow_clock_tick':True}) 
                     # Error if self.parent_device.stop_time has been set to less
                     # than the time of the last instruction:
-                    elif self.parent_device.stop_time < time:
-                        raise LabscriptError('%s %s has more instructions after the experiment\'s stop time.'%(self.description,self.name))
+                    elif self.parent_device.stop_time <= time:
+                        message = ('%s %s has an instruction at or after the experiment\'s stop time. '%(self.description,self.name) +
+                                   'Please call stop() with a later time so that it is after all instructions.')
+                        raise LabscriptError(message)
                     # If self.parent_device.stop_time is the same as the time of the last
                     # instruction, then we'll get the last instruction
                     # out still, so that the total number of clock
