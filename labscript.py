@@ -883,10 +883,12 @@ class PseudoclockDevice(TriggerableDevice):
             output.offset_instructions_from_trigger(self.trigger_times)
         
         if not self.is_master_pseudoclock:
-            # Adjust the stop time relative to the last trigger time
-            self.stop_time = self.stop_time - self.trigger_delay * len(self.trigger_times)
-            # Modify the trigger times themselves so that we insert wait instructions at the right times:
+            # Store the unmodified initial_trigger_time
             initial_trigger_time = self.trigger_times[0]
+            # Adjust the stop time relative to the last trigger time
+            self.stop_time = self.stop_time - initial_trigger_time - self.trigger_delay * len(self.trigger_times)
+            
+            # Modify the trigger times themselves so that we insert wait instructions at the right times:
             self.trigger_times = [t - initial_trigger_time - i*self.trigger_delay for i, t in enumerate(self.trigger_times)]
                             
     def generate_code(self, hdf5_file):
