@@ -1862,7 +1862,9 @@ def trigger_all_pseudoclocks(t='initial'):
     max_delay_time = max_or_zero([pseudoclock.trigger_delay for pseudoclock in compiler.all_pseudoclocks if not pseudoclock.is_master_pseudoclock])
     # On the other hand, perhaps the trigger duration and clock limit of the master clock is
     # limiting when we can next give devices instructions:
-    max_delay = max(compiler.trigger_duration + 1.0/compiler.master_pseudoclock.clock_limit, max_delay_time)
+    # So find the max of 1.0/clock_limit of every clockline on every pseudoclock of the master pseudoclock
+    master_pseudoclock_delay = max(1.0/compiler.master_pseudoclock.clock_limit, max_or_zero([1.0/clockline.clock_limit for pseudoclock in compiler.master_pseudoclock.child_devices for clockline in pseudoclock.child_devices]))
+    max_delay = max(compiler.trigger_duration + master_pseudoclock_delay, max_delay_time)    
     return max_delay + wait_delay
     
 def wait(label, t, timeout=5):
