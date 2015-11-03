@@ -1871,7 +1871,7 @@ def wait(label, t, timeout=5):
     max_delay = trigger_all_pseudoclocks(t)
     if t in compiler.wait_table:
         raise LabscriptError('There is already a wait at t=%s'%str(t))
-    if any([label==existing_label for existing_label, timeout in compiler.wait_table.values()]):
+    if any([label==existing_label for existing_label, _ in compiler.wait_table.values()]):
         raise LabscriptError('There is already a wait named %s'%str(label))
     compiler.wait_table[t] = str(label), float(timeout)
     return max_delay
