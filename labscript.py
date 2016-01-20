@@ -1200,30 +1200,72 @@ class Output(Device):
 class AnalogQuantity(Output):
     description = 'analog quantity'
     default_value = 0
+
+    def truncate(ramp_func):
+        @wraps(ramp_func)
+        def new_ramp(self, *args, **kwargs):
+            # Get time argument of ramp_func
+            if len(args):
+                time = args[0]
+            else:
+                time = kwargs['t']
+
+            # Remove truncation kwarg and call ramp_func to generate instruction
+            truncation = kwargs.pop('truncation', 1.)
+            if truncation > 0.:
+                full_duration = ramp_func(self, *args, **kwargs)
+            truncated_duration = truncation*full_duration
+
+            # Check that truncation parameter is between 0 and 1
+            if truncation < 0. or truncation > 1.:
+                raise LabscriptError('Truncation argument of %s.%s at t=%f must be between 0 and 1 (inclusive), but is %f.' % (
+                    self.name, ramp_func.__name__, time, truncation))
+
+            if not truncation in [0, 1]:
+                # Then modify self.instructions[round(time, 10)]
+                time_key = round(time, 10)
+
+                # Modify end time and round as per in add_instrunction
+                end_time = round(time + truncated_duration, 10)
+                self.instructions[time_key]['end time'] = end_time
+
+                # Modify self.ramp_limits based on modified end time
+                initial_time = self.ramp_limits[-1][0]
+                self.ramp_limits[-1] = (initial_time, end_time)
+
+            return truncated_duration
+        return new_ramp
+
+
+    @truncate
     def ramp(self,t,duration,initial,final,samplerate,units=None):
         self.add_instruction(t, {'function': functions.ramp(duration,initial,final), 'description':'linear ramp',
                                  'initial time':t, 'end time': t + duration, 'clock rate': samplerate, 'units': units})
         
         return duration
-                                 
+             
+    @truncate                    
     def sine(self,t,duration,amplitude,angfreq,phase,dc_offset,samplerate,units=None):
         self.add_instruction(t, {'function': functions.sine(duration,amplitude,angfreq,phase,dc_offset), 'description':'sine wave',
                                  'initial time':t, 'end time': t + duration, 'clock rate': samplerate, 'units': units})
        
         return duration
         
+    @truncate
     def sine_ramp(self,t,duration,initial,final,samplerate,units=None):
         self.add_instruction(t, {'function': functions.sine_ramp(duration,initial,final), 'description':'sinusoidal ramp',
                                  'initial time':t, 'end time': t + duration, 'clock rate': samplerate, 'units': units})   
                 
         return duration
-        
+    
+    @truncate    
     def sine4_ramp(self,t,duration,initial,final,samplerate,units=None):
         self.add_instruction(t, {'function': functions.sine4_ramp(duration,initial,final), 'description':'sinusoidal ramp',
                                  'initial time':t, 'end time': t + duration, 'clock rate': samplerate, 'units': units})   
                 
         return duration
-        
+
+    @truncate
     def sine4_reverse_ramp(self,t,duration,initial,final,samplerate,units=None):
         self.add_instruction(t, {'function': functions.sine4_reverse_ramp(duration,initial,final), 'description':'sinusoidal ramp',
                                  'initial time':t, 'end time': t + duration, 'clock rate': samplerate, 'units': units})   
@@ -1263,13 +1305,14 @@ class AnalogQuantity(Output):
                 
         return trunc_duration
     
-
+    @truncate
     def piecewise_accel_ramp(self,t,duration,initial,final,samplerate, units=None):
         self.add_instruction(t, {'function': functions.piecewise_accel(duration,initial,final), 'description':'piecewise linear accelleration ramp',
                                  'initial time':t, 'end time': t + duration, 'clock rate': samplerate, 'units': units})   
                 
         return duration
-    
+
+    @truncate    
     def customramp(self, t, duration, function, *args, **kwargs):
         units = kwargs.pop('units', None)
         samplerate = kwargs.pop('samplerate')

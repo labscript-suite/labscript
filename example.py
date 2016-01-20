@@ -131,7 +131,7 @@ andor_ixon_0.expose('exposure_1',t+1,'atoms')
 
 # Do some more things at various times!
 # (these are ignoring the t variable)
-analog2.ramp(t=2.25, duration=3, initial=3, final=4, samplerate=rate)
+analog2.sine_ramp(t=2.25, duration=3, initial=3, final=4, samplerate=rate, truncation=1.0)
 shutter1.open(t=5.89)
 analog2.constant(t=5.9,value=5)
 analog2.constant(t=7,value=4)
