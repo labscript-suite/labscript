@@ -157,43 +157,6 @@ def set_passed_properties(property_names = {}):
     
     return decorator
 
-def truncate(ramp_func):
-    """Decorator for ramp functions to truncate their duration, using
-    a keyword argument "truncation" (1.0 by default - no truncation)."""
-    @wraps(ramp_func)
-    def new_ramp(self, *args, **kwargs):
-        # Get time argument of ramp_func
-        if len(args):
-            time = args[0]
-        else:
-            time = kwargs['t']
-
-        # Remove truncation kwarg and call ramp_func to generate instruction
-        truncation = kwargs.pop('truncation', 1.)
-        if truncation > 0.:
-            full_duration = ramp_func(self, *args, **kwargs)
-        truncated_duration = truncation*full_duration
-
-        # Check that truncation parameter is between 0 and 1
-        if truncation < 0. or truncation > 1.:
-            raise LabscriptError('Truncation argument of %s.%s at t=%f must be between 0 and 1 (inclusive), but is %f.' % (
-                self.name, ramp_func.__name__, time, truncation))
-
-        if not truncation in [0, 1]:
-            # Then modify self.instructions[round(time, 10)]
-            time_key = round(time, 10)
-
-            # Modify end time and round as per in add_instrunction
-            end_time = round(time + truncated_duration, 10)
-            self.instructions[time_key]['end time'] = end_time
-
-            # Modify self.ramp_limits based on modified end time
-            initial_time = self.ramp_limits[-1][0]
-            self.ramp_limits[-1] = (initial_time, end_time)
-
-        return truncated_duration
-    return new_ramp
-
 
 class Device(object):
     description = 'Generic Device'
@@ -1238,99 +1201,129 @@ class AnalogQuantity(Output):
     description = 'analog quantity'
     default_value = 0
 
-    @truncate
-    def ramp(self,t,duration,initial,final,samplerate,units=None):
-        self.add_instruction(t, {'function': functions.ramp(duration,initial,final), 'description':'linear ramp',
-                                 'initial time':t, 'end time': t + duration, 'clock rate': samplerate, 'units': units})
-        
-        return duration
-             
-    @truncate                    
-    def sine(self,t,duration,amplitude,angfreq,phase,dc_offset,samplerate,units=None):
-        self.add_instruction(t, {'function': functions.sine(duration,amplitude,angfreq,phase,dc_offset), 'description':'sine wave',
-                                 'initial time':t, 'end time': t + duration, 'clock rate': samplerate, 'units': units})
-       
-        return duration
-        
-    @truncate
-    def sine_ramp(self,t,duration,initial,final,samplerate,units=None):
-        self.add_instruction(t, {'function': functions.sine_ramp(duration,initial,final), 'description':'sinusoidal ramp',
-                                 'initial time':t, 'end time': t + duration, 'clock rate': samplerate, 'units': units})   
-                
-        return duration
-    
-    @truncate    
-    def sine4_ramp(self,t,duration,initial,final,samplerate,units=None):
-        self.add_instruction(t, {'function': functions.sine4_ramp(duration,initial,final), 'description':'sinusoidal ramp',
-                                 'initial time':t, 'end time': t + duration, 'clock rate': samplerate, 'units': units})   
-                
-        return duration
+    def _check_truncation(self, truncation):
+        if not (0 <= truncation <= 1):
+            raise LabscriptError(
+                'Truncation argument must be between 0 and 1 (inclusive), but is %f.' % truncation)
 
-    @truncate
-    def sine4_reverse_ramp(self,t,duration,initial,final,samplerate,units=None):
-        self.add_instruction(t, {'function': functions.sine4_reverse_ramp(duration,initial,final), 'description':'sinusoidal ramp',
-                                 'initial time':t, 'end time': t + duration, 'clock rate': samplerate, 'units': units})   
-                
-        return duration
-    
-    def exp_ramp(self, t, duration, initial, final, samplerate, zero=0, trunc=False, trunc_type='linear', units=None):
-        if trunc is not False:
-            if trunc_type == 'linear':
-                trunc_duration = duration*log((initial-zero)/(trunc-zero))/log((initial-zero)/(final-zero))
-            elif trunc_type == 'exponential':
-                trunc_duration = trunc * duration
-                # final = functions.exp_ramp(0, duration, initial, final, zero)(trunc_duration)
+    def ramp(self, t, duration, initial, final, samplerate, units=None, truncation=1.):
+        self._check_truncation(truncation)
+        if truncation > 0:
+            self.add_instruction(t, {'function': functions.ramp(duration, initial, final), 'description': 'linear ramp',
+                                     'initial time': t, 'end time': t + truncation*duration, 'clock rate': samplerate, 'units': units})
+        return truncation*duration
+
+    def sine(self, t, duration, amplitude, angfreq, phase, dc_offset, samplerate, units=None, truncation=1.):
+        self._check_truncation(truncation)
+        if truncation > 0:
+            self.add_instruction(t, {'function': functions.sine(duration, amplitude, angfreq, phase, dc_offset), 'description': 'sine wave',
+                                     'initial time': t, 'end time': t + truncation*duration, 'clock rate': samplerate, 'units': units})
+        return truncation*duration
+
+    def sine_ramp(self, t, duration, initial, final, samplerate, units=None, truncation=1.):
+        self._check_truncation(truncation)
+        if truncation > 0:
+            self.add_instruction(t, {'function': functions.sine_ramp(duration, initial, final), 'description': 'sinusoidal ramp',
+                                     'initial time': t, 'end time': t + truncation*duration, 'clock rate': samplerate, 'units': units})
+        return truncation*duration
+
+    def sine4_ramp(self, t, duration, initial, final, samplerate, units=None, truncation=1.):
+        self._check_truncation(truncation)
+        if truncation > 0:
+            self.add_instruction(t, {'function': functions.sine4_ramp(duration, initial, final), 'description': 'sinusoidal ramp',
+                                     'initial time': t, 'end time': t + truncation*duration, 'clock rate': samplerate, 'units': units})
+        return truncation*duration
+
+    def sine4_reverse_ramp(self, t, duration, initial, final, samplerate, units=None, truncation=1.):
+        self._check_truncation(truncation)
+        if truncation > 0:
+            self.add_instruction(t, {'function': functions.sine4_reverse_ramp(duration, initial, final), 'description': 'sinusoidal ramp',
+                                     'initial time': t, 'end time': t + truncation*duration, 'clock rate': samplerate, 'units': units})
+        return truncation*duration
+
+    def exp_ramp(self, t, duration, initial, final, samplerate, zero=0, units=None, truncation=1., truncation_type='linear', **kwargs):
+        """Exponential ramp whose rate of change is set by an asymptotic value (zero argument)."""
+        # Backwards compatibility for old kwarg names
+        if 'trunc' in kwargs:
+            truncation = kwargs.pop('trunc')
+        if 'trunc_type' in kwargs:
+            truncation_type = kwargs.pop('trunc_type')
+        self._check_truncation(truncation)
+
+        # Computed the truncated duration based on the truncation_type
+        if truncation < 1.:
+            if truncation_type == 'linear':
+                # Truncate the ramp when it reaches the value truncation
+                trunc_duration = duration * \
+                    log((initial-zero)/(truncation-zero)) / \
+                    log((initial-zero)/(final-zero))
+            elif truncation_type == 'exponential':
+                # Truncate the ramps duration by a fraction truncation
+                trunc_duration = truncation * duration
             else:
-                raise LabscriptError('Truncation type for exp_ramp not supported. Must be either linear or exponential.')
+                raise LabscriptError(
+                    'Truncation type for exp_ramp not supported. Must be either linear or exponential.')
         else:
             trunc_duration = duration
-        self.add_instruction(t, {'function': functions.exp_ramp(duration,initial,final,zero), 'description':'exponential ramp',
-                             'initial time':t, 'end time': t + trunc_duration, 'clock rate': samplerate, 'units': units})
-        
+        if truncation > 0:
+            self.add_instruction(t, {'function': functions.exp_ramp(duration, initial, final, zero), 'description': 'exponential ramp',
+                                     'initial time': t, 'end time': t + trunc_duration, 'clock rate': samplerate, 'units': units})
         return trunc_duration
-     
-    def exp_ramp_t(self, t, duration, initial, final, time_constant, samplerate, trunc=False, trunc_type='linear', units=None):
-        # Exponential ramp set by the time constant. No truncation yet!
-        zero = (final-initial*exp(-duration/time_constant)) / (1-exp(-duration/time_constant))
-        if trunc is not False:
-            if trunc_type == 'linear':
-                trunc_duration = time_constant * log((initial-zero)/(trunc-zero))
-            elif trunc_type == 'exponential':
-                trunc_duration = trunc * duration
+
+    def exp_ramp_t(self, t, duration, initial, final, time_constant, samplerate, units=None, truncation=1., truncation_type='linear', **kwargs):
+        """Exponential ramp whose rate of change is set by the time_constant."""
+        # Backwards compatibility for old kwarg names
+        if 'trunc' in kwargs:
+            truncation = kwargs.pop('trunc')
+        if 'trunc_type' in kwargs:
+            truncation_type = kwargs.pop('trunc_type')
+        self._check_truncation(truncation)
+
+        zero = (final-initial*exp(-duration/time_constant)) / \
+            (1-exp(-duration/time_constant))
+        if truncation < 1.:
+            if truncation_type == 'linear':
+                trunc_duration = time_constant * \
+                    log((initial-zero)/(trunc-zero))
+            elif truncation_type == 'exponential':
+                trunc_duration = truncation * duration
             else:
-                raise LabscriptError('Truncation type for exp_ramp_t not supported. Must be either linear or exponential.')
+                raise LabscriptError(
+                    'Truncation type for exp_ramp_t not supported. Must be either linear or exponential.')
         else:
             trunc_duration = duration
-        self.add_instruction(t, {'function': functions.exp_ramp_t(duration, initial, final, time_constant), 'description':'exponential ramp with time consntant',
-                             'initial time':t, 'end time': t + trunc_duration, 'clock rate': samplerate, 'units': units})
-                
+        self.add_instruction(t, {'function': functions.exp_ramp_t(duration, initial, final, time_constant), 'description': 'exponential ramp with time consntant',
+                                 'initial time': t, 'end time': t + trunc_duration, 'clock rate': samplerate, 'units': units})
         return trunc_duration
-    
-    @truncate
-    def piecewise_accel_ramp(self,t,duration,initial,final,samplerate, units=None):
-        self.add_instruction(t, {'function': functions.piecewise_accel(duration,initial,final), 'description':'piecewise linear accelleration ramp',
-                                 'initial time':t, 'end time': t + duration, 'clock rate': samplerate, 'units': units})   
-                
-        return duration
 
-    @truncate    
+    def piecewise_accel_ramp(self, t, duration, initial, final, samplerate, units=None, truncation=1.):
+        self._check_truncation(truncation)
+        if truncation > 0:
+            self.add_instruction(t, {'function': functions.piecewise_accel(duration, initial, final), 'description': 'piecewise linear accelleration ramp',
+                                     'initial time': t, 'end time': t + truncation*duration, 'clock rate': samplerate, 'units': units})
+        return truncation*duration
+
     def customramp(self, t, duration, function, *args, **kwargs):
         units = kwargs.pop('units', None)
         samplerate = kwargs.pop('samplerate')
-        
+        truncation = kwargs.pop('truncation', 1.)
+        self._check_truncation(truncation)
+
         def custom_ramp_func(t_rel):
             """The function that will return the result of the user's function,
             evaluated at relative times t_rel from 0 to duration"""
             return function(t_rel, duration, *args, **kwargs)
-            
-        self.add_instruction(t, {'function': custom_ramp_func, 'description':'custom ramp: %s' % function.__name__,
-                                 'initial time':t, 'end time': t + duration, 'clock rate': samplerate, 'units': units})   
-        return duration
-        
-    def constant(self,t,value,units=None):
+
+        if truncation > 0:
+            self.add_instruction(t, {'function': custom_ramp_func, 'description': 'custom ramp: %s' % function.__name__,
+                                     'initial time': t, 'end time': t + truncation*duration, 'clock rate': samplerate, 'units': units})
+        return truncation*duration
+
+    def constant(self, t, value, units=None):
         # verify that value can be converted to float
         val = float(value)
-        self.add_instruction(t,value,units)
+        self.add_instruction(t, value, units)
+
         
       
 class AnalogOut(AnalogQuantity):
