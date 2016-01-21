@@ -157,6 +157,43 @@ def set_passed_properties(property_names = {}):
     
     return decorator
 
+def truncate(ramp_func):
+    """Decorator for ramp functions to truncate their duration, using
+    a keyword argument "truncation" (1.0 by default - no truncation)."""
+    @wraps(ramp_func)
+    def new_ramp(self, *args, **kwargs):
+        # Get time argument of ramp_func
+        if len(args):
+            time = args[0]
+        else:
+            time = kwargs['t']
+
+        # Remove truncation kwarg and call ramp_func to generate instruction
+        truncation = kwargs.pop('truncation', 1.)
+        if truncation > 0.:
+            full_duration = ramp_func(self, *args, **kwargs)
+        truncated_duration = truncation*full_duration
+
+        # Check that truncation parameter is between 0 and 1
+        if truncation < 0. or truncation > 1.:
+            raise LabscriptError('Truncation argument of %s.%s at t=%f must be between 0 and 1 (inclusive), but is %f.' % (
+                self.name, ramp_func.__name__, time, truncation))
+
+        if not truncation in [0, 1]:
+            # Then modify self.instructions[round(time, 10)]
+            time_key = round(time, 10)
+
+            # Modify end time and round as per in add_instrunction
+            end_time = round(time + truncated_duration, 10)
+            self.instructions[time_key]['end time'] = end_time
+
+            # Modify self.ramp_limits based on modified end time
+            initial_time = self.ramp_limits[-1][0]
+            self.ramp_limits[-1] = (initial_time, end_time)
+
+        return truncated_duration
+    return new_ramp
+
 
 class Device(object):
     description = 'Generic Device'
@@ -1200,42 +1237,6 @@ class Output(Device):
 class AnalogQuantity(Output):
     description = 'analog quantity'
     default_value = 0
-
-    def truncate(ramp_func):
-        @wraps(ramp_func)
-        def new_ramp(self, *args, **kwargs):
-            # Get time argument of ramp_func
-            if len(args):
-                time = args[0]
-            else:
-                time = kwargs['t']
-
-            # Remove truncation kwarg and call ramp_func to generate instruction
-            truncation = kwargs.pop('truncation', 1.)
-            if truncation > 0.:
-                full_duration = ramp_func(self, *args, **kwargs)
-            truncated_duration = truncation*full_duration
-
-            # Check that truncation parameter is between 0 and 1
-            if truncation < 0. or truncation > 1.:
-                raise LabscriptError('Truncation argument of %s.%s at t=%f must be between 0 and 1 (inclusive), but is %f.' % (
-                    self.name, ramp_func.__name__, time, truncation))
-
-            if not truncation in [0, 1]:
-                # Then modify self.instructions[round(time, 10)]
-                time_key = round(time, 10)
-
-                # Modify end time and round as per in add_instrunction
-                end_time = round(time + truncated_duration, 10)
-                self.instructions[time_key]['end time'] = end_time
-
-                # Modify self.ramp_limits based on modified end time
-                initial_time = self.ramp_limits[-1][0]
-                self.ramp_limits[-1] = (initial_time, end_time)
-
-            return truncated_duration
-        return new_ramp
-
 
     @truncate
     def ramp(self,t,duration,initial,final,samplerate,units=None):
