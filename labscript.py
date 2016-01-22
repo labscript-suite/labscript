@@ -1309,7 +1309,7 @@ class AnalogQuantity(Output):
         if truncation_type == 'linear':
             self._check_truncation(truncation, min(initial, final), max(initial, final))
             trunc_duration = time_constant * \
-                log((initial-zero)/(trunc-zero))
+                log((initial-zero)/(truncation-zero))
         elif truncation_type == 'exponential':
             self._check_truncation(truncation)
             trunc_duration = truncation * duration
