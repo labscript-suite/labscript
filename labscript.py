@@ -1201,10 +1201,10 @@ class AnalogQuantity(Output):
     description = 'analog quantity'
     default_value = 0
 
-    def _check_truncation(self, truncation):
-        if not (0 <= truncation <= 1):
+    def _check_truncation(self, truncation, min=0, max=1):
+        if not (min <= truncation <= max):
             raise LabscriptError(
-                'Truncation argument must be between 0 and 1 (inclusive), but is %f.' % truncation)
+                'Truncation argument must be between %f and %f (inclusive), but is %f.' % (min, max, truncation))
 
     def ramp(self, t, duration, initial, final, samplerate, units=None, truncation=1.):
         self._check_truncation(truncation)
@@ -1242,58 +1242,83 @@ class AnalogQuantity(Output):
         return truncation*duration
 
     def exp_ramp(self, t, duration, initial, final, samplerate, zero=0, units=None, truncation=1., truncation_type='linear', **kwargs):
-        """Exponential ramp whose rate of change is set by an asymptotic value (zero argument)."""
+        """Exponential ramp whose rate of change is set by an asymptotic value (zero argument).
+        
+        Parameters:
+        t, duration : time to start the ramp and its duration
+        initial, final : initial and final values of the ramp (sans truncation)
+        zero: asymptotic value of the exponential decay/rise, i.e. limit as t --> inf
+        samplerate: rate to sample the function
+        units: unit conversion to apply to specified values before generating raw output
+        truncation_type: 'linear' or 'exponential'
+            'linear' truncation stops the ramp when it reaches the value given by the 
+            truncation parameter, which must be between initial and final
+            'exponential' truncation stops the ramp after a period of truncation*duration
+            In this instance, the truncation parameter should be between 0 (full truncation)
+            and 1 (no truncation).   
+        """
         # Backwards compatibility for old kwarg names
         if 'trunc' in kwargs:
             truncation = kwargs.pop('trunc')
         if 'trunc_type' in kwargs:
             truncation_type = kwargs.pop('trunc_type')
-        self._check_truncation(truncation)
 
         # Computed the truncated duration based on the truncation_type
-        if truncation < 1.:
-            if truncation_type == 'linear':
-                # Truncate the ramp when it reaches the value truncation
-                trunc_duration = duration * \
-                    log((initial-zero)/(truncation-zero)) / \
-                    log((initial-zero)/(final-zero))
-            elif truncation_type == 'exponential':
-                # Truncate the ramps duration by a fraction truncation
-                trunc_duration = truncation * duration
-            else:
-                raise LabscriptError(
-                    'Truncation type for exp_ramp not supported. Must be either linear or exponential.')
+        if truncation_type == 'linear':
+            self._check_truncation(truncation, min(initial, final), max(initial, final))
+            # Truncate the ramp when it reaches the value truncation
+            trunc_duration = duration * \
+                log((initial-zero)/(truncation-zero)) / \
+                log((initial-zero)/(final-zero))
+        elif truncation_type == 'exponential':
+            # Truncate the ramps duration by a fraction truncation
+            self._check_truncation(truncation)
+            trunc_duration = truncation * duration
         else:
-            trunc_duration = duration
-        if truncation > 0:
+            raise LabscriptError(
+                'Truncation type for exp_ramp not supported. Must be either linear or exponential.')
+        if trunc_duration > 0:
             self.add_instruction(t, {'function': functions.exp_ramp(duration, initial, final, zero), 'description': 'exponential ramp',
                                      'initial time': t, 'end time': t + trunc_duration, 'clock rate': samplerate, 'units': units})
         return trunc_duration
 
     def exp_ramp_t(self, t, duration, initial, final, time_constant, samplerate, units=None, truncation=1., truncation_type='linear', **kwargs):
-        """Exponential ramp whose rate of change is set by the time_constant."""
+        """Exponential ramp whose rate of change is set by the time_constant.
+        
+        Parameters:
+        t, duration : time to start the ramp and its duration
+        initial, final : initial and final values of the ramp (sans truncation)
+        time_constant: 1/e time of the exponential decay/rise
+        samplerate: rate to sample the function
+        units: unit conversion to apply to specified values before generating raw output
+        truncation_type: 'linear' or 'exponential'
+            'linear' truncation stops the ramp when it reaches the value given by the 
+            truncation parameter, which must be between initial and final
+            'exponential' truncation stops the ramp after a period of truncation*duration
+            In this instance, the truncation parameter should be between 0 (full truncation)
+            and 1 (no truncation).   
+        """
         # Backwards compatibility for old kwarg names
         if 'trunc' in kwargs:
             truncation = kwargs.pop('trunc')
         if 'trunc_type' in kwargs:
             truncation_type = kwargs.pop('trunc_type')
-        self._check_truncation(truncation)
 
         zero = (final-initial*exp(-duration/time_constant)) / \
             (1-exp(-duration/time_constant))
-        if truncation < 1.:
-            if truncation_type == 'linear':
-                trunc_duration = time_constant * \
-                    log((initial-zero)/(trunc-zero))
-            elif truncation_type == 'exponential':
-                trunc_duration = truncation * duration
-            else:
-                raise LabscriptError(
-                    'Truncation type for exp_ramp_t not supported. Must be either linear or exponential.')
+        if truncation_type == 'linear':
+            self._check_truncation(truncation, min(initial, final), max(initial, final))
+            trunc_duration = time_constant * \
+                log((initial-zero)/(trunc-zero))
+        elif truncation_type == 'exponential':
+            self._check_truncation(truncation)
+            trunc_duration = truncation * duration
         else:
-            trunc_duration = duration
-        self.add_instruction(t, {'function': functions.exp_ramp_t(duration, initial, final, time_constant), 'description': 'exponential ramp with time consntant',
-                                 'initial time': t, 'end time': t + trunc_duration, 'clock rate': samplerate, 'units': units})
+            raise LabscriptError(
+                'Truncation type for exp_ramp_t not supported. Must be either linear or exponential.')
+        if trunc_duration > 0:
+            self.add_instruction(t, {'function': functions.exp_ramp_t(duration, initial, final, time_constant), 'description': 'exponential ramp with time consntant',
+                                     'initial time': t, 'end time': t + trunc_duration, 'clock rate': samplerate, 'units': units})
         return trunc_duration
 
     def piecewise_accel_ramp(self, t, duration, initial, final, samplerate, units=None, truncation=1.):
