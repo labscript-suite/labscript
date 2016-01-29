@@ -1344,11 +1344,13 @@ class AnalogQuantity(Output):
                                      'initial time': t, 'end time': t + truncation*duration, 'clock rate': samplerate, 'units': units})
         return truncation*duration
 
-    def constant(self, t, value, units=None):
+    def constant(self,t,value,units=None):
         # verify that value can be converted to float
-        val = float(value)
+        try:
+            val = float(value)
+        except:
+            raise LabscriptError('in constant, value cannot be converted to float')
         self.add_instruction(t, value, units)
-
         
       
 class AnalogOut(AnalogQuantity):
