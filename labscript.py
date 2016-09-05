@@ -849,6 +849,7 @@ class PseudoclockDevice(TriggerableDevice):
         return self.parent_device is None
     
     def set_initial_trigger_time(self, t):
+        t = round(t,10)
         if compiler.start_called:
             raise LabscriptError('Initial trigger times must be set prior to calling start()')
         if self.is_master_pseudoclock:
@@ -886,10 +887,10 @@ class PseudoclockDevice(TriggerableDevice):
             # Store the unmodified initial_trigger_time
             initial_trigger_time = self.trigger_times[0]
             # Adjust the stop time relative to the last trigger time
-            self.stop_time = self.stop_time - initial_trigger_time - self.trigger_delay * len(self.trigger_times)
+            self.stop_time = round(self.stop_time - initial_trigger_time - self.trigger_delay * len(self.trigger_times),10)
             
             # Modify the trigger times themselves so that we insert wait instructions at the right times:
-            self.trigger_times = [t - initial_trigger_time - i*self.trigger_delay for i, t in enumerate(self.trigger_times)]
+            self.trigger_times = [round(t - initial_trigger_time - i*self.trigger_delay,10) for i, t in enumerate(self.trigger_times)]
                             
     def generate_code(self, hdf5_file):
         outputs = self.get_all_outputs()
@@ -1086,14 +1087,15 @@ class Output(Device):
             n_triggers_prior = len([time for time in trigger_times if time < t])
             # The cumulative offset at this point in time:
             offset = self.trigger_delay * n_triggers_prior + trigger_times[0]
+            offset = round(offset,10)
             if isinstance(instruction,dict):
                 offset_instruction = instruction.copy()
-                offset_instruction['end time'] = instruction['end time'] - offset
-                offset_instruction['initial time'] = instruction['initial time'] - offset
+                offset_instruction['end time'] = round(instruction['end time'] - offset,10)
+                offset_instruction['initial time'] = round(instruction['initial time'] - offset,10)
             else:
                 offset_instruction = instruction
                 
-            offset_instructions[t - offset] = offset_instruction
+            offset_instructions[round(t - offset,10)] = offset_instruction
         self.instructions = offset_instructions
             
         # offset each of the ramp_limits for use in the calculation within Pseudoclock/ClockLine
@@ -1102,11 +1104,12 @@ class Output(Device):
             n_triggers_prior = len([time for time in trigger_times if time < times[0]])
             # The cumulative offset at this point in time:
             offset = self.trigger_delay * n_triggers_prior + trigger_times[0]
+            offset = round(offset,10)
             
             # offset start and end time of ramps
             # NOTE: This assumes ramps cannot proceed across a trigger command
             #       (for instance you cannot ramp an output across a WAIT)
-            self.ramp_limits[i] = (times[0]-offset, times[1]-offset)
+            self.ramp_limits[i] = (round(times[0]-offset,10), round(times[1]-offset,10))
             
     def get_change_times(self):
         """If this function is being called, it means that the parent
@@ -1532,7 +1535,7 @@ class Trigger(DigitalOut):
                 raise LabscriptError('%s %s has two overlapping triggerings: ' %(self.description, self.name) + \
                                      'one at t = %fs for %fs, and another at t = %fs for %fs.'%(start, duration, other_start, other_duration))
         self.enable(t)
-        self.disable(t + duration)
+        self.disable(round(t + duration),10)
         self.triggerings.append((t, duration))
 
     def add_device(self, device):
