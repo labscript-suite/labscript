@@ -1599,7 +1599,7 @@ class Trigger(DigitalOut):
                 raise LabscriptError('%s %s has two overlapping triggerings: ' %(self.description, self.name) + \
                                      'one at t = %fs for %fs, and another at t = %fs for %fs.'%(start, duration, other_start, other_duration))
         self.enable(t)
-        self.disable(round(t + duration),10)
+        self.disable(round(t + duration,10))
         self.triggerings.append((t, duration))
 
     def add_device(self, device):
