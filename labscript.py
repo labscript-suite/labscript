@@ -1834,21 +1834,25 @@ def save_labscripts(hdf5_file):
             if hasattr(module,'__file__'):
                 path = os.path.abspath(module.__file__)
                 if path.startswith(prefix) and (path.endswith('.pyc') or path.endswith('.py')):
-                    path = path.replace('.pyc','.py')
-                    save_path = 'labscriptlib/' + path.replace(prefix,'').replace('\\','/')
+                    path = path.replace('.pyc', '.py')
+                    save_path = 'labscriptlib/' + path.replace(prefix, '').replace('\\', '/').replace('//', '/')
                     if save_path in hdf5_file:
                         # Don't try to save the same module script twice! 
                         # (seems to at least double count __init__.py when you import an entire module as in from labscriptlib.stages import * where stages is a folder with an __init__.py file.
                         # Doesn't seem to want to double count files if you just import the contents of a file within a module
                         continue
                     hdf5_file.create_dataset(save_path, data=open(path).read())
-                    process = subprocess.Popen(['svn', 'info', path], stdout=subprocess.PIPE,stderr=subprocess.PIPE,startupinfo=startupinfo)
-                    info, err = process.communicate()
-                    hdf5_file[save_path].attrs['svn info'] = info + '\n' + err
+                    hg_commands = [['log', '--limit', '1'], ['status'], ['diff']]
+                    for command in hg_commands:
+                        process = subprocess.Popen(['hg'] + command + [os.path.split(path)[1]], cwd=os.path.split(path)[0],
+                                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, startupinfo=startupinfo)
+                        info, err = process.communicate()
+                        if info or err:
+                            hdf5_file[save_path].attrs['hg ' + command[0]] = info + '\n' + err
     except ImportError:
         pass
     except WindowsError if os.name == 'nt' else None:
-        sys.stderr.write('Warning: Cannot save SVN data for imported scripts. Check that the svn command can be run from the command line\n')
+        sys.stderr.write('Warning: Cannot save Mercurial data for imported scripts. Check that the hg command can be run from the command line.\n')
 
 
 def write_device_properties(hdf5_file):
