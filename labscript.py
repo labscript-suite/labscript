@@ -1221,8 +1221,16 @@ class AnalogQuantity(Output):
     def ramp(self, t, duration, initial, final, samplerate, units=None, truncation=1.):
         self._check_truncation(truncation)
         if truncation > 0:
-            self.add_instruction(t, {'function': functions.ramp(duration, initial, final), 'description': 'linear ramp',
-                                     'initial time': t, 'end time': t + truncation*duration, 'clock rate': samplerate, 'units': units})
+            #if start and end value are the same, we don't need to ramp and can save the sample ticks etc
+            if initial == final:
+                # verify that the value can be converted to float
+                val = float(initial)
+                self.add_instruction(t, initial, units)
+                message = ''.join(['WARNING: AnalogOutput \'%s\' has the same initial and final value at time t=%.10fs with duration %.10fs. In order to save samples and clock ticks this instruction is replaced with a constant output. '%(self.name, t, duration)])
+                sys.stderr.write(message+'\n')
+            else:
+                self.add_instruction(t, {'function': functions.ramp(duration, initial, final), 'description': 'linear ramp',
+                                         'initial time': t, 'end time': t + truncation*duration, 'clock rate': samplerate, 'units': units})
         return truncation*duration
 
     def sine(self, t, duration, amplitude, angfreq, phase, dc_offset, samplerate, units=None, truncation=1.):
