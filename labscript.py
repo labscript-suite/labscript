@@ -1078,6 +1078,15 @@ class Output(Device):
                     err = (' %s %s has an instruction at t = %s. ' % (self.description, self.name, str(t)) + 
                            'This is too soon before a trigger at t=%s, '%str(trigger_time) + 
                            'the latest output possible before this trigger is at t=%s'%str(trigger_time - max(self.clock_limit, compiler.wait_delay)))
+        # Check that no other instruction is during a ramp on this output
+        for time, instruction in self.instructions.items():
+            if not isinstance(instruction, dict): #if this is not a ramp
+                for t, inst in self.instructions.items():
+                    if isinstance(inst,dict): #if this is a ramp
+                        if time > inst["initial time"] and time < inst["end time"]:
+                            err = ("{:s} {:s} has an instruction at t={:.8f}s. This instruction collides with a ramp on this output at that time. ".format(self.description, self.name, time)+
+                                   "The colliding {:s} is from {:.8f}s till {:.8f}s".format(inst['description'], inst['initial time'], inst['end time']))
+                            raise LabscriptError(err)                           
                            
     def offset_instructions_from_trigger(self, trigger_times):
         """Subtracts self.trigger_delay from all instructions at or after each trigger_time"""
