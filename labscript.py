@@ -1548,15 +1548,35 @@ class Shutter(DigitalOut):
     # have to make a point of this.
     def open(self, t):
         if self.open_state == 1:
-            self.go_high(t-self.open_delay if t >= self.open_delay else 0)
+            tcalc = t-self.open_delay if t >= self.open_delay else 0
+            for time, value in self.instructions.items():
+                if time + self.close_delay > t - self.open_delay and value == 0:
+                    message = "WARNING: The shutter '{:s}' is requestes to open too early at t={:.10f}s when it is still not closed from an earlier instruction".format(self.name, t)
+                    sys.stderr.write(message+'\n')
+            self.add_instruction(tcalc, 1)
         elif self.open_state == 0:
-            self.go_low(t-self.open_delay if t >= self.open_delay else 0)
+            tcalc = t-self.open_delay if t >= self.open_delay else 0
+            for time, value in self.instructions.items():
+                if time + self.close_delay > t - self.open_delay and value == 1:
+                    message = "WARNING: The shutter '{:s}' is requestes to open too early at t={:.10f}s when it is still not closed from an earlier instruction".format(self.name, t)
+                    sys.stderr.write(message+'\n')
+            self.add_instruction(tcalc, 0)
 
     def close(self, t):
         if self.open_state == 1:
-            self.go_low(t-self.close_delay if t >= self.close_delay else 0)  
+            tcalc = t-self.close_delay if t >= self.close_delay else 0
+            for time, value in self.instructions.items():
+                if time + self.open_delay > t - self.close_delay and value == 1:
+                    message = "WARNING: The shutter '{:s}' is requestes to close too early at t={:.10f}s  when it is still not opened from an earlier instruction".format(self.name, t)
+                    sys.stderr.write(message+'\n')
+            self.add_instruction(tcalc, 0)  
         elif self.open_state == 0:
-            self.go_high(t-self.close_delay if t >= self.close_delay else 0)
+            tcalc = t-self.close_delay if t >= self.close_delay else 0
+            for time, value in self.instructions.items():
+                if time + self.open_delay > t - self.close_delay and value == 0:
+                    message = "WARNING: The shutter '{:s}' is requestes to close too early at t={:.10f}s when it is still not opened from an earlier instruction".format(self.name, t)
+                    sys.stderr.write(message+'\n')
+            self.add_instruction(tcalc, 1)
     
     def generate_code(self, hdf5_file):
         classname = self.__class__.__name__
