@@ -1078,15 +1078,6 @@ class Output(Device):
                     err = (' %s %s has an instruction at t = %s. ' % (self.description, self.name, str(t)) + 
                            'This is too soon before a trigger at t=%s, '%str(trigger_time) + 
                            'the latest output possible before this trigger is at t=%s'%str(trigger_time - max(self.clock_limit, compiler.wait_delay)))
-        # Check that no other instruction is during a ramp on this output
-        for time, instruction in self.instructions.items():
-            if not isinstance(instruction, dict): #if this is not a ramp
-                for t, inst in self.instructions.items():
-                    if isinstance(inst,dict): #if this is a ramp
-                        if time > inst["initial time"] and time < inst["end time"]:
-                            err = ("{:s} {:s} has an instruction at t={:.8f}s. This instruction collides with a ramp on this output at that time. ".format(self.description, self.name, time)+
-                                   "The colliding {:s} is from {:.8f}s till {:.8f}s".format(inst['description'], inst['initial time'], inst['end time']))
-                            raise LabscriptError(err)                           
                            
     def offset_instructions_from_trigger(self, trigger_times):
         """Subtracts self.trigger_delay from all instructions at or after each trigger_time"""
@@ -1221,16 +1212,8 @@ class AnalogQuantity(Output):
     def ramp(self, t, duration, initial, final, samplerate, units=None, truncation=1.):
         self._check_truncation(truncation)
         if truncation > 0:
-            #if start and end value are the same, we don't need to ramp and can save the sample ticks etc
-            if initial == final:
-                # verify that the value can be converted to float
-                val = float(initial)
-                self.add_instruction(t, initial, units)
-                message = ''.join(['WARNING: AnalogOutput \'%s\' has the same initial and final value at time t=%.10fs with duration %.10fs. In order to save samples and clock ticks this instruction is replaced with a constant output. '%(self.name, t, duration)])
-                sys.stderr.write(message+'\n')
-            else:
-                self.add_instruction(t, {'function': functions.ramp(duration, initial, final), 'description': 'linear ramp',
-                                         'initial time': t, 'end time': t + truncation*duration, 'clock rate': samplerate, 'units': units})
+            self.add_instruction(t, {'function': functions.ramp(duration, initial, final), 'description': 'linear ramp',
+                                     'initial time': t, 'end time': t + truncation*duration, 'clock rate': samplerate, 'units': units})
         return truncation*duration
 
     def sine(self, t, duration, amplitude, angfreq, phase, dc_offset, samplerate, units=None, truncation=1.):
@@ -1556,35 +1539,15 @@ class Shutter(DigitalOut):
     # have to make a point of this.
     def open(self, t):
         if self.open_state == 1:
-            tcalc = t-self.open_delay if t >= self.open_delay else 0
-            for time, value in self.instructions.items():
-                if time + self.close_delay > t - self.open_delay and value == 0:
-                    message = "WARNING: The shutter '{:s}' is requestes to open too early at t={:.10f}s when it is still not closed from an earlier instruction".format(self.name, t)
-                    sys.stderr.write(message+'\n')
-            self.add_instruction(tcalc, 1)
+            self.go_high(t-self.open_delay if t >= self.open_delay else 0)
         elif self.open_state == 0:
-            tcalc = t-self.open_delay if t >= self.open_delay else 0
-            for time, value in self.instructions.items():
-                if time + self.close_delay > t - self.open_delay and value == 1:
-                    message = "WARNING: The shutter '{:s}' is requestes to open too early at t={:.10f}s when it is still not closed from an earlier instruction".format(self.name, t)
-                    sys.stderr.write(message+'\n')
-            self.add_instruction(tcalc, 0)
+            self.go_low(t-self.open_delay if t >= self.open_delay else 0)
 
     def close(self, t):
         if self.open_state == 1:
-            tcalc = t-self.close_delay if t >= self.close_delay else 0
-            for time, value in self.instructions.items():
-                if time + self.open_delay > t - self.close_delay and value == 1:
-                    message = "WARNING: The shutter '{:s}' is requestes to close too early at t={:.10f}s  when it is still not opened from an earlier instruction".format(self.name, t)
-                    sys.stderr.write(message+'\n')
-            self.add_instruction(tcalc, 0)  
+            self.go_low(t-self.close_delay if t >= self.close_delay else 0)  
         elif self.open_state == 0:
-            tcalc = t-self.close_delay if t >= self.close_delay else 0
-            for time, value in self.instructions.items():
-                if time + self.open_delay > t - self.close_delay and value == 0:
-                    message = "WARNING: The shutter '{:s}' is requestes to close too early at t={:.10f}s when it is still not opened from an earlier instruction".format(self.name, t)
-                    sys.stderr.write(message+'\n')
-            self.add_instruction(tcalc, 1)
+            self.go_high(t-self.close_delay if t >= self.close_delay else 0)
     
     def generate_code(self, hdf5_file):
         classname = self.__class__.__name__
