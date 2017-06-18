@@ -1959,7 +1959,7 @@ def wait(label, t, timeout=5):
     compiler.wait_table[t] = str(label), float(timeout)
     return max_delay
 
-def add_marker(t, label, color=(0,0,0)):
+def add_time_marker(t, label, color=(0,0,0)):
     #color in rgb
     compiler.time_markers[t] = {"label":label, "color":color}
 
