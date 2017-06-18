@@ -1768,10 +1768,13 @@ class StaticDDS(Device):
 class LabscriptError(Exception):
     pass
 
-def save_markers(hdf5_file):
-    markers_dataset = hdf5_file['runviewer'].create_dataset('markers', shape=(1,))
-    for i in markers:
-        markers_dataset.attrs[str(i)] = str(markers[i])
+def save_time_markers(hdf5_file):
+    time_markers = compiler.time_markers
+    dtypes = [('label','a256'), ('time', float), ('color', '(1,3)uint8')]
+    data_array = zeros(len(time_markers), dtype=dtypes)
+    for i, t in enumerate(time_markers):
+        data_array[i] = time_markers[t]["label"], t, time_markers[t]["color"]
+    time_markers_dataset = hdf5_file.create_dataset('time_markers', data = data_array)
 
 def generate_connection_table(hdf5_file):
     connection_table = []
@@ -1905,7 +1908,6 @@ def generate_code():
         try:
             hdf5_file.create_group('devices')
             hdf5_file.create_group('calibrations')
-            hdf5_file.create_group('runviewer')
         except ValueError:
             # Group(s) already exist - this is not a fresh h5 file, we cannot compile with it:
             raise ValueError('The HDF5 file %s already contains compilation data '%compiler.hdf5_filename +
@@ -1919,7 +1921,7 @@ def generate_code():
             if device.parent_device is None:
                 device.generate_code(hdf5_file)
                 
-        save_markers(hdf5_file)
+        save_time_markers(hdf5_file)
         generate_connection_table(hdf5_file)
         write_device_properties(hdf5_file)
         generate_wait_table(hdf5_file)
@@ -1959,7 +1961,7 @@ def wait(label, t, timeout=5):
 
 def add_marker(t, label, color=(0,0,0)):
     #color in rgb
-    markers[t] = {"label":label, "color":color}
+    compiler.time_markers[t] = {"label":label, "color":color}
 
 def start():
     compiler.start_called = True
@@ -2062,8 +2064,6 @@ def labscript_init(hdf5_filename, labscript_file=None, new=False, overwrite=Fals
         labscript_file = __main__.__file__
     compiler.labscript_file = os.path.abspath(labscript_file)
 
-    markers = {}
-    _builtins_dict["markers"] = markers
     
 def labscript_cleanup():
     """restores builtins and the labscript module to its state before
@@ -2099,4 +2099,4 @@ class compiler:
     all_pseudoclocks = None
     trigger_duration = 0
     wait_delay = 0
-
+    time_markers = {}
