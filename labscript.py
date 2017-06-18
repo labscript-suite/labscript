@@ -1767,7 +1767,12 @@ class StaticDDS(Device):
               
 class LabscriptError(Exception):
     pass
-            
+
+def save_markers(hdf5_file):
+    markers_dataset = hdf5_file['runviewer'].create_dataset('markers', shape=(1,))
+    for i in markers:
+        markers_dataset.attrs[str(i)] = str(markers[i])
+
 def generate_connection_table(hdf5_file):
     connection_table = []
     devicedict = {}
@@ -1900,6 +1905,7 @@ def generate_code():
         try:
             hdf5_file.create_group('devices')
             hdf5_file.create_group('calibrations')
+            hdf5_file.create_group('runviewer')
         except ValueError:
             # Group(s) already exist - this is not a fresh h5 file, we cannot compile with it:
             raise ValueError('The HDF5 file %s already contains compilation data '%compiler.hdf5_filename +
@@ -1912,6 +1918,8 @@ def generate_code():
         for device in compiler.inventory:
             if device.parent_device is None:
                 device.generate_code(hdf5_file)
+                
+        save_markers(hdf5_file)
         generate_connection_table(hdf5_file)
         write_device_properties(hdf5_file)
         generate_wait_table(hdf5_file)
@@ -1948,6 +1956,10 @@ def wait(label, t, timeout=5):
         raise LabscriptError('There is already a wait named %s'%str(label))
     compiler.wait_table[t] = str(label), float(timeout)
     return max_delay
+
+def add_marker(t, label, color=(0,0,0)):
+    #color in rgb
+    markers[t] = {"label":label, "color":color}
 
 def start():
     compiler.start_called = True
@@ -2050,6 +2062,9 @@ def labscript_init(hdf5_filename, labscript_file=None, new=False, overwrite=Fals
         labscript_file = __main__.__file__
     compiler.labscript_file = os.path.abspath(labscript_file)
 
+    markers = {}
+    _builtins_dict["markers"] = markers
+    
 def labscript_cleanup():
     """restores builtins and the labscript module to its state before
     labscript_init() was called"""
