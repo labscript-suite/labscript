@@ -2083,6 +2083,7 @@ def labscript_cleanup():
     compiler.all_pseudoclocks = None
     compiler.trigger_duration = 0
     compiler.wait_delay = 0
+    compiler.time_markers = {}
     
 class compiler:
     # The labscript file being compiled:
