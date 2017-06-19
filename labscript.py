@@ -39,6 +39,10 @@ kHz = 1e3
 MHz = 1e6
 GHz = 1e9
 
+# Define constants for minimum and maximum values for the ordering parameter
+ORDER_MINIMUM = -1
+ORDER_MAXIMUM = 1024
+
 # We need to backup the builtins as they are now, as well as have a
 # reference to the actual builtins dictionary (which will change as we
 # add globals and devices to it), so that we can restore the builtins
@@ -163,13 +167,32 @@ class Device(object):
     allowed_children = None
     
     @set_passed_properties(
-        property_names = {"device_properties": ["added_properties"]}
+        property_names = {"device_properties": ["added_properties", "start_order", "stop_order"]}
         )
-    def __init__(self,name,parent_device,connection, call_parents_add_device=True, 
+    def __init__(self,name,parent_device,connection, 
+                 call_parents_add_device=True, 
+                 start_order=1,
+                 stop_order=1,
                  added_properties = {}, **kwargs):
         # Verify that no invalid kwargs were passed and the set properties
         if len(kwargs) != 0:        
             raise LabscriptError('Invalid keyword arguments: %s.'%kwargs)
+
+        # Verify that valid ordering was passed
+        if (int(start_order) != start_order or 
+            start_order < ORDER_MINIMUM or 
+            start_order > ORDER_MAXIMUM):
+            raise LabscriptError('start_order "{}" must be an integer in the '
+                                 'range {} to {} provided by ORDER_MINIMUM and'
+                                 'ORDER_MAXIMUM.'.format(start_order, ORDER_MINIMUM, ORDER_MAXIMUM))
+
+        # Verify that valid ordering was passed
+        if (int(stop_order) != stop_order or 
+            stop_order < ORDER_MINIMUM or 
+            stop_order > ORDER_MAXIMUM):
+            raise LabscriptError('stop_order "{}" must be an integer in the '
+                                 'range {} to {} provided by ORDER_MINIMUM and'
+                                 'ORDER_MAXIMUM.'.format(stop_order, ORDER_MINIMUM, ORDER_MAXIMUM))                    
 
         if self.allowed_children is None:
             self.allowed_children = [Device]
