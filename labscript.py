@@ -1767,7 +1767,15 @@ class StaticDDS(Device):
               
 class LabscriptError(Exception):
     pass
-            
+
+def save_time_markers(hdf5_file):
+    time_markers = compiler.time_markers
+    dtypes = [('label','a256'), ('time', float), ('color', '(1,3)uint8')]
+    data_array = zeros(len(time_markers), dtype=dtypes)
+    for i, t in enumerate(time_markers):
+        data_array[i] = time_markers[t]["label"], t, time_markers[t]["color"]
+    time_markers_dataset = hdf5_file.create_dataset('time_markers', data = data_array)
+
 def generate_connection_table(hdf5_file):
     connection_table = []
     devicedict = {}
@@ -1912,6 +1920,8 @@ def generate_code():
         for device in compiler.inventory:
             if device.parent_device is None:
                 device.generate_code(hdf5_file)
+                
+        save_time_markers(hdf5_file)
         generate_connection_table(hdf5_file)
         write_device_properties(hdf5_file)
         generate_wait_table(hdf5_file)
@@ -1948,6 +1958,10 @@ def wait(label, t, timeout=5):
         raise LabscriptError('There is already a wait named %s'%str(label))
     compiler.wait_table[t] = str(label), float(timeout)
     return max_delay
+
+def add_time_marker(t, label, color=(0,0,0)):
+    #color in rgb
+    compiler.time_markers[t] = {"label":label, "color":color}
 
 def start():
     compiler.start_called = True
@@ -2050,6 +2064,7 @@ def labscript_init(hdf5_filename, labscript_file=None, new=False, overwrite=Fals
         labscript_file = __main__.__file__
     compiler.labscript_file = os.path.abspath(labscript_file)
 
+    
 def labscript_cleanup():
     """restores builtins and the labscript module to its state before
     labscript_init() was called"""
@@ -2068,6 +2083,7 @@ def labscript_cleanup():
     compiler.all_pseudoclocks = None
     compiler.trigger_duration = 0
     compiler.wait_delay = 0
+    compiler.time_markers = {}
     
 class compiler:
     # The labscript file being compiled:
@@ -2084,4 +2100,4 @@ class compiler:
     all_pseudoclocks = None
     trigger_duration = 0
     wait_delay = 0
-
+    time_markers = {}
