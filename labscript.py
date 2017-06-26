@@ -1518,7 +1518,9 @@ class AnalogIn(Device):
 class Shutter(DigitalOut):
     description = 'shutter'
     
-    @set_passed_properties(property_names = {})
+    @set_passed_properties(
+        property_names = {"connection_table_properties": ["open_state"]}
+        )
     def __init__(self,name,parent_device,connection,delay=(0,0),open_state=1,
                  **kwargs):
 
