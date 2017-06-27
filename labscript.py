@@ -1974,6 +1974,8 @@ def start():
         else:
             min_clock_limit = master_pseudoclock.clock_limit
     
+        clockline_limits = [clockline.clock_limit for pseudoclock in master_pseudoclock.child_devices for clockline in pseudoclock.child_devices]
+        min_clock_limit = min(min_clock_limit, min(clockline_limits))
     
         # check the minimum trigger duration for the waitmonitor
         if compiler.wait_monitor is not None:
