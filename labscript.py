@@ -536,7 +536,6 @@ class Pseudoclock(Device):
                 
         # Get rid of duplicates:
         all_change_times = list(set(all_change_times_numpy))
-        all_change_times = list(set(all_change_times))
         all_change_times.sort()  
         
         # Check that the pseudoclock can handle updates this fast
