@@ -1465,8 +1465,8 @@ class DigitalQuantity(Output):
     dtype = uint32
     
     # Redefine __init__ so that you cannot define a limit or calibration for DO
-    @set_passed_properties(property_names = {})
-    def __init__(self, name, parent_device, connection, **kwargs):                
+    @set_passed_properties(property_names = {"connection_table_properties": ["inverted_BLACS"]})
+    def __init__(self, name, parent_device, connection, inverted_BLACS=False, **kwargs):                
         Output.__init__(self,name,parent_device,connection, **kwargs)
         
     def go_high(self,t):
@@ -1569,6 +1569,28 @@ class AnalogIn(Device):
         return end_time - start_time
      
         
+class DigitalDevice(DigitalOut):
+    description = 'DigitalDevice'
+
+    @set_passed_properties(
+        property_names = {}
+        )
+    def __init__(self, name, parent_device, connection, on_state=1, **kwargs):
+        DigitalOut.__init__(self, name, parent_device, connection, inverted_BLACS = not bool(on_state), **kwargs)
+
+    def on(self, t):
+        if self.on_state == 1:
+            self.go_high(t)
+        else:
+            self.go_low(t)
+
+    def off(self, t):
+        if self.on_state == 1:
+            self.go_low(t)
+        else:
+            self.go_high(t)
+
+
 class Shutter(DigitalOut):
     description = 'shutter'
     
@@ -1578,7 +1600,7 @@ class Shutter(DigitalOut):
     def __init__(self,name,parent_device,connection,delay=(0,0),open_state=1,
                  **kwargs):
 
-        DigitalOut.__init__(self, name, parent_device, connection, **kwargs)
+        DigitalOut.__init__(self, name, parent_device, connection, not bool(open_state), **kwargs)
         self.open_delay, self.close_delay = delay
         self.open_state = open_state
         if self.open_state == 1:
