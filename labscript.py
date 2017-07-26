@@ -1578,13 +1578,13 @@ class DigitalDevice(DigitalOut):
     def __init__(self, name, parent_device, connection, on_state=1, **kwargs):
         DigitalOut.__init__(self, name, parent_device, connection, inverted_BLACS = not bool(on_state), **kwargs)
 
-    def on(self, t):
+    def enable(self, t):
         if self.on_state == 1:
             self.go_high(t)
         else:
             self.go_low(t)
 
-    def off(self, t):
+    def disable(self, t):
         if self.on_state == 1:
             self.go_low(t)
         else:
