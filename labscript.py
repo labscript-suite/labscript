@@ -39,10 +39,6 @@ kHz = 1e3
 MHz = 1e6
 GHz = 1e9
 
-# Define constants for minimum and maximum values for the ordering parameter
-TRANSITION_ORDER_MINIMUM = -1
-TRANSITION_ORDER_MAXIMUM = 1024
-
 # We need to backup the builtins as they are now, as well as have a
 # reference to the actual builtins dictionary (which will change as we
 # add globals and devices to it), so that we can restore the builtins
@@ -167,32 +163,13 @@ class Device(object):
     allowed_children = None
     
     @set_passed_properties(
-        property_names = {"device_properties": ["added_properties", "initialization_order", "finalization_order"]}
+        property_names = {"device_properties": ["added_properties"]}
         )
-    def __init__(self,name,parent_device,connection, 
-                 call_parents_add_device=True, 
-                 initialization_order=1,
-                 finalization_order=1,
+    def __init__(self,name,parent_device,connection, call_parents_add_device=True, 
                  added_properties = {}, **kwargs):
         # Verify that no invalid kwargs were passed and the set properties
         if len(kwargs) != 0:        
             raise LabscriptError('Invalid keyword arguments: %s.'%kwargs)
-
-        # Verify that valid ordering was passed
-        if (int(initialization_order) != initialization_order or 
-            initialization_order < TRANSITION_ORDER_MINIMUM or 
-            initialization_order > TRANSITION_ORDER_MAXIMUM):
-            raise LabscriptError('initialization_order "{}" must be an integer in the '
-                                 'range {} to {} provided by TRANSITION_ORDER_MINIMUM and'
-                                 'TRANSITION_ORDER_MAXIMUM.'.format(initialization_order, TRANSITION_ORDER_MINIMUM, TRANSITION_ORDER_MAXIMUM))
-
-        # Verify that valid ordering was passed
-        if (int(finalization_order) != finalization_order or 
-            finalization_order < TRANSITION_ORDER_MINIMUM or 
-            finalization_order > TRANSITION_ORDER_MAXIMUM):
-            raise LabscriptError('finalization_order "{}" must be an integer in the '
-                                 'range {} to {} provided by TRANSITION_ORDER_MINIMUM and'
-                                 'TRANSITION_ORDER_MAXIMUM.'.format(finalization_order, TRANSITION_ORDER_MINIMUM, TRANSITION_ORDER_MAXIMUM))                    
 
         if self.allowed_children is None:
             self.allowed_children = [Device]
