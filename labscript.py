@@ -1564,6 +1564,7 @@ class Shutter(DigitalOut):
             self.allowed_states = {1: 'closed', 0: 'open'}
         else:
             raise LabscriptError("Shutter %s wasn't instantiated with open_state = 0 or 1." % self.name)
+        self.actual_times = {}
 
     # If a shutter is asked to do something at t=0, it cannot start moving
     # earlier than that.  So initial shutter states will have imprecise
@@ -1571,17 +1572,21 @@ class Shutter(DigitalOut):
     # would throw a warning for every shutter. The documentation will
     # have to make a point of this.
     def open(self, t):
+        t_calc = t-self.open_delay if t >= self.open_delay else 0
+        self.actual_times[t] = {'time': t_calc, 'instruction': 1}
         if self.open_state == 1:
-            self.go_high(t-self.open_delay if t >= self.open_delay else 0)
+            self.go_high(t_calc)
         elif self.open_state == 0:
-            self.go_low(t-self.open_delay if t >= self.open_delay else 0)
+            self.go_low(t_calc)
 
     def close(self, t):
+        t_calc = t-self.close_delay if t >= self.close_delay else 0
+        self.actual_times[t] = {'time': t_calc, 'instruction': 0}
         if self.open_state == 1:
-            self.go_low(t-self.close_delay if t >= self.close_delay else 0)  
+            self.go_low(t_calc)
         elif self.open_state == 0:
-            self.go_high(t-self.close_delay if t >= self.close_delay else 0)
-    
+            self.go_high(t_calc)
+
     def generate_code(self, hdf5_file):
         classname = self.__class__.__name__
         calibration_table_dtypes = [('name','a256'), ('open_delay',float), ('close_delay',float)]
@@ -1591,8 +1596,31 @@ class Shutter(DigitalOut):
         dataset = hdf5_file['calibrations'][classname]
         dataset.resize((len(dataset)+1,))
         dataset[len(dataset)-1] = metadata
-        
-        
+
+    def get_change_times(self, *args, **kwargs):
+        retval = DigitalOut.get_change_times(self, *args, **kwargs)
+
+        if len(self.actual_times)>1:
+            sorted_times = self.actual_times.keys()
+            sorted_times.sort()
+            for i in range(len(sorted_times)-1):
+                time = sorted_times[i]
+                next_time = sorted_times[i+1]
+                # only look at instructions that contain a state change
+                if self.actual_times[time]['instruction'] != self.actual_times[next_time]['instruction']:
+                    state1 = 'open' if self.actual_times[next_time]['instruction'] == 1 else 'close'
+                    state2 = 'opened' if self.actual_times[time]['instruction'] == 1 else 'closed'
+                    if self.actual_times[next_time]['time'] < time:
+                        message = "WARNING: The shutter '{:s}' is requested to {:s} too early (taking delay into account) at t={:.10f}s when it is still not {:s} from an earlier instruction at t={:.10f}s".format(self.name, state1, next_time, state2, time)
+                        sys.stderr.write(message+'\n')
+                else:
+                    state1 = 'open' if self.actual_times[next_time]['instruction'] == 1 else 'close'
+                    state2 = 'opened' if self.actual_times[time]['instruction'] == 0 else 'closed'
+                    message = "WARNING: The shutter '{:s}' is requested to {:s} at t={:.10f}s but was never {:s} after an earlier instruction at t={:.10f}s".format(self.name, state1, next_time, state2, time)
+                    sys.stderr.write(message+'\n')
+        return retval
+
+
 class Trigger(DigitalOut):
     description = 'trigger device'
     allowed_states = {1:'high', 0:'low'}
