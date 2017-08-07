@@ -1246,7 +1246,7 @@ class AnalogQuantity(Output):
             # if start and end value are the same, we don't need to ramp and can save the sample ticks etc
             if initial == final:
                 self.constant(t, initial, units)
-                if not config.suppress_mild_warning and not config.suppress_all_warnings:
+                if not config.suppress_mild_warnings and not config.suppress_all_warnings:
                     message = ''.join(['WARNING: AnalogOutput \'%s\' has the same initial and final value at time t=%.10fs with duration %.10fs. In order to save samples and clock ticks this instruction is replaced with a constant output. '%(self.name, t, duration)])
                     sys.stderr.write(message + '\n')
             else:
