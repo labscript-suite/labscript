@@ -1613,7 +1613,7 @@ class Shutter(DigitalOut):
                     if self.actual_times[next_time]['time'] < self.actual_times[time]['time']:
                         message = "WARNING: The shutter '{:s}' is requested to {:s} too early (taking delay into account) at t={:.10f}s when it is still not {:s} from an earlier instruction at t={:.10f}s".format(self.name, state1, next_time, state2, time)
                         sys.stderr.write(message+'\n')
-                elif not config.suppress_mild_warning:
+                elif not config.suppress_mild_warning and not config.suppress_all_warnings:
                     state1 = 'open' if self.actual_times[next_time]['instruction'] == 1 else 'close'
                     state2 = 'opened' if self.actual_times[time]['instruction'] == 0 else 'closed'
                     message = "WARNING: The shutter '{:s}' is requested to {:s} at t={:.10f}s but was never {:s} after an earlier instruction at t={:.10f}s".format(self.name, state1, next_time, state2, time)
