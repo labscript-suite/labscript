@@ -1413,8 +1413,9 @@ class StaticAnalogQuantity(Output):
     default_value = 0.0
     
     @set_passed_properties(property_names = {})
-    def __init__(self, *args, **kwargs):
+    def __init__(self, default_value=default_value, *args, **kwargs):
         Output.__init__(self, *args, **kwargs)
+        self.default_value = default_value
         self._static_value = None
         
     def constant(self, value, units=None):
