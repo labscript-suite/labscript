@@ -937,11 +937,13 @@ class Output(Device):
     scale_factor = 1
     
     @set_passed_properties(property_names = {})
-    def __init__(self,name,parent_device,connection,limits = None,unit_conversion_class = None, unit_conversion_parameters = None, **kwargs):
+    def __init__(self,name,parent_device,connection,limits = None,unit_conversion_class = None, unit_conversion_parameters = None, default_value=None, **kwargs):
         Device.__init__(self,name,parent_device,connection, **kwargs)
 
         self.instructions = {}
         self.ramp_limits = [] # For checking ramps don't overlap
+        if default_value is not None:
+            self.default_value = default_value
         if not unit_conversion_parameters:
             unit_conversion_parameters = {}
         self.unit_conversion_class = unit_conversion_class
