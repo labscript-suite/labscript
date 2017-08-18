@@ -11,7 +11,10 @@
 #                                                                   #
 #####################################################################
 
-from __future__ import division
+from __future__ import division, unicode_literals, print_function, absolute_import
+from labscript_utils import PY2
+if PY2:
+    str = unicode
 import os
 import sys
 import subprocess
@@ -33,7 +36,7 @@ from labscript_utils import check_version
 check_version('qtutils', '2.0.0', '3.0.0')
 from pylab import *
 
-import functions
+import labscript.functions
 try:
     from labscript_utils.unitconversions import *
 except ImportError:
@@ -213,7 +216,7 @@ class Device(object):
                                      
         try:
             # Test that name is a valid Python variable name:
-            exec '%s = None'%name
+            exec('%s = None'%name)
             assert '.' not in name
         except:
             raise ValueError('%s is not a valid Python variable name.'%name)
@@ -1831,7 +1834,7 @@ class LabscriptError(Exception):
 
 def save_time_markers(hdf5_file):
     time_markers = compiler.time_markers
-    dtypes = [('label','a256'), ('time', float), ('color', '(1,3)uint8')]
+    dtypes = [(b'label',b'a256'), (b'time', float), (b'color', b'(1,3)uint8')]
     data_array = zeros(len(time_markers), dtype=dtypes)
     for i, t in enumerate(time_markers):
         data_array[i] = time_markers[t]["label"], t, time_markers[t]["color"]
@@ -1872,10 +1875,10 @@ def generate_connection_table(hdf5_file):
     
     connection_table.sort()
     vlenstring = h5py.special_dtype(vlen=unicode)
-    connection_table_dtypes = [('name','a256'), ('class','a256'), ('parent','a256'), ('parent port','a256'),
-                               ('unit conversion class','a256'), ('unit conversion params', vlenstring),
-                               ('BLACS_connection','a'+str(max_BLACS_conn_length)),
-                               ('properties', vlenstring)]
+    connection_table_dtypes = [(b'name',b'a256'), (b'class',b'a256'), (b'parent',b'a256'), (b'parent port',b'a256'),
+                               (b'unit conversion class',b'a256'), (b'unit conversion params', vlenstring),
+                               (b'BLACS_connection',b'a'+str(max_BLACS_conn_length)),
+                               (b'properties', vlenstring)]
     connection_table_array = empty(len(connection_table),dtype=connection_table_dtypes)
     for i, row in enumerate(connection_table):
         connection_table_array[i] = row
@@ -1941,7 +1944,7 @@ def write_device_properties(hdf5_file):
 
 
 def generate_wait_table(hdf5_file):
-    dtypes = [('label','a256'), ('time', float), ('timeout', float)]
+    dtypes = [(b'label',b'a256'), (b'time', float), (b'timeout', float)]
     data_array = zeros(len(compiler.wait_table), dtype=dtypes)
     for i, t in enumerate(sorted(compiler.wait_table)):
         label, timeout = compiler.wait_table[t]
