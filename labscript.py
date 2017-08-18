@@ -15,6 +15,9 @@ from __future__ import division, unicode_literals, print_function, absolute_impo
 from labscript_utils import PY2
 if PY2:
     str = unicode
+    import __builtin__ as builtins
+else:
+    import builtins
 import os
 import sys
 import subprocess
@@ -54,9 +57,8 @@ GHz = 1e9
 # We need to backup the builtins as they are now, as well as have a
 # reference to the actual builtins dictionary (which will change as we
 # add globals and devices to it), so that we can restore the builtins
-# when labscript_cleanup() is called. 
-import __builtin__
-_builtins_dict = __builtin__.__dict__
+# when labscript_cleanup() is called.
+_builtins_dict = builtins.__dict__
 _existing_builtins_dict = _builtins_dict.copy()
     
 # Startupinfo, for ensuring subprocesses don't launch with a visible command window:
