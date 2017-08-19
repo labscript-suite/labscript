@@ -11,8 +11,8 @@
 #                                                                   #
 #####################################################################
 
-from __future__ import division
-from labscript import Device, PseudoClock, IntermediateDevice, AnalogOut, DigitalOut, bitfield
+from __future__ import division, unicode_literals, print_function, absolute_import
+from labscript import Device, Pseudoclock, IntermediateDevice, AnalogOut, DigitalOut, bitfield
 from pylab import *
 default_cycle_time = 2500/300e6 # 8.333us
 
@@ -150,8 +150,8 @@ class ADWinAnalogOut(AnalogOut):
         
 class ADWinDigitalOut(DigitalOut):
     pass
-    
-class ADWinCard(PseudoClock):
+
+class ADWinCard(Pseudoclock):
     clock_type = 'fast clock'
     def __init__(self, name, parent_device, card_number):
         self.clock_limit = parent_device.clock_limit
