@@ -1162,7 +1162,7 @@ class Output(Device):
         """If this function is being called, it means that the parent
         Pseudoclock has requested a list of times that this output changes
         state."""        
-        times = self.instructions.keys()
+        times = list(self.instructions.keys())
         times.sort()
 
         current_dict_time = None
