@@ -69,7 +69,7 @@ else:
     startupinfo = None
         
         
-class config:
+class config(object):
     suppress_mild_warnings = True
     suppress_all_warnings = False
     compression = 'gzip'  # set to 'gzip' for compression 
@@ -1882,7 +1882,7 @@ def generate_connection_table(hdf5_file):
                                  serialised_properties))
     
     connection_table.sort()
-    vlenstring = h5py.special_dtype(vlen=unicode)
+    vlenstring = h5py.special_dtype(vlen=str)
     if PY2:
         connection_table_dtypes = [(b'name',b'a256'), (b'class',b'a256'), (b'parent',b'a256'), (b'parent port',b'a256'),
                                    (b'unit conversion class',b'a256'), (b'unit conversion params', vlenstring),
@@ -2169,7 +2169,7 @@ def labscript_cleanup():
     compiler.wait_delay = 0
     compiler.time_markers = {}
     
-class compiler:
+class compiler(object):
     # The labscript file being compiled:
     labscript_file = None
     # All defined devices:
