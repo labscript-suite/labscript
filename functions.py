@@ -13,6 +13,7 @@
 
 from __future__ import division
 from pylab import *
+import numpy as np
 
 def ramp(duration, initial, final):
     m = (final - initial)/duration
@@ -44,26 +45,16 @@ def piecewise_accel(duration,initial,final):
     (9./2 * t**3/duration**3) * (t<duration/3)
     + (-9*t**3/duration**3 + 27./2*t**2/duration**2 - 9./2*t/duration + 1./2) * (t<2*duration/3)*(t>=duration/3)
     + (9./2*t**3/duration**3 - 27./2 * t**2/duration**2 + 27./2*t/duration - 7./2) * (t>= 2*duration/3))
-    
-def pulse_sequence(pulse_sequence,period):    
+
+def pulse_sequence(pulse_sequence,period):
+    pulse_sequence = np.asarray(sorted(pulse_sequence, key=lambda x: x[0], reverse=True))
+    pulse_sequence_times = pulse_sequence[:, 0]
+    pulse_sequence_states = pulse_sequence[:, 1]
+
     def pulse_function(t):
-        try:
-            len(t)
-            is_array = True
-        except TypeError:
-            t = array([t])
-            is_array = False
-            
-        times = t%period
-        states = zeros(len(t),dtype = int)
-        for i, a_time in enumerate(times):
-            for time, state in sorted(pulse_sequence, key=lambda x: x[0], reverse=True):
-                if a_time >= time:
-                    states[i] = state
-                    break
-                    
-        if is_array:
-            return states
-        else:
-            return states[0]
+        times = t % period
+        indices = np.digitize(times, pulse_sequence_times, right=True)
+        states = pulse_sequence_states[indices]
+        return states
+
     return pulse_function
