@@ -53,7 +53,7 @@ def pulse_sequence(pulse_sequence,period):
 
     def pulse_function(t):
         times = t % period
-        indices = np.digitize(times, pulse_sequence_times, right=True)
+        indices = np.digitize(times, pulse_sequence_times, right=False)
         states = pulse_sequence_states[indices]
         return states
 
