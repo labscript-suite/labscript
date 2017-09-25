@@ -52,9 +52,20 @@ def pulse_sequence(pulse_sequence,period):
     pulse_sequence_states = pulse_sequence[:, 1]
 
     def pulse_function(t):
+        try:
+            len(t)
+            is_array = True
+        except TypeError:
+            t = array([t])
+            is_array = False
+
         times = t % period
         indices = np.digitize(times, pulse_sequence_times, right=False)
         states = pulse_sequence_states[indices]
-        return states
+
+        if is_array:
+            return states
+        else:
+            return states[0]
 
     return pulse_function
