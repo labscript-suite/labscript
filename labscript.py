@@ -1579,9 +1579,11 @@ class Shutter(DigitalOut):
     # would throw a warning for every shutter. The documentation will
     # have to make a point of this.
     def open(self, t):
+        # if self.open_state is 0 go_high actually set the output to low
         self.go_high(t-self.open_delay if t >= self.open_delay else 0)
 
     def close(self, t):
+        # if self.open_state is 0 go_low actually set the output to high
         self.go_low(t-self.close_delay if t >= self.close_delay else 0)
     
     def generate_code(self, hdf5_file):
