@@ -1442,14 +1442,22 @@ class DigitalQuantity(Output):
     dtype = uint32
     
     # Redefine __init__ so that you cannot define a limit or calibration for DO
-    @set_passed_properties(property_names = {"connection_table_properties": ["inverted_BLACS"]})
-    def __init__(self, name, parent_device, connection, inverted_BLACS=False, **kwargs):                
+    @set_passed_properties(property_names = {"connection_table_properties": ["inverted"]})
+    def __init__(self, name, parent_device, connection, inverted=False, **kwargs):                
         Output.__init__(self,name,parent_device,connection, **kwargs)
-        
+        self.inverted = bool(inverted)
+
     def go_high(self,t):
-        self.add_instruction(t,1)
+        if self.inverted:
+            self.add_instruction(t, 0)
+        else:
+            self.add_instruction(t, 1)
+
     def go_low(self,t):
-        self.add_instruction(t,0) 
+        if self.inverted:
+            self.add_instruction(t, 1)
+        else:
+            self.add_instruction(t, 0)
     
     '''
     This function only works if the DigitalQuantity is on a fast clock
@@ -1544,28 +1552,6 @@ class AnalogIn(Device):
         self.acquisitions.append({'start_time': start_time, 'end_time': end_time,
                                  'label': label, 'wait_label':wait_label, 'scale_factor':scale_factor,'units':units})
         return end_time - start_time
-     
-        
-class DigitalDevice(DigitalOut):
-    description = 'DigitalDevice'
-
-    @set_passed_properties(
-        property_names = {}
-        )
-    def __init__(self, name, parent_device, connection, on_state=1, **kwargs):
-        DigitalOut.__init__(self, name, parent_device, connection, inverted_BLACS = not bool(on_state), **kwargs)
-
-    def enable(self, t):
-        if self.on_state == 1:
-            self.go_high(t)
-        else:
-            self.go_low(t)
-
-    def disable(self, t):
-        if self.on_state == 1:
-            self.go_low(t)
-        else:
-            self.go_high(t)
 
 
 class Shutter(DigitalOut):
@@ -1593,16 +1579,10 @@ class Shutter(DigitalOut):
     # would throw a warning for every shutter. The documentation will
     # have to make a point of this.
     def open(self, t):
-        if self.open_state == 1:
-            self.go_high(t-self.open_delay if t >= self.open_delay else 0)
-        elif self.open_state == 0:
-            self.go_low(t-self.open_delay if t >= self.open_delay else 0)
+        self.go_high(t-self.open_delay if t >= self.open_delay else 0)
 
     def close(self, t):
-        if self.open_state == 1:
-            self.go_low(t-self.close_delay if t >= self.close_delay else 0)  
-        elif self.open_state == 0:
-            self.go_high(t-self.close_delay if t >= self.close_delay else 0)
+        self.go_low(t-self.close_delay if t >= self.close_delay else 0)
     
     def generate_code(self, hdf5_file):
         classname = self.__class__.__name__
