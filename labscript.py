@@ -39,7 +39,7 @@ from labscript_utils import check_version
 check_version('qtutils', '2.0.0', '3.0.0')
 from pylab import *
 
-import labscript.functions
+import labscript.functions as functions
 try:
     from labscript_utils.unitconversions import *
 except ImportError:
