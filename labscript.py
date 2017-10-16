@@ -1617,10 +1617,7 @@ class Shutter(DigitalOut):
     
     def generate_code(self, hdf5_file):
         classname = self.__class__.__name__
-        if PY2:
-            calibration_table_dtypes = [(b'name',b'a256'), (b'open_delay',float), (b'close_delay',float)]
-        else:
-            calibration_table_dtypes = [('name','a256'), ('open_delay',float), ('close_delay',float)]
+        calibration_table_dtypes = {'names': ['name', 'open_delay', 'close_delay'], 'formats': ['a256', float, float]}
         if classname not in hdf5_file['calibrations']:
             hdf5_file['calibrations'].create_dataset(classname, (0,), dtype=calibration_table_dtypes, maxshape=(None,))
         metadata = (self.name,self.open_delay,self.close_delay)
@@ -1839,10 +1836,7 @@ class LabscriptError(Exception):
 
 def save_time_markers(hdf5_file):
     time_markers = compiler.time_markers
-    if PY2:
-        dtypes = [(b'label',b'a256'), (b'time', float), (b'color', b'(1,3)uint8')]
-    else:
-        dtypes = [('label','a256'), ('time', float), ('color', '(1,3)uint8')]
+    dtypes = {'names': ['label', 'time', 'color'], 'formats': ['a256', float, '(1,3)uint8']}
     data_array = zeros(len(time_markers), dtype=dtypes)
     for i, t in enumerate(time_markers):
         data_array[i] = time_markers[t]["label"], t, time_markers[t]["color"]
@@ -1883,16 +1877,8 @@ def generate_connection_table(hdf5_file):
     
     connection_table.sort()
     vlenstring = h5py.special_dtype(vlen=str)
-    if PY2:
-        connection_table_dtypes = [(b'name',b'a256'), (b'class',b'a256'), (b'parent',b'a256'), (b'parent port',b'a256'),
-                                   (b'unit conversion class',b'a256'), (b'unit conversion params', vlenstring),
-                                   (b'BLACS_connection',b'a'+str(max_BLACS_conn_length)),
-                                   (b'properties', vlenstring)]
-    else:
-        connection_table_dtypes = [('name','a256'), ('class','a256'), ('parent','a256'), ('parent port','a256'),
-                               ('unit conversion class','a256'), ('unit conversion params', vlenstring),
-                               ('BLACS_connection','a'+str(max_BLACS_conn_length)),
-                               ('properties', vlenstring)]
+    connection_table_dtypes = {'names': ['name', 'class', 'parent', 'parent port', 'unit conversion class', 'unit conversion params', 'BLACS_connection', 'properties'],
+                               'formats':['a256', 'a256','a256', 'a256', 'a256', vlenstring, 'a'+str(max_BLACS_conn_length), vlenstring]}
     connection_table_array = empty(len(connection_table),dtype=connection_table_dtypes)
     for i, row in enumerate(connection_table):
         connection_table_array[i] = row
@@ -1958,10 +1944,7 @@ def write_device_properties(hdf5_file):
 
 
 def generate_wait_table(hdf5_file):
-    if PY2:
-        dtypes = [(b'label',b'a256'), (b'time', float), (b'timeout', float)]
-    else:
-        dtypes = [('label','a256'), ('time', float), ('timeout', float)]
+    dtypes = {'names': ['label', 'time', 'timeout'], 'formats': ['a256', float, float]}
     data_array = zeros(len(compiler.wait_table), dtype=dtypes)
     for i, t in enumerate(sorted(compiler.wait_table)):
         label, timeout = compiler.wait_table[t]
