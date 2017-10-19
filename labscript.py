@@ -1102,7 +1102,7 @@ class Output(Device):
             self.add_instruction(self.t0, self.default_value) 
         # Check that ramps have instructions following them.
         # If they don't, insert an instruction telling them to hold their final value.
-        for instruction in self.instructions.values():
+        for instruction in list(self.instructions.values()):
             if isinstance(instruction, dict) and instruction['end time'] not in self.instructions.keys():
                 self.add_instruction(instruction['end time'], instruction['function'](instruction['end time']-instruction['initial time']), instruction['units'])
         # Checks for trigger times:
