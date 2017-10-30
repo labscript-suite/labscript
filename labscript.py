@@ -1563,7 +1563,7 @@ class Shutter(DigitalOut):
     def __init__(self,name,parent_device,connection,delay=(0,0),open_state=1,
                  **kwargs):
 
-        DigitalOut.__init__(self, name, parent_device, connection, not bool(open_state), **kwargs)
+        DigitalOut.__init__(self, name, parent_device, connection, inverted=not bool(open_state), **kwargs)
         self.open_delay, self.close_delay = delay
         self.open_state = open_state
         if self.open_state == 1:
