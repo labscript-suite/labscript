@@ -1450,8 +1450,8 @@ class StaticAnalogQuantity(Output):
         pass
     
     def expand_timeseries(self,*args,**kwargs):
-        self.raw_output = array([self.static_value])
-    
+        self.raw_output = array([self.static_value], dtype=self.dtype)
+
     @property
     def static_value(self):
         if self._static_value is None:
@@ -1539,8 +1539,8 @@ class StaticDigitalQuantity(DigitalQuantity):
         pass
     
     def expand_timeseries(self,*args,**kwargs):
-        self.raw_output = array([self.static_value])
-        
+        self.raw_output = array([self.static_value], dtype=self.dtype)
+
     @property
     def static_value(self):
         if self._static_value is None:
