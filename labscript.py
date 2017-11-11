@@ -773,16 +773,18 @@ class Pseudoclock(Device):
         return all_times, clock
     
     def get_outputs_by_clockline(self):
-        all_outputs = self.get_all_outputs()
-        
         outputs_by_clockline = {}
+        for clock_line in self.child_devices:
+            if isinstance(clock_line, ClockLine):
+                outputs_by_clockline[clock_line] = []
+
+        all_outputs = self.get_all_outputs()
         for output in all_outputs:
             # TODO: Make this a bit more robust (can we assume things always have this hierarchy?)
             clock_line = output.parent_clock_line
             assert clock_line.parent_device == self
-            outputs_by_clockline.setdefault(clock_line, [])
             outputs_by_clockline[clock_line].append(output)
-            
+
         return all_outputs, outputs_by_clockline
     
     def generate_clock(self):
