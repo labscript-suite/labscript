@@ -424,6 +424,30 @@ class Device(object):
         return group
 
 
+class _RemoteBLACSConnection(Device):
+    delimeter = '|'
+
+    @set_passed_properties(
+        property_names = {}
+    )
+    def __init__(self, name, external_address):
+        Device.__init__(self, name, None, None)
+        # this is the address:port the parent BLACS will connect on
+        self.BLACS_connection = str(external_address)
+
+    def __call__(self, port):
+        """ This modifies the connection string so that a parent BLACS knows not to instantiate it directly"""
+        return '%s%s%s'%(self.name, self.delimeter, port)
+
+
+class RemoteWorkerBroker(_RemoteBLACSConnection):
+    pass
+
+
+class SecondaryControlSystem(_RemoteBLACSConnection):
+    pass
+
+
 class IntermediateDevice(Device):
     
     @set_passed_properties(property_names = {})
