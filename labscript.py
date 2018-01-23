@@ -22,6 +22,15 @@ from functools import wraps
 import runmanager
 import labscript_utils.h5_lock, h5py
 import labscript_utils.properties
+
+from labscript_utils import check_version
+
+# This imports the default Qt library that other labscript suite code will
+# import as well, since it all uses qtutils. By having a Qt library already
+# imported, we ensure matplotlib (imported by pylab) will notice this and use
+# the same Qt library and API version, and therefore not conflict with any
+# other code is using:
+check_version('qtutils', '2.0.0', '3.0.0')
 from pylab import *
 
 import functions
@@ -415,6 +424,30 @@ class Device(object):
         return group
 
 
+class _RemoteBLACSConnection(Device):
+    delimeter = '|'
+
+    @set_passed_properties(
+        property_names = {}
+    )
+    def __init__(self, name, external_address):
+        Device.__init__(self, name, None, None)
+        # this is the address:port the parent BLACS will connect on
+        self.BLACS_connection = str(external_address)
+
+    def __call__(self, port):
+        """ This modifies the connection string so that a parent BLACS knows not to instantiate it directly"""
+        return '%s%s%s'%(self.name, self.delimeter, port)
+
+
+class RemoteWorkerBroker(_RemoteBLACSConnection):
+    pass
+
+
+class SecondaryControlSystem(_RemoteBLACSConnection):
+    pass
+
+
 class IntermediateDevice(Device):
     
     @set_passed_properties(property_names = {})
@@ -764,18 +797,20 @@ class Pseudoclock(Device):
         return all_times, clock
     
     def get_outputs_by_clockline(self):
-        all_outputs = self.get_all_outputs()
-        
         outputs_by_clockline = {}
+        for clock_line in self.child_devices:
+            if isinstance(clock_line, ClockLine):
+                outputs_by_clockline[clock_line] = []
+
+        all_outputs = self.get_all_outputs()
         for output in all_outputs:
             # TODO: Make this a bit more robust (can we assume things always have this hierarchy?)
             clock_line = output.parent_clock_line
             assert clock_line.parent_device == self
-            outputs_by_clockline.setdefault(clock_line, [])
             outputs_by_clockline[clock_line].append(output)
-            
+
         return all_outputs, outputs_by_clockline
-    
+
     def generate_clock(self):
         all_outputs, outputs_by_clockline = self.get_outputs_by_clockline()
         
@@ -937,11 +972,13 @@ class Output(Device):
     scale_factor = 1
     
     @set_passed_properties(property_names = {})
-    def __init__(self,name,parent_device,connection,limits = None,unit_conversion_class = None, unit_conversion_parameters = None, **kwargs):
+    def __init__(self,name,parent_device,connection,limits = None,unit_conversion_class = None, unit_conversion_parameters = None, default_value=None, **kwargs):
         Device.__init__(self,name,parent_device,connection, **kwargs)
 
         self.instructions = {}
         self.ramp_limits = [] # For checking ramps don't overlap
+        if default_value is not None:
+            self.default_value = default_value
         if not unit_conversion_parameters:
             unit_conversion_parameters = {}
         self.unit_conversion_class = unit_conversion_class
@@ -1148,6 +1185,16 @@ class Output(Device):
         state."""        
         times = self.instructions.keys()
         times.sort()
+
+        current_dict_time = None
+        for time in times:
+            if isinstance(self.instructions[time], dict) and current_dict_time is None:
+                current_dict_time = self.instructions[time]
+            elif current_dict_time is not None and current_dict_time['initial time'] < time < current_dict_time['end time']:
+                err = ("{:s} {:s} has an instruction at t={:.10f}s. This instruction collides with a ramp on this output at that time. ".format(self.description, self.name, time)+
+                       "The collision {:s} is happenging from {:.10f}s till {:.10f}s".format(inst['description'], current_dict_time['initial time'], current_dict_time['end time']))
+                raise LabscriptError(err)
+
         self.times = times
         return times
         
@@ -1243,9 +1290,16 @@ class AnalogQuantity(Output):
     def ramp(self, t, duration, initial, final, samplerate, units=None, truncation=1.):
         self._check_truncation(truncation)
         if truncation > 0:
-            self.add_instruction(t, {'function': functions.ramp(duration, initial, final), 'description': 'linear ramp',
-                                     'initial time': t, 'end time': t + truncation*duration, 'clock rate': samplerate, 'units': units})
-        return truncation*duration
+            # if start and end value are the same, we don't need to ramp and can save the sample ticks etc
+            if initial == final:
+                self.constant(t, initial, units)
+                if not config.suppress_mild_warnings and not config.suppress_all_warnings:
+                    message = ''.join(['WARNING: AnalogOutput \'%s\' has the same initial and final value at time t=%.10fs with duration %.10fs. In order to save samples and clock ticks this instruction is replaced with a constant output. '%(self.name, t, duration)])
+                    sys.stderr.write(message + '\n')
+            else:
+                self.add_instruction(t, {'function': functions.ramp(duration, initial, final), 'description': 'linear ramp',
+                                     'initial time': t, 'end time': t + truncation * duration, 'clock rate': samplerate, 'units': units})
+        return truncation * duration
 
     def sine(self, t, duration, amplitude, angfreq, phase, dc_offset, samplerate, units=None, truncation=1.):
         self._check_truncation(truncation)
@@ -1443,22 +1497,28 @@ class DigitalQuantity(Output):
     
     # Redefine __init__ so that you cannot define a limit or calibration for DO
     @set_passed_properties(property_names = {"connection_table_properties": ["inverted"]})
-    def __init__(self, name, parent_device, connection, inverted=False, **kwargs):                
+    def __init__(self, name, parent_device, connection, inverted=False, **kwargs):
         Output.__init__(self,name,parent_device,connection, **kwargs)
         self.inverted = bool(inverted)
 
     def go_high(self,t):
-        if self.inverted:
-            self.add_instruction(t, 0)
-        else:
-            self.add_instruction(t, 1)
+        self.add_instruction(t, 1)
 
     def go_low(self,t):
+        self.add_instruction(t, 0)
+
+    def enable(self,t):
         if self.inverted:
-            self.add_instruction(t, 1)
+            self.go_low(t)
         else:
-            self.add_instruction(t, 0)
-    
+            self.go_high(t)
+
+    def disable(self,t):
+        if self.inverted:
+            self.go_high(t)
+        else:
+            self.go_low(t)
+
     '''
     This function only works if the DigitalQuantity is on a fast clock
     
@@ -1572,6 +1632,7 @@ class Shutter(DigitalOut):
             self.allowed_states = {1: 'closed', 0: 'open'}
         else:
             raise LabscriptError("Shutter %s wasn't instantiated with open_state = 0 or 1." % self.name)
+        self.actual_times = {}
 
     # If a shutter is asked to do something at t=0, it cannot start moving
     # earlier than that.  So initial shutter states will have imprecise
@@ -1579,13 +1640,15 @@ class Shutter(DigitalOut):
     # would throw a warning for every shutter. The documentation will
     # have to make a point of this.
     def open(self, t):
-        # if self.open_state is 0 go_high actually set the output to low
-        self.go_high(t-self.open_delay if t >= self.open_delay else 0)
+        t_calc = t-self.open_delay if t >= self.open_delay else 0
+        self.actual_times[t] = {'time': t_calc, 'instruction': 1}
+        self.enable(t_calc)
 
     def close(self, t):
-        # if self.open_state is 0 go_low actually set the output to high
-        self.go_low(t-self.close_delay if t >= self.close_delay else 0)
-    
+        t_calc = t-self.close_delay if t >= self.close_delay else 0
+        self.actual_times[t] = {'time': t_calc, 'instruction': 0}
+        self.disable(t_calc)
+
     def generate_code(self, hdf5_file):
         classname = self.__class__.__name__
         calibration_table_dtypes = [('name','a256'), ('open_delay',float), ('close_delay',float)]
@@ -1595,8 +1658,31 @@ class Shutter(DigitalOut):
         dataset = hdf5_file['calibrations'][classname]
         dataset.resize((len(dataset)+1,))
         dataset[len(dataset)-1] = metadata
-        
-        
+
+    def get_change_times(self, *args, **kwargs):
+        retval = DigitalOut.get_change_times(self, *args, **kwargs)
+
+        if len(self.actual_times)>1:
+            sorted_times = self.actual_times.keys()
+            sorted_times.sort()
+            for i in range(len(sorted_times)-1):
+                time = sorted_times[i]
+                next_time = sorted_times[i+1]
+                # only look at instructions that contain a state change
+                if self.actual_times[time]['instruction'] != self.actual_times[next_time]['instruction']:
+                    state1 = 'open' if self.actual_times[next_time]['instruction'] == 1 else 'close'
+                    state2 = 'opened' if self.actual_times[time]['instruction'] == 1 else 'closed'
+                    if self.actual_times[next_time]['time'] < self.actual_times[time]['time']:
+                        message = "WARNING: The shutter '{:s}' is requested to {:s} too early (taking delay into account) at t={:.10f}s when it is still not {:s} from an earlier instruction at t={:.10f}s".format(self.name, state1, next_time, state2, time)
+                        sys.stderr.write(message+'\n')
+                elif not config.suppress_mild_warnings and not config.suppress_all_warnings:
+                    state1 = 'open' if self.actual_times[next_time]['instruction'] == 1 else 'close'
+                    state2 = 'opened' if self.actual_times[time]['instruction'] == 0 else 'closed'
+                    message = "WARNING: The shutter '{:s}' is requested to {:s} at t={:.10f}s but was never {:s} after an earlier instruction at t={:.10f}s".format(self.name, state1, next_time, state2, time)
+                    sys.stderr.write(message+'\n')
+        return retval
+
+
 class Trigger(DigitalOut):
     description = 'trigger device'
     allowed_states = {1:'high', 0:'low'}
