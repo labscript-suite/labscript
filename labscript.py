@@ -810,7 +810,7 @@ class Pseudoclock(Device):
             outputs_by_clockline[clock_line].append(output)
 
         return all_outputs, outputs_by_clockline
-    
+
     def generate_clock(self):
         all_outputs, outputs_by_clockline = self.get_outputs_by_clockline()
         
@@ -1496,15 +1496,29 @@ class DigitalQuantity(Output):
     dtype = uint32
     
     # Redefine __init__ so that you cannot define a limit or calibration for DO
-    @set_passed_properties(property_names = {})
-    def __init__(self, name, parent_device, connection, **kwargs):                
+    @set_passed_properties(property_names = {"connection_table_properties": ["inverted"]})
+    def __init__(self, name, parent_device, connection, inverted=False, **kwargs):
         Output.__init__(self,name,parent_device,connection, **kwargs)
-        
+        self.inverted = bool(inverted)
+
     def go_high(self,t):
-        self.add_instruction(t,1)
+        self.add_instruction(t, 1)
+
     def go_low(self,t):
-        self.add_instruction(t,0) 
-    
+        self.add_instruction(t, 0)
+
+    def enable(self,t):
+        if self.inverted:
+            self.go_low(t)
+        else:
+            self.go_high(t)
+
+    def disable(self,t):
+        if self.inverted:
+            self.go_high(t)
+        else:
+            self.go_low(t)
+
     '''
     This function only works if the DigitalQuantity is on a fast clock
     
@@ -1598,8 +1612,8 @@ class AnalogIn(Device):
         self.acquisitions.append({'start_time': start_time, 'end_time': end_time,
                                  'label': label, 'wait_label':wait_label, 'scale_factor':scale_factor,'units':units})
         return end_time - start_time
-     
-        
+
+
 class Shutter(DigitalOut):
     description = 'shutter'
     
@@ -1609,7 +1623,7 @@ class Shutter(DigitalOut):
     def __init__(self,name,parent_device,connection,delay=(0,0),open_state=1,
                  **kwargs):
 
-        DigitalOut.__init__(self, name, parent_device, connection, **kwargs)
+        DigitalOut.__init__(self, name, parent_device, connection, inverted=not bool(open_state), **kwargs)
         self.open_delay, self.close_delay = delay
         self.open_state = open_state
         if self.open_state == 1:
@@ -1628,18 +1642,12 @@ class Shutter(DigitalOut):
     def open(self, t):
         t_calc = t-self.open_delay if t >= self.open_delay else 0
         self.actual_times[t] = {'time': t_calc, 'instruction': 1}
-        if self.open_state == 1:
-            self.go_high(t_calc)
-        elif self.open_state == 0:
-            self.go_low(t_calc)
+        self.enable(t_calc)
 
     def close(self, t):
         t_calc = t-self.close_delay if t >= self.close_delay else 0
         self.actual_times[t] = {'time': t_calc, 'instruction': 0}
-        if self.open_state == 1:
-            self.go_low(t_calc)
-        elif self.open_state == 0:
-            self.go_high(t_calc)
+        self.disable(t_calc)
 
     def generate_code(self, hdf5_file):
         classname = self.__class__.__name__
