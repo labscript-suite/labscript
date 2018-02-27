@@ -429,6 +429,30 @@ class Device(object):
         return group
 
 
+class _RemoteBLACSConnection(Device):
+    delimeter = '|'
+
+    @set_passed_properties(
+        property_names = {}
+    )
+    def __init__(self, name, external_address):
+        Device.__init__(self, name, None, None)
+        # this is the address:port the parent BLACS will connect on
+        self.BLACS_connection = str(external_address)
+
+    def __call__(self, port):
+        """ This modifies the connection string so that a parent BLACS knows not to instantiate it directly"""
+        return '%s%s%s'%(self.name, self.delimeter, port)
+
+
+class RemoteWorkerBroker(_RemoteBLACSConnection):
+    pass
+
+
+class SecondaryControlSystem(_RemoteBLACSConnection):
+    pass
+
+
 class IntermediateDevice(Device):
     
     @set_passed_properties(property_names = {})
@@ -778,18 +802,20 @@ class Pseudoclock(Device):
         return all_times, clock
     
     def get_outputs_by_clockline(self):
-        all_outputs = self.get_all_outputs()
-        
         outputs_by_clockline = {}
+        for clock_line in self.child_devices:
+            if isinstance(clock_line, ClockLine):
+                outputs_by_clockline[clock_line] = []
+
+        all_outputs = self.get_all_outputs()
         for output in all_outputs:
             # TODO: Make this a bit more robust (can we assume things always have this hierarchy?)
             clock_line = output.parent_clock_line
             assert clock_line.parent_device == self
-            outputs_by_clockline.setdefault(clock_line, [])
             outputs_by_clockline[clock_line].append(output)
-            
+
         return all_outputs, outputs_by_clockline
-    
+
     def generate_clock(self):
         all_outputs, outputs_by_clockline = self.get_outputs_by_clockline()
         
@@ -1455,8 +1481,8 @@ class StaticAnalogQuantity(Output):
         pass
     
     def expand_timeseries(self,*args,**kwargs):
-        self.raw_output = array([self.static_value])
-    
+        self.raw_output = array([self.static_value], dtype=self.dtype)
+
     @property
     def static_value(self):
         if self._static_value is None:
@@ -1475,15 +1501,29 @@ class DigitalQuantity(Output):
     dtype = uint32
     
     # Redefine __init__ so that you cannot define a limit or calibration for DO
-    @set_passed_properties(property_names = {})
-    def __init__(self, name, parent_device, connection, **kwargs):                
+    @set_passed_properties(property_names = {"connection_table_properties": ["inverted"]})
+    def __init__(self, name, parent_device, connection, inverted=False, **kwargs):
         Output.__init__(self,name,parent_device,connection, **kwargs)
-        
+        self.inverted = bool(inverted)
+
     def go_high(self,t):
-        self.add_instruction(t,1)
+        self.add_instruction(t, 1)
+
     def go_low(self,t):
-        self.add_instruction(t,0) 
-    
+        self.add_instruction(t, 0)
+
+    def enable(self,t):
+        if self.inverted:
+            self.go_low(t)
+        else:
+            self.go_high(t)
+
+    def disable(self,t):
+        if self.inverted:
+            self.go_high(t)
+        else:
+            self.go_low(t)
+
     '''
     This function only works if the DigitalQuantity is on a fast clock
     
@@ -1544,8 +1584,8 @@ class StaticDigitalQuantity(DigitalQuantity):
         pass
     
     def expand_timeseries(self,*args,**kwargs):
-        self.raw_output = array([self.static_value])
-        
+        self.raw_output = array([self.static_value], dtype=self.dtype)
+
     @property
     def static_value(self):
         if self._static_value is None:
@@ -1577,8 +1617,8 @@ class AnalogIn(Device):
         self.acquisitions.append({'start_time': start_time, 'end_time': end_time,
                                  'label': label, 'wait_label':wait_label, 'scale_factor':scale_factor,'units':units})
         return end_time - start_time
-     
-        
+
+
 class Shutter(DigitalOut):
     description = 'shutter'
     
@@ -1588,7 +1628,7 @@ class Shutter(DigitalOut):
     def __init__(self,name,parent_device,connection,delay=(0,0),open_state=1,
                  **kwargs):
 
-        DigitalOut.__init__(self, name, parent_device, connection, **kwargs)
+        DigitalOut.__init__(self, name, parent_device, connection, inverted=not bool(open_state), **kwargs)
         self.open_delay, self.close_delay = delay
         self.open_state = open_state
         if self.open_state == 1:
@@ -1597,6 +1637,7 @@ class Shutter(DigitalOut):
             self.allowed_states = {1: 'closed', 0: 'open'}
         else:
             raise LabscriptError("Shutter %s wasn't instantiated with open_state = 0 or 1." % self.name)
+        self.actual_times = {}
 
     # If a shutter is asked to do something at t=0, it cannot start moving
     # earlier than that.  So initial shutter states will have imprecise
@@ -1604,17 +1645,15 @@ class Shutter(DigitalOut):
     # would throw a warning for every shutter. The documentation will
     # have to make a point of this.
     def open(self, t):
-        if self.open_state == 1:
-            self.go_high(t-self.open_delay if t >= self.open_delay else 0)
-        elif self.open_state == 0:
-            self.go_low(t-self.open_delay if t >= self.open_delay else 0)
+        t_calc = t-self.open_delay if t >= self.open_delay else 0
+        self.actual_times[t] = {'time': t_calc, 'instruction': 1}
+        self.enable(t_calc)
 
     def close(self, t):
-        if self.open_state == 1:
-            self.go_low(t-self.close_delay if t >= self.close_delay else 0)  
-        elif self.open_state == 0:
-            self.go_high(t-self.close_delay if t >= self.close_delay else 0)
-    
+        t_calc = t-self.close_delay if t >= self.close_delay else 0
+        self.actual_times[t] = {'time': t_calc, 'instruction': 0}
+        self.disable(t_calc)
+
     def generate_code(self, hdf5_file):
         classname = self.__class__.__name__
         calibration_table_dtypes = {'names': ['name', 'open_delay', 'close_delay'], 'formats': ['a256', float, float]}
@@ -1624,8 +1663,31 @@ class Shutter(DigitalOut):
         dataset = hdf5_file['calibrations'][classname]
         dataset.resize((len(dataset)+1,))
         dataset[len(dataset)-1] = metadata
-        
-        
+
+    def get_change_times(self, *args, **kwargs):
+        retval = DigitalOut.get_change_times(self, *args, **kwargs)
+
+        if len(self.actual_times)>1:
+            sorted_times = self.actual_times.keys()
+            sorted_times.sort()
+            for i in range(len(sorted_times)-1):
+                time = sorted_times[i]
+                next_time = sorted_times[i+1]
+                # only look at instructions that contain a state change
+                if self.actual_times[time]['instruction'] != self.actual_times[next_time]['instruction']:
+                    state1 = 'open' if self.actual_times[next_time]['instruction'] == 1 else 'close'
+                    state2 = 'opened' if self.actual_times[time]['instruction'] == 1 else 'closed'
+                    if self.actual_times[next_time]['time'] < self.actual_times[time]['time']:
+                        message = "WARNING: The shutter '{:s}' is requested to {:s} too early (taking delay into account) at t={:.10f}s when it is still not {:s} from an earlier instruction at t={:.10f}s".format(self.name, state1, next_time, state2, time)
+                        sys.stderr.write(message+'\n')
+                elif not config.suppress_mild_warnings and not config.suppress_all_warnings:
+                    state1 = 'open' if self.actual_times[next_time]['instruction'] == 1 else 'close'
+                    state2 = 'opened' if self.actual_times[time]['instruction'] == 0 else 'closed'
+                    message = "WARNING: The shutter '{:s}' is requested to {:s} at t={:.10f}s but was never {:s} after an earlier instruction at t={:.10f}s".format(self.name, state1, next_time, state2, time)
+                    sys.stderr.write(message+'\n')
+        return retval
+
+
 class Trigger(DigitalOut):
     description = 'trigger device'
     allowed_states = {1:'high', 0:'low'}
