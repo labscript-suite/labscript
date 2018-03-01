@@ -1669,7 +1669,7 @@ class Shutter(DigitalOut):
         retval = DigitalOut.get_change_times(self, *args, **kwargs)
 
         if len(self.actual_times)>1:
-            sorted_times = self.actual_times.keys()
+            sorted_times = list(self.actual_times.keys())
             sorted_times.sort()
             for i in range(len(sorted_times)-1):
                 time = sorted_times[i]
