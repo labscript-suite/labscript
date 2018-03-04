@@ -1192,7 +1192,7 @@ class Output(Device):
                 current_dict_time = self.instructions[time]
             elif current_dict_time is not None and current_dict_time['initial time'] < time < current_dict_time['end time']:
                 err = ("{:s} {:s} has an instruction at t={:.10f}s. This instruction collides with a ramp on this output at that time. ".format(self.description, self.name, time)+
-                       "The collision {:s} is happenging from {:.10f}s till {:.10f}s".format(inst['description'], current_dict_time['initial time'], current_dict_time['end time']))
+                       "The collision {:s} is happening from {:.10f}s till {:.10f}s".format(current_dict_time['description'], current_dict_time['initial time'], current_dict_time['end time']))
                 raise LabscriptError(err)
 
         self.times = times
