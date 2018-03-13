@@ -19,13 +19,16 @@ import keyword
 from inspect import getargspec
 from functools import wraps
 
-
+# Notes for v3
+#
 # Anything commented with TO_DELETE:runmanager-batchompiler-agnostic 
 # can be removed with a major version bump of labscript (aka v3+)
 # We leave it in now to maintain backwards compatibility between new labscript
 # and old runmanager.
 # The code to be removed relates to the move of the globals loading code from
 # labscript to runmanager batch compiler.
+
+
 import labscript_utils.h5_lock, h5py
 import labscript_utils.properties
 
@@ -54,13 +57,11 @@ kHz = 1e3
 MHz = 1e6
 GHz = 1e9
 
-# We need to backup the builtins as they are now, as well as have a
-# reference to the actual builtins dictionary (which will change as we
-# add globals and devices to it), so that we can restore the builtins
-# when labscript_cleanup() is called. 
+# Create a reference to the builtins dict 
+# update this if accessing builtins ever changes (e.g. Python 3?)
 import __builtin__
 _builtins_dict = __builtin__.__dict__
-_existing_builtins_dict = _builtins_dict.copy() # TO_DELETE:runmanager-batchompiler-agnostic 
+
     
 # Startupinfo, for ensuring subprocesses don't launch with a visible command window:
 if os.name=='nt':
@@ -2184,6 +2185,9 @@ def load_globals(hdf5_filename):
 # TO_DELETE:runmanager-batchompiler-agnostic 
 #   load_globals_values=True            
 def labscript_init(hdf5_filename, labscript_file=None, new=False, overwrite=False, load_globals_values=True):
+    # save the builtins for later restoration in labscript_cleanup
+    compiler._existing_builtins_dict = _builtins_dict.copy()
+    
     if new:
         # defer file creation until generate_code(), so that filesystem
         # is not littered with h5 files when the user merely imports
@@ -2202,20 +2206,16 @@ def labscript_init(hdf5_filename, labscript_file=None, new=False, overwrite=Fals
         import __main__
         labscript_file = __main__.__file__
     compiler.labscript_file = os.path.abspath(labscript_file)
+    
 
-# TO_DELETE:runmanager-batchompiler-agnostic 
-#   cleanup_globals=True   
-def labscript_cleanup(cleanup_globals=True):
+def labscript_cleanup():
     """restores builtins and the labscript module to its state before
     labscript_init() was called"""
-    # TO_DELETE:runmanager-batchompiler-agnostic 
-    if cleanup_globals:
-        for name in _builtins_dict.copy(): 
-            if name not in _existing_builtins_dict:
-                del _builtins_dict[name]
-            else:
-                _builtins_dict[name] = _existing_builtins_dict[name]
-    # END_DELETE:runmanager-batchompiler-agnostic 
+    for name in _builtins_dict.copy(): 
+        if name not in compiler._existing_builtins_dict:
+            del _builtins_dict[name]
+        else:
+            _builtins_dict[name] = compiler._existing_builtins_dict[name]
     
     compiler.inventory = []
     compiler.hdf5_filename = None
@@ -2245,3 +2245,6 @@ class compiler:
     trigger_duration = 0
     wait_delay = 0
     time_markers = {}
+    
+    # safety measure in case cleanup is called before init
+    _existing_builtins_dict = _builtins_dict.copy() 
