@@ -1267,7 +1267,7 @@ class Output(Device):
                     # if we have limits, check the value is valid
                     if self.limits:
                         if ((outarray<self.limits[0])|(outarray>self.limits[1])).any():
-                            raise LabscriptError('The function %s called on "%s" at t=%d generated a value which falls outside the base unit limits (%d to %d)'%(self.timeseries[i]['function'],self.name,midpoints[0],limits[0],limits[1]))
+                            raise LabscriptError('The function %s called on "%s" at t=%d generated a value which falls outside the base unit limits (%d to %d)'%(self.timeseries[i]['function'],self.name,midpoints[0],self.limits[0],self.limits[1]))
                 else:
                     outarray = empty(len(time),dtype=self.dtype)
                     outarray.fill(self.timeseries[i])
