@@ -431,14 +431,14 @@ class Device(object):
         return group
 
 
-class _RemoteBLACSConnection(Device):
+class _RemoteConnection(Device):
     delimeter = '|'
 
     @set_passed_properties(
         property_names = {}
     )
-    def __init__(self, name, external_address):
-        Device.__init__(self, name, None, None)
+    def __init__(self, name, parent, connection, external_address):
+        Device.__init__(self, name, parent, connection)
         # this is the address:port the parent BLACS will connect on
         self.BLACS_connection = str(external_address)
 
@@ -446,13 +446,39 @@ class _RemoteBLACSConnection(Device):
         """ This modifies the connection string so that a parent BLACS knows not to instantiate it directly"""
         return '%s%s%s'%(self.name, self.delimeter, port)
 
+        
+class _RemoteGUI(_RemoteConnection):
+    @set_passed_properties(
+        property_names = {}
+    )
+    def __init__(self, name, parent, connection, external_address):
+        _RemoteConnection.__init__(self, name, parent, connection, external_address)
+        # this is the address:port the parent BLACS will connect on
+        self.BLACS_connection = str(external_address)
 
-class RemoteWorkerBroker(_RemoteBLACSConnection):
-    pass
+        
+class _RemoteWorker(_RemoteConnection):
+    @set_passed_properties(
+        property_names = {}
+    )
+    def __init__(self, name, parent, connection, external_address):
+        _RemoteConnection.__init__(self, name, parent, connection, external_address)
+        # this is the address:port the parent BLACS will connect on
+        self.BLACS_connection = str(external_address)
 
+        
+class RemoteBLACS(_RemoteConnection):
+    def __init__(self, name, external_address, port=42510):
+        connection_string = "%s:%s"%(external_address, port)
+    
+        _RemoteConnection.__init__(self, name, None, None, connection_string)
+        self.RemoteGUI = _RemoteGUI(self, "%s_GUI"%name, self, "internal", connection_string)
+        self.RemoteWorker = _RemoteWorker(self, "%s_worker"%name, self, "internal", connection_string)
+        
 
-class SecondaryControlSystem(_RemoteBLACSConnection):
-    pass
+class SecondaryControlSystem(_RemoteConnection):
+    def __init__(self, name, external_address, port):
+        _RemoteConnection.__init__(self, name, None, None, "%s:%s"%(external_address,port))
 
 
 class IntermediateDevice(Device):
