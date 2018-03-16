@@ -1304,7 +1304,7 @@ class AnalogQuantity(Output):
                     message = ''.join(['WARNING: AnalogOutput \'%s\' has the same initial and final value at time t=%.10fs with duration %.10fs. In order to save samples and clock ticks this instruction is replaced with a constant output. '%(self.name, t, duration)])
                     sys.stderr.write(message + '\n')
             else:
-                self.add_instruction(t, {'function': functions.ramp(duration, initial, final), 'description': 'linear ramp',
+                self.add_instruction(t, {'function': functions.ramp(round(t + truncation * duration, 10) - round(t, 10), initial, final), 'description': 'linear ramp',
                                      'initial time': t, 'end time': t + truncation * duration, 'clock rate': samplerate, 'units': units})
         return truncation * duration
 
