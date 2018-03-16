@@ -1847,14 +1847,27 @@ class StaticDDS(Device):
                  **kwargs):
         #self.clock_type = parent_device.clock_type # Don't see that this is needed anymore
         
-        #TODO: Add call to get default unit conversion classes from the parent
-        
         # We tell Device.__init__ to not call
         # self.parent.add_device(self), we'll do that ourselves later
         # after further intitialisation, so that the parent can see the
         # freq/amp/phase objects and manipulate or check them from within
         # its add_device method.
         Device.__init__(self,name,parent_device,connection, call_parents_add_device=False, **kwargs)
+
+        # Ask the parent device if it has default unit conversion classes it would like us to use:
+        if hasattr(parent_device, 'get_default_unit_conversion_classes'):
+            classes = parent_device.get_default_unit_conversion_classes(self)
+            default_freq_conv, default_amp_conv, default_phase_conv = classes
+            # If the user has not overridden, use these defaults. If
+            # the parent does not have a default for one or more of amp,
+            # freq or phase, it should return None for them.
+            if freq_conv_class is None:
+                freq_conv_class = default_freq_conv
+            if amp_conv_class is None:
+                amp_conv_class = default_amp_conv
+            if phase_conv_class is None:
+                phase_conv_class = default_phase_conv
+
         self.frequency = StaticAnalogQuantity(self.name+'_freq',self,'freq',freq_limits,freq_conv_class,freq_conv_params)
         self.amplitude = StaticAnalogQuantity(self.name+'_amp',self,'amp',amp_limits,amp_conv_class,amp_conv_params)
         self.phase = StaticAnalogQuantity(self.name+'_phase',self,'phase',phase_limits,phase_conv_class,phase_conv_params)        
