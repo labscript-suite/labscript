@@ -26,7 +26,16 @@ import keyword
 from inspect import getargspec
 from functools import wraps
 
-import runmanager
+# Notes for v3
+#
+# Anything commented with TO_DELETE:runmanager-batchompiler-agnostic 
+# can be removed with a major version bump of labscript (aka v3+)
+# We leave it in now to maintain backwards compatibility between new labscript
+# and old runmanager.
+# The code to be removed relates to the move of the globals loading code from
+# labscript to runmanager batch compiler.
+
+
 import labscript_utils.h5_lock, h5py
 import labscript_utils.properties
 
@@ -55,12 +64,9 @@ kHz = 1e3
 MHz = 1e6
 GHz = 1e9
 
-# We need to backup the builtins as they are now, as well as have a
-# reference to the actual builtins dictionary (which will change as we
-# add globals and devices to it), so that we can restore the builtins
-# when labscript_cleanup() is called.
+# Create a reference to the builtins dict 
+# update this if accessing builtins ever changes
 _builtins_dict = builtins.__dict__
-_existing_builtins_dict = _builtins_dict.copy()
     
 # Startupinfo, for ensuring subprocesses don't launch with a visible command window:
 if os.name=='nt':
@@ -1198,7 +1204,7 @@ class Output(Device):
                 current_dict_time = self.instructions[time]
             elif current_dict_time is not None and current_dict_time['initial time'] < time < current_dict_time['end time']:
                 err = ("{:s} {:s} has an instruction at t={:.10f}s. This instruction collides with a ramp on this output at that time. ".format(self.description, self.name, time)+
-                       "The collision {:s} is happenging from {:.10f}s till {:.10f}s".format(inst['description'], current_dict_time['initial time'], current_dict_time['end time']))
+                       "The collision {:s} is happening from {:.10f}s till {:.10f}s".format(current_dict_time['description'], current_dict_time['initial time'], current_dict_time['end time']))
                 raise LabscriptError(err)
 
         self.times = times
@@ -1273,7 +1279,7 @@ class Output(Device):
                     # if we have limits, check the value is valid
                     if self.limits:
                         if ((outarray<self.limits[0])|(outarray>self.limits[1])).any():
-                            raise LabscriptError('The function %s called on "%s" at t=%d generated a value which falls outside the base unit limits (%d to %d)'%(self.timeseries[i]['function'],self.name,midpoints[0],limits[0],limits[1]))
+                            raise LabscriptError('The function %s called on "%s" at t=%d generated a value which falls outside the base unit limits (%d to %d)'%(self.timeseries[i]['function'],self.name,midpoints[0],self.limits[0],self.limits[1]))
                 else:
                     outarray = empty(len(time),dtype=self.dtype)
                     outarray.fill(self.timeseries[i])
@@ -1853,14 +1859,27 @@ class StaticDDS(Device):
                  **kwargs):
         #self.clock_type = parent_device.clock_type # Don't see that this is needed anymore
         
-        #TODO: Add call to get default unit conversion classes from the parent
-        
         # We tell Device.__init__ to not call
         # self.parent.add_device(self), we'll do that ourselves later
         # after further intitialisation, so that the parent can see the
         # freq/amp/phase objects and manipulate or check them from within
         # its add_device method.
         Device.__init__(self,name,parent_device,connection, call_parents_add_device=False, **kwargs)
+
+        # Ask the parent device if it has default unit conversion classes it would like us to use:
+        if hasattr(parent_device, 'get_default_unit_conversion_classes'):
+            classes = parent_device.get_default_unit_conversion_classes(self)
+            default_freq_conv, default_amp_conv, default_phase_conv = classes
+            # If the user has not overridden, use these defaults. If
+            # the parent does not have a default for one or more of amp,
+            # freq or phase, it should return None for them.
+            if freq_conv_class is None:
+                freq_conv_class = default_freq_conv
+            if amp_conv_class is None:
+                amp_conv_class = default_amp_conv
+            if phase_conv_class is None:
+                phase_conv_class = default_phase_conv
+
         self.frequency = StaticAnalogQuantity(self.name+'_freq',self,'freq',freq_limits,freq_conv_class,freq_conv_params)
         self.amplitude = StaticAnalogQuantity(self.name+'_amp',self,'amp',amp_limits,amp_conv_class,amp_conv_params)
         self.phase = StaticAnalogQuantity(self.name+'_phase',self,'phase',phase_limits,phase_conv_class,phase_conv_params)        
@@ -2148,7 +2167,10 @@ def stop(t):
             device.stop_time = t
     generate_code()
 
+# TO_DELETE:runmanager-batchompiler-agnostic
+#   entire function load_globals can be deleted
 def load_globals(hdf5_filename):
+    import runmanager
     params = runmanager.get_shot_globals(hdf5_filename)
     with h5py.File(hdf5_filename,'r') as hdf5_file:
         for name in params.keys():
@@ -2178,8 +2200,12 @@ def load_globals(hdf5_filename):
                 params[name] = None
             _builtins_dict[name] = params[name]
             
-            
-def labscript_init(hdf5_filename, labscript_file=None, new=False, overwrite=False):
+# TO_DELETE:runmanager-batchompiler-agnostic 
+#   load_globals_values=True            
+def labscript_init(hdf5_filename, labscript_file=None, new=False, overwrite=False, load_globals_values=True):
+    # save the builtins for later restoration in labscript_cleanup
+    compiler._existing_builtins_dict = _builtins_dict.copy()
+    
     if new:
         # defer file creation until generate_code(), so that filesystem
         # is not littered with h5 files when the user merely imports
@@ -2188,23 +2214,27 @@ def labscript_init(hdf5_filename, labscript_file=None, new=False, overwrite=Fals
             os.unlink(hdf5_filename)
     elif not os.path.exists(hdf5_filename):
         raise LabscriptError('Provided hdf5 filename %s doesn\'t exist.'%hdf5_filename)
-    else:
-        load_globals(hdf5_filename)
+    # TO_DELETE:runmanager-batchompiler-agnostic 
+    elif load_globals_values:
+        load_globals(hdf5_filename) 
+    # END_DELETE:runmanager-batchompiler-agnostic 
+    
     compiler.hdf5_filename = hdf5_filename
     if labscript_file is None:
         import __main__
         labscript_file = __main__.__file__
     compiler.labscript_file = os.path.abspath(labscript_file)
-
     
+
 def labscript_cleanup():
     """restores builtins and the labscript module to its state before
     labscript_init() was called"""
-    for name in _builtins_dict.copy():
-        if name not in _existing_builtins_dict:
+    for name in _builtins_dict.copy(): 
+        if name not in compiler._existing_builtins_dict:
             del _builtins_dict[name]
         else:
-            _builtins_dict[name] = _existing_builtins_dict[name]
+            _builtins_dict[name] = compiler._existing_builtins_dict[name]
+    
     compiler.inventory = []
     compiler.hdf5_filename = None
     compiler.labscript_file = None
@@ -2233,3 +2263,6 @@ class compiler(object):
     trigger_duration = 0
     wait_delay = 0
     time_markers = {}
+    
+    # safety measure in case cleanup is called before init
+    _existing_builtins_dict = _builtins_dict.copy() 
