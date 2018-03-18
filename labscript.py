@@ -2004,7 +2004,7 @@ def save_labscripts(hdf5_file):
                                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, startupinfo=startupinfo)
                         info, err = process.communicate()
                         if info or err:
-                            hdf5_file[save_path].attrs['hg ' + str(command[0])] = str(info) + '\n' + str(err)
+                            hdf5_file[save_path].attrs['hg ' + str(command[0])] = info.decode('utf-8') + '\n' + err.decode('utf-8')
     except ImportError:
         pass
     except WindowsError if os.name == 'nt' else None:
