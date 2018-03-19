@@ -1304,35 +1304,35 @@ class AnalogQuantity(Output):
                     message = ''.join(['WARNING: AnalogOutput \'%s\' has the same initial and final value at time t=%.10fs with duration %.10fs. In order to save samples and clock ticks this instruction is replaced with a constant output. '%(self.name, t, duration)])
                     sys.stderr.write(message + '\n')
             else:
-                self.add_instruction(t, {'function': functions.ramp(round(t + truncation * duration, 10) - round(t, 10), initial, final), 'description': 'linear ramp',
+                self.add_instruction(t, {'function': functions.ramp(round(t + duration, 10) - round(t, 10), initial, final), 'description': 'linear ramp',
                                      'initial time': t, 'end time': t + truncation * duration, 'clock rate': samplerate, 'units': units})
         return truncation * duration
 
     def sine(self, t, duration, amplitude, angfreq, phase, dc_offset, samplerate, units=None, truncation=1.):
         self._check_truncation(truncation)
         if truncation > 0:
-            self.add_instruction(t, {'function': functions.sine(duration, amplitude, angfreq, phase, dc_offset), 'description': 'sine wave',
+            self.add_instruction(t, {'function': functions.sine(round(t + duration, 10) - round(t, 10), amplitude, angfreq, phase, dc_offset), 'description': 'sine wave',
                                      'initial time': t, 'end time': t + truncation*duration, 'clock rate': samplerate, 'units': units})
         return truncation*duration
 
     def sine_ramp(self, t, duration, initial, final, samplerate, units=None, truncation=1.):
         self._check_truncation(truncation)
         if truncation > 0:
-            self.add_instruction(t, {'function': functions.sine_ramp(duration, initial, final), 'description': 'sinusoidal ramp',
+            self.add_instruction(t, {'function': functions.sine_ramp(round(t + duration, 10) - round(t, 10), initial, final), 'description': 'sinusoidal ramp',
                                      'initial time': t, 'end time': t + truncation*duration, 'clock rate': samplerate, 'units': units})
         return truncation*duration
 
     def sine4_ramp(self, t, duration, initial, final, samplerate, units=None, truncation=1.):
         self._check_truncation(truncation)
         if truncation > 0:
-            self.add_instruction(t, {'function': functions.sine4_ramp(duration, initial, final), 'description': 'sinusoidal ramp',
+            self.add_instruction(t, {'function': functions.sine4_ramp(round(t + duration, 10) - round(t, 10), initial, final), 'description': 'sinusoidal ramp',
                                      'initial time': t, 'end time': t + truncation*duration, 'clock rate': samplerate, 'units': units})
         return truncation*duration
 
     def sine4_reverse_ramp(self, t, duration, initial, final, samplerate, units=None, truncation=1.):
         self._check_truncation(truncation)
         if truncation > 0:
-            self.add_instruction(t, {'function': functions.sine4_reverse_ramp(duration, initial, final), 'description': 'sinusoidal ramp',
+            self.add_instruction(t, {'function': functions.sine4_reverse_ramp(round(t + duration, 10) - round(t, 10), initial, final), 'description': 'sinusoidal ramp',
                                      'initial time': t, 'end time': t + truncation*duration, 'clock rate': samplerate, 'units': units})
         return truncation*duration
 
@@ -1373,7 +1373,7 @@ class AnalogQuantity(Output):
             raise LabscriptError(
                 'Truncation type for exp_ramp not supported. Must be either linear or exponential.')
         if trunc_duration > 0:
-            self.add_instruction(t, {'function': functions.exp_ramp(duration, initial, final, zero), 'description': 'exponential ramp',
+            self.add_instruction(t, {'function': functions.exp_ramp(round(t + duration, 10) - round(t, 10), initial, final, zero), 'description': 'exponential ramp',
                                      'initial time': t, 'end time': t + trunc_duration, 'clock rate': samplerate, 'units': units})
         return trunc_duration
 
@@ -1412,14 +1412,14 @@ class AnalogQuantity(Output):
             raise LabscriptError(
                 'Truncation type for exp_ramp_t not supported. Must be either linear or exponential.')
         if trunc_duration > 0:
-            self.add_instruction(t, {'function': functions.exp_ramp_t(duration, initial, final, time_constant), 'description': 'exponential ramp with time consntant',
+            self.add_instruction(t, {'function': functions.exp_ramp_t(round(t + duration, 10) - round(t, 10), initial, final, time_constant), 'description': 'exponential ramp with time consntant',
                                      'initial time': t, 'end time': t + trunc_duration, 'clock rate': samplerate, 'units': units})
         return trunc_duration
 
     def piecewise_accel_ramp(self, t, duration, initial, final, samplerate, units=None, truncation=1.):
         self._check_truncation(truncation)
         if truncation > 0:
-            self.add_instruction(t, {'function': functions.piecewise_accel(duration, initial, final), 'description': 'piecewise linear accelleration ramp',
+            self.add_instruction(t, {'function': functions.piecewise_accel(round(t + duration, 10) - round(t, 10), initial, final), 'description': 'piecewise linear accelleration ramp',
                                      'initial time': t, 'end time': t + truncation*duration, 'clock rate': samplerate, 'units': units})
         return truncation*duration
 
@@ -1432,7 +1432,7 @@ class AnalogQuantity(Output):
         def custom_ramp_func(t_rel):
             """The function that will return the result of the user's function,
             evaluated at relative times t_rel from 0 to duration"""
-            return function(t_rel, duration, *args, **kwargs)
+            return function(t_rel, round(t + duration, 10) - round(t, 10), *args, **kwargs)
 
         if truncation > 0:
             self.add_instruction(t, {'function': custom_ramp_func, 'description': 'custom ramp: %s' % function.__name__,
