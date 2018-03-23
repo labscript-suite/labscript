@@ -187,7 +187,7 @@ class Device(object):
         property_names = {"device_properties": ["added_properties"]}
         )
     def __init__(self,name,parent_device,connection, call_parents_add_device=True, 
-                 added_properties = {}, **kwargs):
+                 added_properties = {}, gui=None, worker=None, **kwargs):
         # Verify that no invalid kwargs were passed and the set properties
         if len(kwargs) != 0:        
             raise LabscriptError('Invalid keyword arguments: %s.'%kwargs)
@@ -235,6 +235,33 @@ class Device(object):
         
         # Add self to the compiler's device inventory
         compiler.inventory.append(self)
+        
+        # handle remote workers/gui interface
+        if gui is not None or worker is not None:
+            # remote GUI and worker
+            if gui is not None:
+                # if no worker is specified, assume it is the same as the gui
+                if worker is None:
+                    worker = gui
+                    
+                # check that worker and gui are appropriately typed
+                if not isinstance(gui, _RemoteConnection):
+                    raise LabscriptError('the "gui" argument for %s must be specified as a subclass of _RemoteConnection'%(self.name))
+            else:
+                # just remote worker
+                gui = compiler._PrimaryBLACS
+            
+            if not isinstance(worker, _RemoteConnection):
+                raise LabscriptError('the "worker" argument for %s must be specified as a subclass of _RemoteConnection'%(self.name))
+            
+            # check that worker is equal to, or a child of, gui
+            if worker != gui and worker not in gui.get_all_children():
+                print(gui.get_all_children())
+                raise LabscriptError('The remote worker (%s) for %s must be a child of the specified gui (%s) '%(worker.name, self.name, gui.name))
+                
+            # store worker and gui as properties of the connection table
+            self.set_property('gui', gui.name, 'connection_table_properties')
+            self.set_property('worker', worker.name, 'connection_table_properties')
             
     
     # Method to set a property for this device. 
@@ -253,7 +280,7 @@ class Device(object):
         if location is None or location not in labscript_utils.properties.VALID_PROPERTY_LOCATIONS:
             raise LabscriptError('Device %s requests invalid property assignment %s for property %s'%(self.name, location, name))
             
-        # if this try failes then self."location" may not be instantiated
+        # if this try fails then self."location" may not be instantiated
         if not hasattr(self, "_properties"):
             self._properties = {}
 
@@ -436,29 +463,32 @@ class Device(object):
         return group
 
 
-class _RemoteBLACSConnection(Device):
-    delimeter = '|'
-
+class _PrimaryBLACS(Device):
+    pass
+    
+class _RemoteConnection(Device):
     @set_passed_properties(
         property_names = {}
     )
-    def __init__(self, name, external_address):
-        Device.__init__(self, name, None, None)
-        # this is the address:port the parent BLACS will connect on
-        self.BLACS_connection = str(external_address)
-
-    def __call__(self, port):
-        """ This modifies the connection string so that a parent BLACS knows not to instantiate it directly"""
-        return '%s%s%s'%(self.name, self.delimeter, port)
-
-
-class RemoteWorkerBroker(_RemoteBLACSConnection):
-    pass
-
-
-class SecondaryControlSystem(_RemoteBLACSConnection):
-    pass
-
+    def __init__(self, name, parent=None, connection=None):
+        if parent is None:
+            # define a hidden parent of top level remote connections so that
+            # "connection" is stored correctly in the connection table
+            if compiler._PrimaryBLACS is None:
+                compiler._PrimaryBLACS = _PrimaryBLACS('__PrimaryBLACS', None, None)
+            parent = compiler._PrimaryBLACS
+        Device.__init__(self, name, parent, connection)
+        
+        
+class RemoteBLACS(_RemoteConnection):
+    def __init__(self, name, host, port=7340, parent=None):
+        _RemoteConnection.__init__(self, name, parent, "%s:%s"%(host, port))
+        
+        
+class SecondaryControlSystem(_RemoteConnection):
+    def __init__(self, name, host, port, parent=None):
+        _RemoteConnection.__init__(self, name, parent, "%s:%s"%(host, port))
+        
 
 class IntermediateDevice(Device):
     
@@ -1309,35 +1339,35 @@ class AnalogQuantity(Output):
                     message = ''.join(['WARNING: AnalogOutput \'%s\' has the same initial and final value at time t=%.10fs with duration %.10fs. In order to save samples and clock ticks this instruction is replaced with a constant output. '%(self.name, t, duration)])
                     sys.stderr.write(message + '\n')
             else:
-                self.add_instruction(t, {'function': functions.ramp(duration, initial, final), 'description': 'linear ramp',
+                self.add_instruction(t, {'function': functions.ramp(round(t + duration, 10) - round(t, 10), initial, final), 'description': 'linear ramp',
                                      'initial time': t, 'end time': t + truncation * duration, 'clock rate': samplerate, 'units': units})
         return truncation * duration
 
     def sine(self, t, duration, amplitude, angfreq, phase, dc_offset, samplerate, units=None, truncation=1.):
         self._check_truncation(truncation)
         if truncation > 0:
-            self.add_instruction(t, {'function': functions.sine(duration, amplitude, angfreq, phase, dc_offset), 'description': 'sine wave',
+            self.add_instruction(t, {'function': functions.sine(round(t + duration, 10) - round(t, 10), amplitude, angfreq, phase, dc_offset), 'description': 'sine wave',
                                      'initial time': t, 'end time': t + truncation*duration, 'clock rate': samplerate, 'units': units})
         return truncation*duration
 
     def sine_ramp(self, t, duration, initial, final, samplerate, units=None, truncation=1.):
         self._check_truncation(truncation)
         if truncation > 0:
-            self.add_instruction(t, {'function': functions.sine_ramp(duration, initial, final), 'description': 'sinusoidal ramp',
+            self.add_instruction(t, {'function': functions.sine_ramp(round(t + duration, 10) - round(t, 10), initial, final), 'description': 'sinusoidal ramp',
                                      'initial time': t, 'end time': t + truncation*duration, 'clock rate': samplerate, 'units': units})
         return truncation*duration
 
     def sine4_ramp(self, t, duration, initial, final, samplerate, units=None, truncation=1.):
         self._check_truncation(truncation)
         if truncation > 0:
-            self.add_instruction(t, {'function': functions.sine4_ramp(duration, initial, final), 'description': 'sinusoidal ramp',
+            self.add_instruction(t, {'function': functions.sine4_ramp(round(t + duration, 10) - round(t, 10), initial, final), 'description': 'sinusoidal ramp',
                                      'initial time': t, 'end time': t + truncation*duration, 'clock rate': samplerate, 'units': units})
         return truncation*duration
 
     def sine4_reverse_ramp(self, t, duration, initial, final, samplerate, units=None, truncation=1.):
         self._check_truncation(truncation)
         if truncation > 0:
-            self.add_instruction(t, {'function': functions.sine4_reverse_ramp(duration, initial, final), 'description': 'sinusoidal ramp',
+            self.add_instruction(t, {'function': functions.sine4_reverse_ramp(round(t + duration, 10) - round(t, 10), initial, final), 'description': 'sinusoidal ramp',
                                      'initial time': t, 'end time': t + truncation*duration, 'clock rate': samplerate, 'units': units})
         return truncation*duration
 
@@ -1378,7 +1408,7 @@ class AnalogQuantity(Output):
             raise LabscriptError(
                 'Truncation type for exp_ramp not supported. Must be either linear or exponential.')
         if trunc_duration > 0:
-            self.add_instruction(t, {'function': functions.exp_ramp(duration, initial, final, zero), 'description': 'exponential ramp',
+            self.add_instruction(t, {'function': functions.exp_ramp(round(t + duration, 10) - round(t, 10), initial, final, zero), 'description': 'exponential ramp',
                                      'initial time': t, 'end time': t + trunc_duration, 'clock rate': samplerate, 'units': units})
         return trunc_duration
 
@@ -1417,14 +1447,14 @@ class AnalogQuantity(Output):
             raise LabscriptError(
                 'Truncation type for exp_ramp_t not supported. Must be either linear or exponential.')
         if trunc_duration > 0:
-            self.add_instruction(t, {'function': functions.exp_ramp_t(duration, initial, final, time_constant), 'description': 'exponential ramp with time consntant',
+            self.add_instruction(t, {'function': functions.exp_ramp_t(round(t + duration, 10) - round(t, 10), initial, final, time_constant), 'description': 'exponential ramp with time consntant',
                                      'initial time': t, 'end time': t + trunc_duration, 'clock rate': samplerate, 'units': units})
         return trunc_duration
 
     def piecewise_accel_ramp(self, t, duration, initial, final, samplerate, units=None, truncation=1.):
         self._check_truncation(truncation)
         if truncation > 0:
-            self.add_instruction(t, {'function': functions.piecewise_accel(duration, initial, final), 'description': 'piecewise linear accelleration ramp',
+            self.add_instruction(t, {'function': functions.piecewise_accel(round(t + duration, 10) - round(t, 10), initial, final), 'description': 'piecewise linear accelleration ramp',
                                      'initial time': t, 'end time': t + truncation*duration, 'clock rate': samplerate, 'units': units})
         return truncation*duration
 
@@ -1437,7 +1467,7 @@ class AnalogQuantity(Output):
         def custom_ramp_func(t_rel):
             """The function that will return the result of the user's function,
             evaluated at relative times t_rel from 0 to duration"""
-            return function(t_rel, duration, *args, **kwargs)
+            return function(t_rel, round(t + duration, 10) - round(t, 10), *args, **kwargs)
 
         if truncation > 0:
             self.add_instruction(t, {'function': custom_ramp_func, 'description': 'custom ramp: %s' % function.__name__,
@@ -1949,6 +1979,11 @@ def generate_connection_table(hdf5_file):
         else:
             BLACS_connection = ""
             
+            #if there is no BLACS connection, make sure there is no "gui" or "worker" entry in the connection table properties
+            if 'worker' in properties or 'gui' in properties:
+                raise LabscriptError('You cannot specify a remote GUI or worker for a device (%s) that does not have a tab in BLACS'%(device.name))
+            
+            
         connection_table.append((device.name, device.__class__.__name__,
                                  device.parent_device.name if device.parent_device else str(None),
                                  str(device.connection if device.parent_device else str(None)),
@@ -2246,6 +2281,7 @@ def labscript_cleanup():
     compiler.trigger_duration = 0
     compiler.wait_delay = 0
     compiler.time_markers = {}
+    compiler._PrimaryBLACS = None
     
 class compiler(object):
     # The labscript file being compiled:
@@ -2263,6 +2299,7 @@ class compiler(object):
     trigger_duration = 0
     wait_delay = 0
     time_markers = {}
+    _PrimaryBLACS = None
     
     # safety measure in case cleanup is called before init
     _existing_builtins_dict = _builtins_dict.copy() 
