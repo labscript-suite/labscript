@@ -10,8 +10,8 @@
 # the project for the full license.                                 #
 #                                                                   #
 #####################################################################
-
-from labscript import *
+from __future__ import division, unicode_literals, print_function, absolute_import
+from labscript.labscript import *
 
 try:
     from labscript_utils import check_version
