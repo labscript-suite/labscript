@@ -2033,13 +2033,14 @@ def save_labscripts(hdf5_file):
                         # Doesn't seem to want to double count files if you just import the contents of a file within a module
                         continue
                     hdf5_file.create_dataset(save_path, data=open(path).read())
-                    hg_commands = [['log', '--limit', '1'], ['status'], ['diff']]
-                    for command in hg_commands:
-                        process = subprocess.Popen(['hg'] + command + [os.path.split(path)[1]], cwd=os.path.split(path)[0],
-                                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, startupinfo=startupinfo)
-                        info, err = process.communicate()
-                        if info or err:
-                            hdf5_file[save_path].attrs['hg ' + str(command[0])] = info.decode('utf-8') + '\n' + err.decode('utf-8')
+                    if compiler.save_hg_info:
+                        hg_commands = [['log', '--limit', '1'], ['status'], ['diff']]
+                        for command in hg_commands:
+                            process = subprocess.Popen(['hg'] + command + [os.path.split(path)[1]], cwd=os.path.split(path)[0],
+                                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, startupinfo=startupinfo)
+                            info, err = process.communicate()
+                            if info or err:
+                                hdf5_file[save_path].attrs['hg ' + str(command[0])] = info.decode('utf-8') + '\n' + err.decode('utf-8')
     except ImportError:
         pass
     except WindowsError if os.name == 'nt' else None:
@@ -2282,7 +2283,8 @@ def labscript_cleanup():
     compiler.wait_delay = 0
     compiler.time_markers = {}
     compiler._PrimaryBLACS = None
-    
+    compiler.save_hg_info = True
+
 class compiler(object):
     # The labscript file being compiled:
     labscript_file = None
@@ -2300,6 +2302,7 @@ class compiler(object):
     wait_delay = 0
     time_markers = {}
     _PrimaryBLACS = None
-    
+    save_hg_info = True
+
     # safety measure in case cleanup is called before init
     _existing_builtins_dict = _builtins_dict.copy() 
