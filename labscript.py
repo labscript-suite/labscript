@@ -1867,7 +1867,7 @@ class DDS(Device):
             
     def pulse(self, duration, amplitude, frequency, phase=None, print_summary=True):
         if print_summary:
-            print_time(t, '%s pulse at %.4f MHz for %.3f ms' % (self.name, frequency/MHz, duration/ms))
+            functions.print_time(t, '%s pulse at %.4f MHz for %.3f ms' % (self.name, frequency/MHz, duration/ms))
         self.setamp(t, amplitude)
         if frequency is not None:
             self.setfreq(t, frequency)
@@ -2146,7 +2146,7 @@ def wait(label, t, timeout=5):
 def add_time_marker(t, label, color=(0,0,0), verbose = False):
     #color in rgb
     if verbose:
-        print("t =",t,':',label)
+        functions.print_time(t,label)
     compiler.time_markers[t] = {"label":label, "color":color}
 
 def start():
