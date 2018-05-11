@@ -15,6 +15,9 @@ from __future__ import division, unicode_literals, print_function, absolute_impo
 from pylab import *
 import numpy as np
 
+def print_time(t, description):
+    print('t = {0:.9f} s:'.format(t),description)
+
 def ramp(duration, initial, final):
     m = (final - initial)/duration
     return lambda t: m*t + initial
