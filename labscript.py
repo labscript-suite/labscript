@@ -1777,20 +1777,21 @@ class Trigger(DigitalOut):
 class WaitMonitor(Trigger):
     
     @set_passed_properties(property_names = {})
-    def __init__(self, name, parent_device, connection, acquisition_device, acquisition_connection, timeout_device, timeout_connection,
-                  **kwargs):
+    def __init__(self, name, parent_device, connection, acquisition_device, acquisition_connection, 
+                 timeout_device, timeout_connection, timeout_trigger_type='rising', **kwargs):
 
         if compiler.wait_monitor is not None:
             raise LabscriptError("Cannot instantiate a second WaitMonitor: there can be only be one in the experiment")
         compiler.wait_monitor = self
-        Trigger.__init__(self, name, parent_device, connection, trigger_edge_type='rising', **kwargs)
+        Trigger.__init__(self, name, parent_device, connection, **kwargs)
         if not parent_device.pseudoclock_device.is_master_pseudoclock:
             raise LabscriptError('The output device for monitoring wait durations must be clocked by the master pseudoclock device')
         # TODO: acquisition_device must be the same as timeout_device at the moment (given the current BLACS implementation)
         self.acquisition_device = acquisition_device
         self.acquisition_connection = acquisition_connection 
         self.timeout_device = timeout_device
-        self.timeout_connection = timeout_connection 
+        self.timeout_connection = timeout_connection
+        self.timeout_trigger_type = timeout_trigger_type
         
         
 class DDS(Device):
@@ -2075,12 +2076,15 @@ def generate_wait_table(hdf5_file):
         acquisition_connection = compiler.wait_monitor.acquisition_connection
         timeout_device = compiler.wait_monitor.timeout_device.name 
         timeout_connection = compiler.wait_monitor.timeout_connection
+        timeout_trigger_type = compiler.wait_monitor.timeout_trigger_type
     else:
-        acquisition_device, acquisition_connection, timeout_device, timeout_connection = '','','',''
+        acquisition_device, acquisition_connection, timeout_device, timeout_connection, timeout_trigger_type = '', '', '', '', ''
     dataset.attrs['wait_monitor_acquisition_device'] = acquisition_device
     dataset.attrs['wait_monitor_acquisition_connection'] = acquisition_connection
     dataset.attrs['wait_monitor_timeout_device'] = timeout_device
     dataset.attrs['wait_monitor_timeout_connection'] = timeout_connection
+    dataset.attrs['wait_monitor_timeout_trigger_type'] = timeout_trigger_type
+
     
 def generate_code():
     if compiler.hdf5_filename is None:
