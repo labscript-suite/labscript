@@ -997,7 +997,8 @@ class PseudoclockDevice(TriggerableDevice):
             # Modify the trigger times themselves so that we insert wait instructions at the right times:
             self.trigger_times = [round(t - initial_trigger_time - i*self.trigger_delay,10) for i, t in enumerate(self.trigger_times)]
         
-        # quantise the stop time to the pseudoclock clock resolution
+        # quantise the trigger times and stop time to the pseudoclock clock resolution
+        self.trigger_times = self.quantise_to_pseudoclock(self.trigger_times)
         self.stop_time = self.quantise_to_pseudoclock(self.stop_time)
                             
     def generate_code(self, hdf5_file):
