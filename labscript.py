@@ -964,7 +964,7 @@ class PseudoclockDevice(TriggerableDevice):
             
     def trigger(self, t, duration, wait_delay = 0):
         """Ask the trigger device to produce a digital pulse of a given duration to trigger this pseudoclock"""
-        if t == 'initial':
+        if type(t) in [str, bytes] and t == 'initial':
             t = self.initial_trigger_time
         t = round(t,10)
         if self.is_master_pseudoclock:
@@ -2115,7 +2115,7 @@ def generate_code():
 def trigger_all_pseudoclocks(t='initial'):
     # Must wait this long before providing a trigger, in case child clocks aren't ready yet:
     wait_delay = compiler.wait_delay
-    if t == 'initial':
+    if type(t) in [str, bytes] and t == 'initial':
         # But not at the start of the experiment:
         wait_delay = 0
     # Trigger them all:
