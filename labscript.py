@@ -200,9 +200,9 @@ class Device(object):
         self.start_order = start_order
         self.stop_order = stop_order
         if start_order is not None and not isinstance(start_order, int):
-            raise TypeError("start_order must be int, not %s" % str(type(start_order)))
+            raise TypeError("start_order must be int, not %s" % type(start_order).__name__)
         if stop_order is not None and not isinstance(stop_order, int):
-            raise TypeError("stop_order must be int, not %s" % str(type(stop_order)))
+            raise TypeError("stop_order must be int, not %s" % type(stop_order).__name__)
         self.child_devices = []
         
         # self._properties may be instantiated already
