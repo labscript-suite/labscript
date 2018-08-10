@@ -1866,18 +1866,18 @@ class DDS(Device):
             raise LabscriptError('DDS %s does not have a digital gate, so you cannot use the disable(t) method.' % (self.name))
         self.gate.go_low(t)
             
-    def pulse(self, duration, amplitude, frequency, phase=None, print_summary=True):
+    def pulse(self, t, duration, amplitude, frequency, phase=None, amplitude_units = None, frequency_units = None, phase_units = None, print_summary=False):
         if print_summary:
             functions.print_time(t, '%s pulse at %.4f MHz for %.3f ms' % (self.name, frequency/MHz, duration/ms))
-        self.setamp(t, amplitude)
+        self.setamp(t, amplitude, amplitude_units)
         if frequency is not None:
-            self.setfreq(t, frequency)
+            self.setfreq(t, frequency, frequency_units)
         if phase is not None:
-            self.setphase(t, phase)
-        if amplitude != 0:
+            self.setphase(t, phase, phase_units)
+        if amplitude != 0 and self.gate is not None:
             self.enable(t)
-        self.disable(t)
-        self.setamp(t, 0)
+            self.disable(t + duration)
+            self.setamp(t + duration, 0)
         return duration
 
 
