@@ -187,7 +187,7 @@ class Device(object):
         property_names = {"device_properties": ["added_properties"]}
         )
     def __init__(self,name,parent_device,connection, call_parents_add_device=True, 
-                 added_properties = {}, gui=None, worker=None, **kwargs):
+                 added_properties = {}, gui=None, worker=None, start_order=None, stop_order=None, **kwargs):
         # Verify that no invalid kwargs were passed and the set properties
         if len(kwargs) != 0:        
             raise LabscriptError('Invalid keyword arguments: %s.'%kwargs)
@@ -197,6 +197,12 @@ class Device(object):
         self.name = name
         self.parent_device = parent_device
         self.connection = connection
+        self.start_order = start_order
+        self.stop_order = stop_order
+        if start_order is not None and not isinstance(start_order, int):
+            raise TypeError("start_order must be int, not %s" % type(start_order).__name__)
+        if stop_order is not None and not isinstance(stop_order, int):
+            raise TypeError("stop_order must be int, not %s" % type(stop_order).__name__)
         self.child_devices = []
         
         # self._properties may be instantiated already
@@ -2051,6 +2057,23 @@ def save_labscripts(hdf5_file):
 def write_device_properties(hdf5_file):
     for device in compiler.inventory:
         device_properties = device._properties["device_properties"]
+
+        # turn start_order and stop_order into device_properties,
+        # but only if the device has a BLACS_connection attribute. start_order
+        # or stop_order being None means the default order, zero. An order
+        # being specified on a device without a BLACS_connection is an error.
+        for attr_name in ['start_order', 'stop_order']:
+            attr = getattr(device, attr_name)
+            if hasattr(device, 'BLACS_connection'):
+                if attr is None:
+                    # Default:
+                    attr = 0
+                device_properties[attr_name] = attr
+            elif attr is not None:
+                msg = ('cannot set %s on device %s, which does ' % (attr_name, device.name) +
+                       'not have a BLACS_connection attribute and thus is not started and stopped directly by BLACS.')
+                raise TypeError(msg)
+
         # Special case: We don't create the group if the only property is an
         # empty dict called 'added properties'. This is because this property
         # is present in all devices, and represents a place to pass in
