@@ -1610,12 +1610,14 @@ class StaticDigitalQuantity(DigitalQuantity):
         self._static_value = None
         
     def go_high(self):
-        if self._static_value is not None:
+        if self._static_value is None:
             self.add_instruction(0,1)
             self._static_value = 1
+        else:
+            raise LabscriptError('%s %s has already been set to %s. It cannot also be set to %s.'%(self.description, self.name, self.instruction_to_string[self._static_value], self.instruction_to_string[value]))
             
     def go_low(self):
-        if self._static_value is not None:
+        if self._static_value is None:
             self.add_instruction(0,0) 
             self._static_value = 0
         else:
