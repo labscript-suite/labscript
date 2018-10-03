@@ -161,11 +161,20 @@ def set_passed_properties(property_names = {}):
             return_value = func(inst, *args, **kwargs)
 
             # Get a dict of the call arguments/keyword arguments by name:
-            property_values = getcallargs(func, inst, *args, **kwargs)
+            call_values = getcallargs(func, inst, *args, **kwargs)
 
-            # Overwrite with instance attributes of the same name, if they exist:
-            for name, value in property_values.items():
-                property_values[name] = getattr(inst, name, value)
+            all_property_names = set()
+            for names in property_names.values():
+                all_property_names.update(names)
+
+            property_values = {}
+            for name in all_property_names:
+                # If there is an instance attribute with that name, use that, otherwise
+                # use the call value:
+                if hasattr(inst, name):
+                    property_values[name] = getattr(inst, name)
+                else:
+                    property_values[name] = call_values[name]
 
             # Save them:
             inst.set_properties(property_values, property_names)
