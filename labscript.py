@@ -139,13 +139,13 @@ def fastflatten(inarray, dtype):
             i += 1
     return flat
 
-def set_passed_properties(property_names={}):
+def set_passed_properties(property_names = {}):
     """
     Decorator for device __init__ methods that saves the listed arguments/keyword
     arguments as properties. Argument values as passed to __init__ will be saved, with
     the exception that if an instance attribute exists after __init__ has run that has
     the same name as an argument, the instance attribute will be saved instead of the
-    argument value. This allows code within __init__ to do process default arguments
+    argument value. This allows code within __init__ to process default arguments
     before they are saved.
     
     property_names is a dictionary {key:val}, where each val
@@ -157,22 +157,30 @@ def set_passed_properties(property_names={}):
     def decorator(func):
         @wraps(func)
         def new_function(inst, *args, **kwargs):
+
             return_value = func(inst, *args, **kwargs)
+
             # Get a dict of the call arguments/keyword arguments by name:
             property_values = getcallargs(func, inst, *args, **kwargs)
+
             # Overwrite with instance attributes of the same name, if they exist:
             for name, value in property_values.items():
                 property_values[name] = getattr(inst, name, value)
+
             # Save them:
             inst.set_properties(property_values, property_names)
+
             return return_value
+
         return new_function
+    
     return decorator
 
 
 class Device(object):
     description = 'Generic Device'
     allowed_children = None
+    
     @set_passed_properties(
         property_names = {"device_properties": ["added_properties"]}
         )
