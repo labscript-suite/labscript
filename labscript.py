@@ -505,7 +505,7 @@ class IntermediateDevice(Device):
         # this should be checked here because it should only be connected a clockline
         # The allowed_children attribute of parent classes doesn't prevent this from being connected to something that accepts 
         # an instance of 'Device' as a child
-        if not isinstance(parent_device, ClockLine):
+        if parent_device is not None and not isinstance(parent_device, ClockLine):
             if not hasattr(parent_device, 'name'):
                 parent_device_name = 'Unknown: not an instance of a labscript device class'
             else:
