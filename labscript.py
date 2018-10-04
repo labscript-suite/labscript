@@ -397,7 +397,7 @@ class Device(object):
             return self 
         parent = self.parent_device
         try:
-            while not isinstance(parent,PseudoclockDevice):
+            while parent is not None and not isinstance(parent,PseudoclockDevice):
                 parent = parent.parent_device
             return parent
         except Exception as e:
@@ -438,7 +438,7 @@ class Device(object):
         """The earliest time output can be commanded from this device at the start of the experiment.
         This is nonzeo on secondary pseudoclock devices due to triggering delays."""
         parent = self.pseudoclock_device
-        if parent.is_master_pseudoclock:
+        if parent is None or parent.is_master_pseudoclock:
             return 0
         else:
             return round(parent.trigger_times[0] + parent.trigger_delay, 10)
