@@ -528,7 +528,7 @@ class ClockLine(Device):
         
     def add_device(self, device):
         Device.add_device(self, device)
-        if hasattr(device, 'clock_limit') and (self._clock_limit is None or device.clock_limit < self.clock_limit):
+        if getattr(device, 'clock_limit', None) is not None and (self._clock_limit is None or device.clock_limit < self.clock_limit):
             self._clock_limit = device.clock_limit
     
     # define a property to make sure no children overwrite this value themselves
