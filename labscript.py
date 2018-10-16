@@ -975,7 +975,14 @@ class PseudoclockDevice(TriggerableDevice):
         t = round(t,10)
         if self.is_master_pseudoclock:
             if compiler.wait_monitor is not None:
-                # Make the wait monitor pulse to signify starting or resumption of the experiment:
+                # Make the wait monitor pulse to signify starting or resumption of the
+                # experiment:
+                wait_monitor_minimum_pulse_width = getattr(
+                    compiler.wait_monitor.acquisition_device,
+                    'wait_monitor_minimum_pulse_width',
+                    0,
+                )
+                duration = max(duration, wait_monitor_minimum_pulse_width)
                 compiler.wait_monitor.trigger(t, duration)
             elif t != self.initial_trigger_time:
                 raise LabscriptError("You cannot use waits in unless you have a wait monitor." +
