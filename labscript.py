@@ -975,14 +975,7 @@ class PseudoclockDevice(TriggerableDevice):
         t = round(t,10)
         if self.is_master_pseudoclock:
             if compiler.wait_monitor is not None:
-                # Make the wait monitor pulse to signify starting or resumption of the
-                # experiment:
-                wait_monitor_minimum_pulse_width = getattr(
-                    compiler.wait_monitor.acquisition_device,
-                    'wait_monitor_minimum_pulse_width',
-                    0,
-                )
-                duration = max(duration, wait_monitor_minimum_pulse_width)
+                # Make the wait monitor pulse to signify starting or resumption of the experiment:
                 compiler.wait_monitor.trigger(t, duration)
             elif t != self.initial_trigger_time:
                 raise LabscriptError("You cannot use waits in unless you have a wait monitor." +
@@ -2217,7 +2210,15 @@ def start():
     
         # check the minimum trigger duration for the waitmonitor
         if compiler.wait_monitor is not None:
-            compiler.trigger_duration = max(compiler.trigger_duration, 2.0/compiler.wait_monitor.clock_limit)
+            wait_monitor_minimum_pulse_width = getattr(
+                compiler.wait_monitor.acquisition_device,
+                'wait_monitor_minimum_pulse_width',
+                0,
+            )
+            compiler.trigger_duration = max(
+                compiler.trigger_duration, wait_monitor_minimum_pulse_width
+            )
+            
         # Provide this, or the minimum possible pulse, whichever is longer:
         compiler.trigger_duration = max(2.0/min_clock_limit, compiler.trigger_duration) + 2*master_pseudoclock.clock_resolution
         # Must wait this long before providing a trigger, in case child clocks aren't ready yet:
