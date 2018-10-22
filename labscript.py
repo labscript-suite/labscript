@@ -2210,7 +2210,15 @@ def start():
     
         # check the minimum trigger duration for the waitmonitor
         if compiler.wait_monitor is not None:
-            compiler.trigger_duration = max(compiler.trigger_duration, 2.0/compiler.wait_monitor.clock_limit)
+            wait_monitor_minimum_pulse_width = getattr(
+                compiler.wait_monitor.acquisition_device,
+                'wait_monitor_minimum_pulse_width',
+                0,
+            )
+            compiler.trigger_duration = max(
+                compiler.trigger_duration, wait_monitor_minimum_pulse_width
+            )
+            
         # Provide this, or the minimum possible pulse, whichever is longer:
         compiler.trigger_duration = max(2.0/min_clock_limit, compiler.trigger_duration) + 2*master_pseudoclock.clock_resolution
         # Must wait this long before providing a trigger, in case child clocks aren't ready yet:
