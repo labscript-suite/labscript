@@ -397,7 +397,7 @@ class Device(object):
             return self 
         parent = self.parent_device
         try:
-            while not isinstance(parent,PseudoclockDevice):
+            while parent is not None and not isinstance(parent,PseudoclockDevice):
                 parent = parent.parent_device
             return parent
         except Exception as e:
@@ -438,7 +438,7 @@ class Device(object):
         """The earliest time output can be commanded from this device at the start of the experiment.
         This is nonzeo on secondary pseudoclock devices due to triggering delays."""
         parent = self.pseudoclock_device
-        if parent.is_master_pseudoclock:
+        if parent is None or parent.is_master_pseudoclock:
             return 0
         else:
             return round(parent.trigger_times[0] + parent.trigger_delay, 10)
@@ -505,7 +505,7 @@ class IntermediateDevice(Device):
         # this should be checked here because it should only be connected a clockline
         # The allowed_children attribute of parent classes doesn't prevent this from being connected to something that accepts 
         # an instance of 'Device' as a child
-        if not isinstance(parent_device, ClockLine):
+        if parent_device is not None and not isinstance(parent_device, ClockLine):
             if not hasattr(parent_device, 'name'):
                 parent_device_name = 'Unknown: not an instance of a labscript device class'
             else:
@@ -528,7 +528,7 @@ class ClockLine(Device):
         
     def add_device(self, device):
         Device.add_device(self, device)
-        if hasattr(device, 'clock_limit') and (self._clock_limit is None or device.clock_limit < self.clock_limit):
+        if getattr(device, 'clock_limit', None) is not None and (self._clock_limit is None or device.clock_limit < self.clock_limit):
             self._clock_limit = device.clock_limit
     
     # define a property to make sure no children overwrite this value themselves
