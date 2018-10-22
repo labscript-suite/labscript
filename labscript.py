@@ -23,7 +23,7 @@ import os
 import sys
 import subprocess
 import keyword
-from inspect import getargspec
+from inspect import getcallargs
 from functools import wraps
 
 # Notes for v3
@@ -141,12 +141,16 @@ def fastflatten(inarray, dtype):
 
 def set_passed_properties(property_names = {}):
     """
-    This decorator is intended to wrap the __init__ functions and to
-    write any selected kwargs into the properties.  
+    Decorator for device __init__ methods that saves the listed arguments/keyword
+    arguments as properties. Argument values as passed to __init__ will be saved, with
+    the exception that if an instance attribute exists after __init__ has run that has
+    the same name as an argument, the instance attribute will be saved instead of the
+    argument value. This allows code within __init__ to process default arguments
+    before they are saved.
     
-    names is a dictionary {key:val}, where each val
+    property_names is a dictionary {key:val}, where each val
         is a list [var1, var2, ...] of variables to be pulled from
-        properties_dict and added to the property with name key (it's location)
+        properties_dict and added to the property with name key (its location)
         
     internally they are all accessed by calling self.get_property()
     """
@@ -156,21 +160,24 @@ def set_passed_properties(property_names = {}):
 
             return_value = func(inst, *args, **kwargs)
 
-            # Introspect arguments and named arguments functions.  in python 3 this is
-            # a pair of func.__something__ calls and no import from argspec is needed
-            a = getargspec(func)
-            
-            if a.defaults is not None:
-                args_dict = {key:val for key,val in zip(a.args[-len(a.defaults):],a.defaults)}
-            else:
-                args_dict = {}
-                
-            # Update this list with the values from the passed keywords
-            args_dict.update(kwargs)
+            # Get a dict of the call arguments/keyword arguments by name:
+            call_values = getcallargs(func, inst, *args, **kwargs)
 
-            # print args_dict
-            # print property_names
-            inst.set_properties(args_dict, property_names)
+            all_property_names = set()
+            for names in property_names.values():
+                all_property_names.update(names)
+
+            property_values = {}
+            for name in all_property_names:
+                # If there is an instance attribute with that name, use that, otherwise
+                # use the call value:
+                if hasattr(inst, name):
+                    property_values[name] = getattr(inst, name)
+                else:
+                    property_values[name] = call_values[name]
+
+            # Save them:
+            inst.set_properties(property_values, property_names)
 
             return return_value
 
