@@ -2039,7 +2039,7 @@ def save_labscripts(hdf5_file):
         import labscriptlib
         prefix = os.path.dirname(labscriptlib.__file__)
         for module in sys.modules.values():
-            if hasattr(module,'__file__'):
+            if getattr(module, '__file__', None) is not None:
                 path = os.path.abspath(module.__file__)
                 if path.startswith(prefix) and (path.endswith('.pyc') or path.endswith('.py')):
                     path = path.replace('.pyc', '.py')
