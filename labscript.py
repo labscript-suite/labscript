@@ -975,14 +975,14 @@ class TriggerableDevice(Device):
                 )
                 raise ValueError(dedent(msg))
 
-        self.triggers.append([t, duration])
+        self.__triggers.append([t, duration])
 
     def do_checks(self):
         # Check that all devices sharing a trigger device have triggers when we have triggers:
         for device in self.trigger_device.child_devices:
             if device is not self:
-                for trigger in self.triggers:
-                    if trigger not in device.triggers:
+                for trigger in self.__triggers:
+                    if trigger not in device.__triggers:
                         start, duration = trigger
                         raise LabscriptError('TriggerableDevices %s and %s share a trigger. ' % (self.name, device.name) + 
                                              '%s has a trigger at %fs for %fs, ' % (self.name, start, duration) +
