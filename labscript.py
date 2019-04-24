@@ -499,7 +499,7 @@ class _RemoteConnection(Device):
         
         
 class RemoteBLACS(_RemoteConnection):
-    def __init__(self, name, host, port=7340, parent=None):
+    def __init__(self, name, host, port=7341, parent=None):
         _RemoteConnection.__init__(self, name, parent, "%s:%s"%(host, port))
         
         
