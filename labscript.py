@@ -1810,14 +1810,14 @@ class WaitMonitor(Trigger):
         self.timeout_trigger_type = timeout_trigger_type
         
         
-class DDS(Device):
+class DDSQuantity(Device):
     description = 'DDS'
     allowed_children = [AnalogQuantity,DigitalOut,DigitalQuantity] # Adds its own children when initialised
 
     @set_passed_properties(property_names = {})
     def __init__(self, name, parent_device, connection, digital_gate={}, freq_limits=None, freq_conv_class=None, freq_conv_params={},
                  amp_limits=None, amp_conv_class=None, amp_conv_params={}, phase_limits=None, phase_conv_class=None, phase_conv_params = {},
-                 **kwargs):
+                 call_parents_add_device = True, **kwargs):
         #self.clock_type = parent_device.clock_type # Don't see that this is needed anymore
         
         # Here we set call_parents_add_device=False so that we
@@ -1861,7 +1861,11 @@ class DDS(Device):
         # check this and throw an error in its add_device method. See
         # labscript_devices.PulseBlaster.PulseBlaster.add_device for an
         # example of this.
-        self.parent_device.add_device(self)
+        # In some subclasses we need to hold off on calling the parent
+        # device's add_device function until further code has run,
+        # e.g., see PulseBlasterDDS in PulseBlaster.py
+        if call_parents_add_device:
+            self.parent_device.add_device(self)
         
     def setamp(self, t, value, units=None):
         self.amplitude.constant(t, value, units)
@@ -1896,6 +1900,8 @@ class DDS(Device):
             self.setamp(t + duration, 0)
         return duration
 
+class DDS(DDSQuantity):
+    pass
 
 class StaticDDS(Device):
     description = 'Static RF'
