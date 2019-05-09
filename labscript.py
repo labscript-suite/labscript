@@ -2250,7 +2250,7 @@ def wait(label, t, timeout=5):
     compiler.wait_table[t] = str(label), float(timeout)
     return max_delay
 
-def add_time_marker(t, label, color=(-1, -1, -1), verbose=False):
+def add_time_marker(t, label, color=None, verbose=False):
     """Add a marker for the specified time. These markers are saved in the HDF5 file.
     This allows one to label that time with a string label, and a color that
     applications may use to represent this part of the experiment. The color may be
@@ -2263,8 +2263,11 @@ def add_time_marker(t, label, color=(-1, -1, -1), verbose=False):
     marker as the shot is running"""
     if isinstance(color, (str, bytes)):
         import PIL.ImageColor
-
         color = PIL.ImageColor.getrgb(color)
+    if color is None:
+        color = (-1, -1, -1)
+    elif not all(0 <= n <= 255 for n in color):
+        raise ValueError("Invalid RGB tuple %s" % str(color))
     if verbose:
         functions.print_time(t, label)
     compiler.time_markers[t] = {"label": label, "color": color}
