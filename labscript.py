@@ -2035,7 +2035,7 @@ class LabscriptError(Exception):
 
 def save_time_markers(hdf5_file):
     time_markers = compiler.time_markers
-    dtypes = dtype_workaround([('label','a256'), ('time', float), ('color', '(1,3)uint8')])
+    dtypes = dtype_workaround([('label','a256'), ('time', float), ('color', '(1,3)int')])
     data_array = zeros(len(time_markers), dtype=dtypes)
     for i, t in enumerate(time_markers):
         data_array[i] = time_markers[t]["label"], t, time_markers[t]["color"]
@@ -2250,11 +2250,27 @@ def wait(label, t, timeout=5):
     compiler.wait_table[t] = str(label), float(timeout)
     return max_delay
 
-def add_time_marker(t, label, color=(0,0,0), verbose = False):
-    #color in rgb
+def add_time_marker(t, label, color=None, verbose=False):
+    """Add a marker for the specified time. These markers are saved in the HDF5 file.
+    This allows one to label that time with a string label, and a color that
+    applications may use to represent this part of the experiment. The color may be
+    specified as an RGB tuple, or a string of the color name such as 'red', or a string
+    of its hex value such as '#ff88g0'. If verbose=True, this funtion also prints the
+    label and time, which can be useful to view during shot compilation.
+
+    Runviewer displays these markers and allows one to manipulate the time axis based on
+    them, and BLACS' progress bar plugin displays the name and colour of the most recent
+    marker as the shot is running"""
+    if isinstance(color, (str, bytes)):
+        import PIL.ImageColor
+        color = PIL.ImageColor.getrgb(color)
+    if color is None:
+        color = (-1, -1, -1)
+    elif not all(0 <= n <= 255 for n in color):
+        raise ValueError("Invalid RGB tuple %s" % str(color))
     if verbose:
-        functions.print_time(t,label)
-    compiler.time_markers[t] = {"label":label, "color":color}
+        functions.print_time(t, label)
+    compiler.time_markers[t] = {"label": label, "color": color}
 
 def start():
     compiler.start_called = True
