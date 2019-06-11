@@ -658,12 +658,24 @@ class Pseudoclock(Device):
             # Get rid of duplicates if trigger times were already in the list:
             change_time_list = list(set(change_time_list))
             change_time_list.sort()
-            
+
+            # index to keep track of in all_change_times
+            j = 0
             # Check that no two instructions are too close together:
             for i, t in enumerate(change_time_list[:-1]):
                 dt = change_time_list[i+1] - t
                 if dt < 1.0/clock_line.clock_limit:
-                    raise LabscriptError('Commands have been issued to devices attached to %s at t= %s s and %s s. '%(self.name, str(t),str(change_time_list[i+1])) +
+                    raise LabscriptError('Commands have been issued to devices attached to clockline %s at t= %s s and %s s. '%(clock_line.name, str(t),str(change_time_list[i+1])) +
+                                         'One or more connected devices on ClockLine %s cannot support update delays shorter than %s sec.'%(clock_line.name, str(1.0/clock_line.clock_limit)))
+                                         
+                # increment j until we reach the current time
+                while all_change_times[j] < t and j < len(all_change_times)-1:
+                    j += 1
+                # j should now index all_change_times at "t"
+                # Check that the next all change_time is not too close (and thus would force this clock tick to be faster than the clock_limit)
+                dt = all_change_times[j+1] - t
+                if dt < 1.0/clock_line.clock_limit:
+                    raise LabscriptError('Commands have been issued to devices attached to %s at t= %s s and %s s. '%(self.name, str(t),str(all_change_times[j+1])) +
                                          'One or more connected devices on ClockLine %s cannot support update delays shorter than %s sec.'%(clock_line.name, str(1.0/clock_line.clock_limit)))
             
             # Also add the stop time as as change time. First check that it isn't too close to the time of the last instruction:
