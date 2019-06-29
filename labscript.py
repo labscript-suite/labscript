@@ -1883,8 +1883,8 @@ class WaitMonitor(Trigger):
         a) outputs pulses every time the master pseudoclock begins running (either at
            the start of the shot or after a wait
 
-        b) measures the time in between those pulses in order to determined how long the
-           experiment was puased for during waits
+        b) measures the time in between those pulses in order to determine how long the
+           experiment was paused for during waits
 
         c) optionally, produces pulses in software time that can be used to retrigger
            the master pseudoclock if a wait lasts longer than its specified timeout
@@ -1893,8 +1893,8 @@ class WaitMonitor(Trigger):
 
             parent_device (Device)
                 The device with buffered digital outputs that should be used to produce
-                the wait monitor pulses should be produced. This device must be one
-                which is clocked by the master pseudoclock.
+                the wait monitor pulses. This device must be one which is clocked by
+                the master pseudoclock.
 
             connection (str)
                 The name of the output connection of parent_device that should be used
@@ -1906,7 +1906,7 @@ class WaitMonitor(Trigger):
                 as the wait monitor output device (corresponding to `parent_device` and
                 `connection`). At time of writing, the only devices in labscript that
                 can be a wait monitor acquisition device are NI DAQmx devices that have
-                counters inputs.
+                counter inputs.
 
             acquisition_connection (str)
                 The name of the input connection on `acquisition_device` that is to read
