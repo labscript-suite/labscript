@@ -49,8 +49,9 @@ from labscript_utils import check_version
 check_version('qtutils', '2.0.0', '3.0.0')
 
 # Required version for dedent() function
-check_version('labscript_utils', '2.8.0', '3.0.0')
+check_version('labscript_utils', '2.14.0', '3.0.0')
 from labscript_utils import dedent
+from labscript_utils.properties import set_attributes
 
 from pylab import *
 
@@ -2308,6 +2309,11 @@ def generate_code():
         generate_wait_table(hdf5_file)
         save_labscripts(hdf5_file)
 
+        # Save shot properties:
+        group = hdf5_file.create_group('shot_properties')
+        set_attributes(group, compiler.shot_properties)
+
+
 def trigger_all_pseudoclocks(t='initial'):
     # Must wait this long before providing a trigger, in case child clocks aren't ready yet:
     wait_delay = compiler.wait_delay
@@ -2417,13 +2423,47 @@ def start():
         max_delay = 0
     return max_delay
     
-def stop(t):
+def stop(t, target_cycle_time=None, cycle_time_delay_after_programming=False):
+    """Indicate the end of an experiment at the given time, and initiate compilation of
+    instructions, saving them to the HDF5 file. Configure some shot options.
+    
+    t (float or None), default: `None`
+        The end time of the experiment.
+
+    target_cycle_time (float or None), default: `None`
+        How long, in seconds, after the previous shot was started, should this shot be
+        started by BLACS. This allows one to run shots at a constant rate even if they
+        are of different durations. If `None`, BLACS will run the next shot immediately
+        after the previous shot completes. Otherwise, BLACS will delay starting this
+        shot until the cycle time has elapsed. This is a request only, and may not be
+        met if running/programming/saving data from a shot takes long enough that it
+        cannot be met. This functionality requires the BLACS `cycle_time` plugin to be
+        enabled in labconfig. Its accuracy is also limited by software timing,
+        requirements of exact cycle times beyond software timing should be instead done
+        using hardware triggers to Pseudoclocks.
+
+    cycle_time_delay_after_programming (bool), default: `False`
+        Whether the BLACS cycle_time plugin should insert the required delay for the
+        target cycle time *after* programming devices, as opposed to before programming
+        them. This is more precise, but may cause some devices to output their first
+        instruction for longer than desired, since some devices begin outputting their
+        first instruction as soon as they are programmed rather than when they receive
+        their first clock tick. If not set, the *average* cycle time will still be just
+        as close to as requested (so long as there is adequate time available), however
+        the time interval between the same part of the experiment from one shot to the
+        next will not be as precise due to variations in programming time.
+    """
     # Indicate the end of an experiment and initiate compilation:
     if t == 0:
         raise LabscriptError('Stop time cannot be t=0. Please make your run a finite duration')
     for device in compiler.inventory:
         if isinstance(device, PseudoclockDevice):
             device.stop_time = t
+    if target_cycle_time is not None:
+        # Ensure we have a valid type for this
+        target_cycle_time = float(target_cycle_time)
+    compiler.shot_properties['target_cycle_time'] = target_cycle_time
+    compiler.shot_properties['cycle_time_delay_after_programming'] = cycle_time_delay_after_programming
     generate_code()
 
 # TO_DELETE:runmanager-batchompiler-agnostic
@@ -2507,6 +2547,7 @@ def labscript_cleanup():
     compiler.time_markers = {}
     compiler._PrimaryBLACS = None
     compiler.save_hg_info = True
+    compiler.shot_properties = {}
 
 class compiler(object):
     # The labscript file being compiled:
@@ -2526,6 +2567,7 @@ class compiler(object):
     time_markers = {}
     _PrimaryBLACS = None
     save_hg_info = True
+    shot_properties = {}
 
     # safety measure in case cleanup is called before init
     _existing_builtins_dict = _builtins_dict.copy() 
