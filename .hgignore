@@ -1,7 +1,0 @@
-syntax: glob
-*.out
-*.log
-docs/labscript-dev/main.aux
-*.aux
-*.toc
-*.pyc
