@@ -1,0 +1,10 @@
+__pycache__
+dist
+*.egg-info
+*eggs
+conda_build
+conda_packages
+*.out
+*.log
+*.aux
+*.toc
