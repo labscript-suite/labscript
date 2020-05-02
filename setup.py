@@ -40,7 +40,6 @@
 
 import os
 from setuptools import setup
-from runpy import run_path
 
 try:
     from setuptools_conda import dist_conda
@@ -58,7 +57,7 @@ INSTALL_REQUIRES = [
 
 setup(
     name='labscript',
-    version=run_path(os.path.join('labscript', '__version__.py'))['__version__'],
+    use_scm_version=True,
     description="The labscript compiler",
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',

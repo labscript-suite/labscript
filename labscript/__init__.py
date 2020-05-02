@@ -39,4 +39,8 @@ check_version('labscript_utils', '2.2', '3')
 #    elif sys.argv[0]:
 #        labscript_init(sys.argv[0].replace('.py','.h5'), labscript_file=sys.argv[0], new=True, overwrite=overwrite)
 
-from .__version__ import __version__
+from labscript_utils.versions import get_version, NoVersionInfo
+from pathlib import Path
+__version__ = get_version(__name__, import_path=Path(__file__).parent.parent)
+if __version__ is NoVersionInfo:
+    __version__ = None
