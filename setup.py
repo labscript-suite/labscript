@@ -1,6 +1,5 @@
 import os
 from setuptools import setup
-from setuptools.dist import Distribution
 
 try:
     from setuptools_conda import dist_conda
