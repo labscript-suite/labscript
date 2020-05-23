@@ -11,13 +11,6 @@
 #                                                                   #
 #####################################################################
 
-from __future__ import division, unicode_literals, print_function, absolute_import
-from labscript_utils import PY2
-if PY2:
-    str = unicode
-    import __builtin__ as builtins
-else:
-    import builtins
 import os
 import sys
 import subprocess
@@ -38,17 +31,13 @@ from functools import wraps
 import labscript_utils.h5_lock, h5py
 import labscript_utils.properties
 
-from labscript_utils import check_version
-
 # This imports the default Qt library that other labscript suite code will
 # import as well, since it all uses qtutils. By having a Qt library already
 # imported, we ensure matplotlib (imported by pylab) will notice this and use
 # the same Qt library and API version, and therefore not conflict with any
 # other code is using:
-check_version('qtutils', '2.0.0', '3.0.0')
+import qtutils
 
-# Required version for dedent() function
-check_version('labscript_utils', '2.14.0', '3.0.0')
 from labscript_utils import dedent
 from labscript_utils.properties import set_attributes
 
