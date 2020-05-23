@@ -4,7 +4,6 @@ on:
     branches:
       - master
       - maintenance/*
-      - automated_release
   create:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+*'
@@ -21,7 +20,7 @@ jobs:
       PACKAGE_NAME: labscript
       SCM_VERSION_SCHEME: release-branch-semver
       SCM_LOCAL_SCHEME: no-local-version
-    if: github.repository == 'rpanderson/labscript' && (github.event_name != 'create' || github.event.ref_type != 'branch')
+    if: github.repository == 'labscript-suite/labscript' && (github.event_name != 'create' || github.event.ref_type != 'branch')
     steps:
       - name: Checkout
         uses: actions/checkout@v2
