@@ -76,9 +76,7 @@ instance/
 .scrapy
 
 # Sphinx documentation
-docs/html/
 docs/_build/
-docs/source/_build/
 
 # PyBuilder
 target/
@@ -154,5 +152,7 @@ conda_packages
 # Editors
 .vscode/
 
-# dynamically generated docs
+# Sphinx documentation
+docs/html/
+docs/source/_build/
 docs/source/components.rst
