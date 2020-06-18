@@ -15,7 +15,7 @@
    introduction
    connection_table
    api_reference/index
-   component_docs
+   components
    Home Page <http://labscriptsuite.org>
    Source Code <https://github.com/labscript-suite/labscript>
    BitBucket Archive <http://bitbucket-archive.labscriptsuite.org/#!/labscript_suite/labscript>

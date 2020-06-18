@@ -1,3 +1,10 @@
+# This gitignore file consists of 2 parts:
+#   * The standard Python .gitignore rules from GitHub
+#   * custom ignore rules for the labscript suite.
+#
+# These should be kept separate so that the generic rules can be updated with a
+# copy/paste without having to worry about whether we are removing custom rules
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -130,6 +137,10 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+#
+# Custom labscript suite .gitignore rules start below
+#
+
 # conda build results
 conda_build
 conda_packages
@@ -144,4 +155,4 @@ conda_packages
 .vscode/
 
 # dynamically generated docs
-docs/source/component_docs.rst
+docs/source/components.rst
