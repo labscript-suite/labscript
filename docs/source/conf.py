@@ -27,7 +27,7 @@ release = version
 
 # HTML icons
 img_path = 'img'
-html_logo = img_path + "/labscript_32nx32n.svg"
+html_logo = img_path + "/labscript_64x64.svg"
 html_favicon = img_path + "/labscript.ico"
 
 # -- General configuration (should be identical across all projects) ------------------
