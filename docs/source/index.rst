@@ -15,9 +15,23 @@
    introduction
    connection_table
    api_reference/index
+
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   :caption: FURTHER DOCUMENTATION
+
    components
+
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   :caption: LINKS
+
    Home Page <http://labscriptsuite.org>
    Source Code <https://github.com/labscript-suite/labscript>
    BitBucket Archive <http://bitbucket-archive.labscriptsuite.org/#!/labscript_suite/labscript>
+
+.. todolist:: 
 
 
