@@ -15,7 +15,7 @@ labscript
 
    introduction
    connection_table
-   api_reference/index
+   api/index
 
 .. toctree::
    :maxdepth: 2
