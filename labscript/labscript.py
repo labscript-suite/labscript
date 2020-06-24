@@ -2279,7 +2279,7 @@ def generate_code():
     elif not os.path.exists(compiler.hdf5_filename):
         with h5py.File(compiler.hdf5_filename ,'w') as hdf5_file:
             hdf5_file.create_group('globals')
-    with h5py.File(compiler.hdf5_filename) as hdf5_file:
+    with h5py.File(compiler.hdf5_filename, 'a') as hdf5_file:
         try:
             hdf5_file.create_group('devices')
             hdf5_file.create_group('calibrations')
