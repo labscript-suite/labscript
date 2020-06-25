@@ -102,7 +102,7 @@ def bitfield(arrays,dtype):
     """converts a list of arrays of ones and zeros into a single
     array of unsigned ints of the given datatype."""
     n = {uint8:8,uint16:16,uint32:32}
-    if arrays[0] == 0:
+    if not isinstance(arrays[0], np.ndarray) and arrays[0] == 0:
         y = zeros(max([len(arr) if iterable(arr) else 1 for arr in arrays]),dtype=dtype)
     else:
         y = array(arrays[0],dtype=dtype)
