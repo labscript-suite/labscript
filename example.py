@@ -60,9 +60,9 @@ NovaTechDDS9M(
 
 # Create a BIAS Camera, tirggered to take photos with flag 3 of pulseblaster_0
 Camera(
-    "andor_ixon_0",
-    pulseblaster_0.direct_outputs,
-    "flag 3",
+    name="andor_ixon_0",
+    parent_device=pulseblaster_0.direct_outputs,
+    connection="flag 3",
     BIAS_port=42520,
     serial_number="0000",
     SDK="IMAQdx",
@@ -87,41 +87,55 @@ NI_PCI_6733(
 
 # Create the output/input channels on the above devices use the example1 conversion
 # class located in pythonlib/unitconversions/example.py with default paremeters
-AnalogOut("analog0", ni_card_1, "ao0", unit_conversion_class=example1)
+AnalogOut(
+    name="analog0",
+    parent_device=ni_card_1,
+    connection="ao0",
+    unit_conversion_class=example1,
+)
 
 # same as above, but we are changing some parameters used in the conversion and
 # specifying a prefix to be used with units. You can now program in mA, uA, mGauss,
 # uGauss
 AnalogOut(
-    "analog1",
-    ni_card_1,
-    "ao1",
+    name="analog1",
+    parent_device=ni_card_1,
+    connection="ao1",
     unit_conversion_class=example1,
     unit_conversion_parameters={"a": 5, "b": 1, "magnitudes": ["m", "u"]},
 )
-AnalogOut("analog2", ni_card_0, "ao2")
-AnalogOut("analog3", ni_card_0, "ao3")
-AnalogIn("input1", ni_card_0, "ai0")
-DigitalOut("do0", ni_card_0, "port0/line2")
-Shutter("shutter1", ni_card_0, "port0/line1", delay=(0, 0))
-Shutter("shutter2", pulseblaster_0.direct_outputs, "flag 2", delay=(0, 0))
-DigitalOut("switch", pulseblaster_0.direct_outputs, "flag 4")
+AnalogOut(name="analog2", parent_device=ni_card_0, connection="ao2")
+AnalogOut(name="analog3", parent_device=ni_card_0, connection="ao3")
+AnalogIn(name="input1", parent_device=ni_card_0, connection="ai0")
+DigitalOut(name="do0", parent_device=ni_card_0, connection="port0/line2")
+Shutter(
+    name="shutter1", parent_device=ni_card_0, connection="port0/line1", delay=(0, 0)
+)
+Shutter(
+    name="shutter2",
+    parent_device=pulseblaster_0.direct_outputs,
+    connection="flag 2",
+    delay=(0, 0),
+)
+DigitalOut(
+    name="switch", parent_device=pulseblaster_0.direct_outputs, connection="flag 4"
+)
 
-DDS("dds1", novatechdds9m_0, "channel 0")
-DDS("dds2", novatechdds9m_0, "channel 1")
-StaticDDS("dds5", novatechdds9m_0, "channel 2")
+DDS(name="dds1", parent_device=novatechdds9m_0, connection="channel 0")
+DDS(name="dds2", parent_device=novatechdds9m_0, connection="channel 1")
+StaticDDS(name="dds5", parent_device=novatechdds9m_0, connection="channel 2")
 # The next DDS is special because it has the frequency and amplitude calibrated using
 # example2 and example3 classes from pythonlib/unitconversions/example.py
 DDS(
-    "dds3",
-    pulseblaster_0.direct_outputs,
-    "dds 0",
+    name="dds3",
+    parent_device=pulseblaster_0.direct_outputs,
+    connection="dds 0",
     freq_conv_class=example2,
     freq_conv_params={"a": 4, "b": 6},
     amp_conv_class=example3,
     amp_conv_params={"a": 2, "b": 22, "magnitudes": ["m"]},
 )
-DDS("dds4", pulseblaster_0.direct_outputs, "dds 1")
+DDS(name="dds4", parent_device=pulseblaster_0.direct_outputs, connection="dds 1")
 
 # This sets up the inputs/counters/etc that will monitor
 # The first paremeter is the name for the WaitMonitor device
@@ -133,7 +147,13 @@ DDS("dds4", pulseblaster_0.direct_outputs, "dds 1")
 # this channel should be physicaly connect to the external trigger of the master
 # pseudoclock.
 WaitMonitor(
-    "wait_monitor", ni_card_0, "port0/line0", ni_card_0, "ctr0", ni_card_0, "pfi1"
+    name="wait_monitor",
+    parent_device=ni_card_0,
+    connection="port0/line0",
+    acquisition_device=ni_card_0,
+    acquisition_connection="ctr0",
+    timeout_device=ni_card_0,
+    timeout_connection="pfi1",
 )
 
 # A variable to define the acquisition rate used for the analog outputs below.
