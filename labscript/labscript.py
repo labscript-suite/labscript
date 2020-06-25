@@ -102,7 +102,7 @@ def bitfield(arrays,dtype):
     """converts a list of arrays of ones and zeros into a single
     array of unsigned ints of the given datatype."""
     n = {uint8:8,uint16:16,uint32:32}
-    if arrays[0] is 0:
+    if np.array_equal(arrays[0], 0):
         y = zeros(max([len(arr) if iterable(arr) else 1 for arr in arrays]),dtype=dtype)
     else:
         y = array(arrays[0],dtype=dtype)
@@ -1120,7 +1120,7 @@ class Output(Device):
         # Here we specifically differentiate "None" from False as we will later have a conditional which relies on
         # self.limits being either a correct tuple, or "None"
         if limits is not None:
-            if not isinstance(limits,tuple) or len(limits) is not 2:
+            if not isinstance(limits,tuple) or len(limits) != 2:
                 raise LabscriptError('The limits for "%s" must be tuple of length 2. Eg. limits=(1,2)'%(self.name))
             if limits[0] > limits[1]:
                 raise LabscriptError('The first element of the tuple must be lower than the second element. Eg limits=(1,2), NOT limits=(2,1)')
@@ -2279,7 +2279,7 @@ def generate_code():
     elif not os.path.exists(compiler.hdf5_filename):
         with h5py.File(compiler.hdf5_filename ,'w') as hdf5_file:
             hdf5_file.create_group('globals')
-    with h5py.File(compiler.hdf5_filename) as hdf5_file:
+    with h5py.File(compiler.hdf5_filename, 'a') as hdf5_file:
         try:
             hdf5_file.create_group('devices')
             hdf5_file.create_group('calibrations')
