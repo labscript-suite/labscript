@@ -11,8 +11,21 @@
 #                                                                   #
 #####################################################################
 
-import __init__  # only have to do this because we're inside the labscript directory
-from labscript import *
+import numpy as np
+from labscript import (
+    AnalogIn,
+    AnalogOut,
+    ClockLine,
+    DDS,
+    DigitalOut,
+    MHz,
+    Shutter,
+    StaticDDS,
+    WaitMonitor,
+    start,
+    stop,
+    wait,
+)
 from labscript_devices.PulseBlaster import PulseBlaster
 from labscript_devices.NI_DAQmx.labscript_devices import NI_PCIe_6363
 from labscript_devices.NovaTechDDS9M import NovaTechDDS9M
@@ -193,7 +206,7 @@ analog1.sine(
     analog1.t0,
     duration=6,
     amplitude=5,
-    angfreq=2 * pi,
+    angfreq=2 * np.pi,
     phase=0,
     dc_offset=0.0,
     samplerate=rate,
