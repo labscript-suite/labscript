@@ -31,6 +31,7 @@ from functools import wraps
 
 import labscript_utils.h5_lock, h5py
 import labscript_utils.properties
+from labscript_utils.labconfig import LabConfig
 
 # This imports the default Qt library that other labscript suite code will
 # import as well, since it all uses qtutils. By having a Qt library already
@@ -2547,8 +2548,8 @@ def labscript_cleanup():
     compiler.wait_delay = 0
     compiler.time_markers = {}
     compiler._PrimaryBLACS = None
-    compiler.save_hg_info = True
-    compiler.save_git_info = True
+    compiler.save_hg_info = LabConfig().getboolean('labscript', 'save_hg_info', fallback=True)
+    compiler.save_git_info = LabConfig().getboolean('labscript', 'save_git_info', fallback=False)
     compiler.shot_properties = {}
 
 class compiler(object):
@@ -2568,8 +2569,8 @@ class compiler(object):
     wait_delay = 0
     time_markers = {}
     _PrimaryBLACS = None
-    save_hg_info = True
-    save_git_info = True
+    save_hg_info = LabConfig().getboolean('labscript', 'save_hg_info', fallback=True)
+    save_git_info = LabConfig().getboolean('labscript', 'save_git_info', fallback=False)
     shot_properties = {}
 
     # safety measure in case cleanup is called before init
