@@ -2206,6 +2206,14 @@ def save_labscripts(hdf5_file):
                             info, err = process.communicate()
                             if info or err:
                                 hdf5_file[save_path].attrs['hg ' + str(command[0])] = info.decode('utf-8') + '\n' + err.decode('utf-8')
+                    if compiler.save_git_info:
+                        module_filename = os.path.split(path)[1]
+                        git_commands = [['branch', '--show-current'], ['rev-parse', '--verify', 'HEAD'], ['diff', 'HEAD', module_filename]]
+                        for command in git_commands:
+                            process = subprocess.Popen(['git'] + command, cwd=os.path.split(path)[0], stdout=subprocess.PIPE,
+                                                       stderr=subprocess.PIPE, startupinfo=startupinfo)
+                            info, err = process.communicate()
+                            hdf5_file[save_path].attrs['git ' + str(command[0])] = info.decode('utf-8') + '\n' + err.decode('utf-8')
     except ImportError:
         pass
     except WindowsError if os.name == 'nt' else None:
@@ -2540,6 +2548,7 @@ def labscript_cleanup():
     compiler.time_markers = {}
     compiler._PrimaryBLACS = None
     compiler.save_hg_info = True
+    compiler.save_git_info = True
     compiler.shot_properties = {}
 
 class compiler(object):
@@ -2560,6 +2569,7 @@ class compiler(object):
     time_markers = {}
     _PrimaryBLACS = None
     save_hg_info = True
+    save_git_info = True
     shot_properties = {}
 
     # safety measure in case cleanup is called before init
