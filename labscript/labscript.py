@@ -2224,7 +2224,7 @@ def save_labscripts(hdf5_file):
     except ImportError:
         pass
     except WindowsError if os.name == 'nt' else None:
-        sys.stderr.write('Warning: Cannot save Mercurial data for imported scripts. Check that the hg command can be run from the command line.\n')
+        sys.stderr.write('Warning: Cannot save version control data for imported scripts. Check that the hg and/or git command can be run from the command line.\n')
 
 
 def write_device_properties(hdf5_file):
