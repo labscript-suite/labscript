@@ -2212,7 +2212,7 @@ def save_labscripts(hdf5_file):
                                 hdf5_file[save_path].attrs['hg ' + str(command[0])] = info.decode('utf-8') + '\n' + err.decode('utf-8')
                     if compiler.save_git_info:
                         module_filename = os.path.split(path)[1]
-                        git_commands = [['branch', '--show-current'], ['rev-parse', 'HEAD'], ['diff', 'HEAD', module_filename]]
+                        git_commands = [['branch', '--show-current'], ['describe', '--always', 'HEAD'], ['rev-parse', 'HEAD'], ['diff', 'HEAD', module_filename]]
                         process_list = []
                         for command in git_commands:
                             process = subprocess.Popen(['git'] + command, cwd=os.path.split(path)[0], stdout=subprocess.PIPE,
