@@ -32,6 +32,7 @@ from functools import wraps
 import labscript_utils.h5_lock, h5py
 import labscript_utils.properties
 from labscript_utils.labconfig import LabConfig
+from labscript_utils.filewatcher import FileWatcher
 
 # This imports the default Qt library that other labscript suite code will
 # import as well, since it all uses qtutils. By having a Qt library already
@@ -70,7 +71,10 @@ if os.name=='nt':
     startupinfo.dwFlags |= 1 #subprocess.STARTF_USESHOWWINDOW # This variable isn't defined, but apparently it's equal to one.
 else:
     startupinfo = None
-        
+
+# Extract settings from labconfig
+_SAVE_HG_INFO = LabConfig().getboolean('labscript', 'save_hg_info', fallback=True)
+_SAVE_GIT_INFO = LabConfig().getboolean('labscript', 'save_git_info', fallback=False)
         
 class config(object):
     suppress_mild_warnings = True
@@ -2174,8 +2178,88 @@ def generate_connection_table(hdf5_file):
     else:
         master_pseudoclock_name = compiler.master_pseudoclock.name
     dataset.attrs['master_pseudoclock'] = master_pseudoclock_name
-  
-  
+
+# Create a dictionary for caching results from vcs commands. The keys will be
+# the paths to files that are saved during save_labscripts(). The values will be
+# a list of tuples of the form (command, info, err); see the "Returns" section
+# of the _run_vcs_commands() docstring for more info. Also create a FileWatcher
+# instance for tracking when vcs results need updating. The callback will
+# replace the outdated cache entry with a new list of updated vcs commands and
+# outputs.
+_vcs_cache = {}
+def _file_watcher_callback(name, info, event):
+    _vcs_cache[name] = _run_vcs_commands(name)
+
+_file_watcher = FileWatcher(_file_watcher_callback)
+
+def _run_vcs_commands(path):
+    """Run some VCS commands on a file and return their output.
+    
+    The function is used to gather up version control system information so that
+    it can be stored in the hdf5 files of shots. This is for convenience and
+    compliments the full copy of the file already included in the shot file.
+    
+    Whether hg and git commands are run is controlled by the `save_hg_info`
+    and `save_git_info` options in the `[labscript]` section of the labconfig.
+
+    Args:
+        path (str): The path with file name and extension of the file on which
+            the commands will be run. The working directory will be set to the
+            directory containing the specified file.
+
+    Returns:
+        results (list of (tuple, str, str)): A list of tuples, each
+            containing information related to one vcs command of the form
+            (command, info, err). The first entry in that tuple is itself a
+            tuple of strings which was passed to subprocess.Popen() in order to
+            run the command. Then info is a string that contains the text
+            printed to stdout by that command, and err contains the text printed
+            to stderr by the command.
+    """
+    # Gather together a list of commands to run.
+    module_directory, module_filename = os.path.split(path)
+    vcs_commands = []
+    if compiler.save_hg_info:
+        hg_commands = [
+            ['log', '--limit', '1'],
+            ['status'],
+            ['diff'],
+        ]
+        for command in hg_commands:
+            command = tuple(['hg'] + command + [module_filename])
+            vcs_commands.append((command, module_directory))
+    if compiler.save_git_info:
+        git_commands = [
+            ['branch', '--show-current'],
+            ['describe', '--tags', '--always', 'HEAD'],
+            ['rev-parse', 'HEAD'],
+            ['diff', 'HEAD', module_filename],
+        ]
+        for command in git_commands:
+            command = tuple(['git'] + command)
+            vcs_commands.append((command, module_directory))
+
+    # Now go through and start running the commands.
+    process_list = []
+    for command, module_directory in vcs_commands:
+        process = subprocess.Popen(
+            command,
+            cwd=module_directory,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            startupinfo=startupinfo,
+        )
+        process_list.append((command, process))
+
+    # Gather up results from the commands issued.
+    results = []
+    for command, process in process_list:
+        info, err = process.communicate()
+        info = info.decode('utf-8')
+        err = err.decode('utf-8')
+        results.append((command, info, err))
+    return results
+ 
 def save_labscripts(hdf5_file):
     if compiler.labscript_file is not None:
         script_text = open(compiler.labscript_file).read()
@@ -2199,28 +2283,17 @@ def save_labscripts(hdf5_file):
                         # Doesn't seem to want to double count files if you just import the contents of a file within a module
                         continue
                     hdf5_file.create_dataset(save_path, data=open(path).read())
-                    if compiler.save_hg_info:
-                        hg_commands = [['log', '--limit', '1'], ['status'], ['diff']]
-                        process_list = []
-                        for command in hg_commands:
-                            process = subprocess.Popen(['hg'] + command + [os.path.split(path)[1]], cwd=os.path.split(path)[0],
-                                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, startupinfo=startupinfo)
-                            process_list.append(process)
-                        for process, command in zip(process_list, hg_commands):
-                            info, err = process.communicate()
-                            if info or err:
-                                hdf5_file[save_path].attrs['hg ' + str(command[0])] = info.decode('utf-8') + '\n' + err.decode('utf-8')
-                    if compiler.save_git_info:
-                        module_filename = os.path.split(path)[1]
-                        git_commands = [['branch', '--show-current'], ['describe', '--tags', '--always', 'HEAD'], ['rev-parse', 'HEAD'], ['diff', 'HEAD', module_filename]]
-                        process_list = []
-                        for command in git_commands:
-                            process = subprocess.Popen(['git'] + command, cwd=os.path.split(path)[0], stdout=subprocess.PIPE,
-                                                       stderr=subprocess.PIPE, startupinfo=startupinfo)
-                            process_list.append(process)
-                        for process, command in zip(process_list, git_commands):
-                            info, err = process.communicate()
-                            hdf5_file[save_path].attrs['git ' + str(command[0])] = info.decode('utf-8') + '\n' + err.decode('utf-8')
+                    if path not in _file_watcher.files:
+                        # Add file to watch list and create its entry in the cache.
+                        _file_watcher.add_file(path)
+                        _file_watcher_callback(path, None, None)
+                    # Get a reference to the current results list in case
+                    # another thread updates _vcs_cache[path] to point at a new
+                    # list during this loop.
+                    results = _vcs_cache[path]
+                    for command, info, err in results:
+                        attribute_str = command[0] + ' ' + command[1]
+                        hdf5_file[save_path].attrs[attribute_str] = (info + '\n' + err)
     except ImportError:
         pass
     except WindowsError if os.name == 'nt' else None:
@@ -2554,8 +2627,8 @@ def labscript_cleanup():
     compiler.wait_delay = 0
     compiler.time_markers = {}
     compiler._PrimaryBLACS = None
-    compiler.save_hg_info = LabConfig().getboolean('labscript', 'save_hg_info', fallback=True)
-    compiler.save_git_info = LabConfig().getboolean('labscript', 'save_git_info', fallback=False)
+    compiler.save_hg_info = _SAVE_HG_INFO
+    compiler.save_git_info = _SAVE_GIT_INFO
     compiler.shot_properties = {}
 
 class compiler(object):
@@ -2575,8 +2648,8 @@ class compiler(object):
     wait_delay = 0
     time_markers = {}
     _PrimaryBLACS = None
-    save_hg_info = LabConfig().getboolean('labscript', 'save_hg_info', fallback=True)
-    save_git_info = LabConfig().getboolean('labscript', 'save_git_info', fallback=False)
+    save_hg_info = _SAVE_HG_INFO
+    save_git_info = _SAVE_GIT_INFO
     shot_properties = {}
 
     # safety measure in case cleanup is called before init
