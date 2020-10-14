@@ -16,6 +16,7 @@ import os
 import sys
 import subprocess
 import keyword
+import threading
 from inspect import getcallargs
 from functools import wraps
 
@@ -2187,8 +2188,10 @@ def generate_connection_table(hdf5_file):
 # replace the outdated cache entry with a new list of updated vcs commands and
 # outputs.
 _vcs_cache = {}
+_vcs_cache_rlock = threading.RLock()
 def _file_watcher_callback(name, info, event):
-    _vcs_cache[name] = _run_vcs_commands(name)
+    with _vcs_cache_rlock:
+        _vcs_cache[name] = _run_vcs_commands(name)
 
 _file_watcher = FileWatcher(_file_watcher_callback)
 
@@ -2283,17 +2286,15 @@ def save_labscripts(hdf5_file):
                         # Doesn't seem to want to double count files if you just import the contents of a file within a module
                         continue
                     hdf5_file.create_dataset(save_path, data=open(path).read())
-                    if path not in _file_watcher.files:
-                        # Add file to watch list and create its entry in the cache.
-                        _file_watcher.add_file(path)
-                        _file_watcher_callback(path, None, None)
-                    # Get a reference to the current results list in case
-                    # another thread updates _vcs_cache[path] to point at a new
-                    # list during this loop.
-                    results = _vcs_cache[path]
-                    for command, info, err in results:
-                        attribute_str = command[0] + ' ' + command[1]
-                        hdf5_file[save_path].attrs[attribute_str] = (info + '\n' + err)
+                    with _vcs_cache_rlock:
+                        if path not in _vcs_cache:
+                            # Add file to watch list and create its entry in the cache.
+                            _file_watcher.add_file(path)
+                            _file_watcher_callback(path, None, None)
+                        # Save the cached vcs output to the file.
+                        for command, info, err in _vcs_cache[path]:
+                            attribute_str = command[0] + ' ' + command[1]
+                            hdf5_file[save_path].attrs[attribute_str] = (info + '\n' + err)
     except ImportError:
         pass
     except WindowsError if os.name == 'nt' else None:
