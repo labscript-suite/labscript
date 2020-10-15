@@ -2287,10 +2287,12 @@ def save_labscripts(hdf5_file):
                         continue
                     hdf5_file.create_dataset(save_path, data=open(path).read())
                     with _vcs_cache_rlock:
-                        if path not in _vcs_cache:
-                            # Add file to watch list and create its entry in the cache.
-                            _file_watcher.add_file(path)
-                            _file_watcher_callback(path, None, None)
+                        already_cached = path in _vcs_cache
+                    if not already_cached:
+                        # Add file to watch list and create its entry in the cache.
+                        _file_watcher.add_file(path)
+                        _file_watcher_callback(path, None, None)
+                    with _vcs_cache_rlock:
                         # Save the cached vcs output to the file.
                         for command, info, err in _vcs_cache[path]:
                             attribute_str = command[0] + ' ' + command[1]
