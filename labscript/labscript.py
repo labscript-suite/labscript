@@ -658,8 +658,9 @@ class Pseudoclock(Device):
                     raise LabscriptError('Commands have been issued to devices attached to clockline %s at t= %s s and %s s. '%(clock_line.name, str(t),str(change_time_list[i+1])) +
                                          'One or more connected devices on ClockLine %s cannot support update delays shorter than %s sec.'%(clock_line.name, str(1.0/clock_line.clock_limit)))
                                          
+                all_change_times_len = len(all_change_times)
                 # increment j until we reach the current time
-                while all_change_times[j] < t and j < len(all_change_times)-1:
+                while all_change_times[j] < t and j < all_change_times_len-1:
                     j += 1
                 # j should now index all_change_times at "t"
                 # Check that the next all change_time is not too close (and thus would force this clock tick to be faster than the clock_limit)
@@ -890,21 +891,18 @@ class Pseudoclock(Device):
         # also generate everytime point each clock line will tick (expand ramps)
         all_times, self.clock = self.expand_change_times(all_change_times, change_times, outputs_by_clockline)
         
+        # Flatten the clock line times for use by the child devices for writing instruction tables
+        self.times = {}
+        for clock_line, time_array in all_times.items():
+            self.times[clock_line] = fastflatten(time_array,np.dtype(float))
+
         # for each clockline
         for clock_line, outputs in outputs_by_clockline.items():
+            clock_line_len = len(self.times[clock_line])
             # and for each output
             for output in outputs:
                 # evaluate the output at each time point the clock line will tick at
-                output.expand_timeseries(all_times[clock_line])
-                
-        # TODO: is this needed? Let's say no...
-        # self.all_change_times = fastflatten(all_change_times, float)
-        
-        # Flatten the clock line times for use by the child devices for writing instruction tables
-        # TODO: (if this needed or was it just for runviewer meta data that we don't need anymore?)
-        self.times = {}
-        for clock_line, time_array in all_times.items():
-            self.times[clock_line] = fastflatten(time_array,float)
+                output.expand_timeseries(all_times[clock_line], clock_line_len)
         
     def generate_code(self, hdf5_file):
         self.generate_clock()
@@ -1331,22 +1329,13 @@ class Output(Device):
         is stored in self.timeseries rather than being returned."""
         self.timeseries = []
         i = 0
+        time_len = len(self.times)
         for change_time in change_times:
-            try:
-                if i < len(self.times):
-                    while change_time >= self.times[i]:
-                        i += 1
-            except IndexError:
-                # We allow the index to go one higher, since we're
-                # intentionally overshooting the mark and are then
-                # interested in self.times[i-1].  Raise the error
-                # otherwise.
-                if not i == len(self.times):
-                    raise
-            instruction = self.instructions[self.times[i-1]]
-            self.timeseries.append(instruction)     
+            while i < time_len and change_time >= self.times[i]:
+                i += 1
+            self.timeseries.append(self.instructions[self.times[i-1]])     
         
-    def expand_timeseries(self,all_times):
+    def expand_timeseries(self,all_times,flat_all_times_len):
         """This function evaluates the ramp functions in self.timeseries
         at the time points in all_times, and creates an array of output
         values at those times.  These are the values that this output
@@ -1356,11 +1345,13 @@ class Output(Device):
         # If this output is not ramping, then its timeseries should
         # not be expanded. It's already as expanded as it'll get.
         if not self.parent_clock_line.ramping_allowed:
-            self.raw_output = fastflatten(self.timeseries,self.dtype)
+            self.raw_output = np.array(self.timeseries, dtype=np.dtype)
             return
-        outputarray = []
+        outputarray = np.empty((flat_all_times_len,), dtype=np.dtype(self.dtype))
+        j=0
         for i, time in enumerate(all_times):
             if iterable(time):
+                time_len = len(time)
                 if isinstance(self.timeseries[i],dict):
                     # We evaluate the functions at the midpoints of the
                     # timesteps in order to remove the zero-order hold
@@ -1388,14 +1379,15 @@ class Output(Device):
                         if ((outarray<self.limits[0])|(outarray>self.limits[1])).any():
                             raise LabscriptError('The function %s called on "%s" at t=%d generated a value which falls outside the base unit limits (%d to %d)'%(self.timeseries[i]['function'],self.name,midpoints[0],self.limits[0],self.limits[1]))
                 else:
-                    outarray = empty(len(time),dtype=self.dtype)
+                    outarray = empty(time_len,dtype=self.dtype)
                     outarray.fill(self.timeseries[i])
-                outputarray.append(outarray)
+                outputarray[j:j+time_len] = outarray
+                j += time_len
             else:
-                outputarray.append(self.timeseries[i])
+                outputarray[j] = self.timeseries[i]
+                j += 1
         del self.timeseries # don't need this any more.
-        self.raw_output = fastflatten(outputarray, self.dtype)
-        
+        self.raw_output = outputarray
 
 class AnalogQuantity(Output):
     description = 'analog quantity'
