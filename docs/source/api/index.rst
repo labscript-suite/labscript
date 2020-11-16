@@ -2,7 +2,15 @@
 API Reference
 =============
 
-.. toctree::
+.. autosummary::
+	:toctree: _autosummary
+	:template: autosummary-module.rst
+	:recursive:
+
+	labscript.labscript
+	labscript.functions
+
+.. toctree:
    :maxdepth: 2
 
    device

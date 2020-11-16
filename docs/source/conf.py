@@ -38,6 +38,7 @@ html_favicon = img_path + "/labscript.ico"
 # ones.
 extensions = [
     "sphinx.ext.autodoc",
+    "sphinx.ext.autosummary",
     "sphinx.ext.autosectionlabel",
     "sphinx.ext.intersphinx",
     "sphinx.ext.napoleon",
@@ -48,6 +49,8 @@ extensions = [
 ]
 
 autodoc_typehints = 'description'
+autosummary_generate = True
+add_module_names = False
 
 # Prefix each autosectionlabel with the name of the document it is in and a colon
 autosectionlabel_prefix_document = True
