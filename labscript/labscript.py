@@ -1539,6 +1539,97 @@ class AnalogQuantity(Output):
                                      'initial time': t, 'end time': t + truncation*duration, 'clock rate': samplerate, 'units': units})
         return truncation*duration
 
+    def square_wave(self, t, duration, level_0, level_1, frequency, phase,
+                    duty_cycle, samplerate, units=None, truncation=1.):
+        """A standard square wave.
+
+        This method generates a square wave which starts at `level_0` (when its
+        phase is zero) then transitions to/from `level_1` at the specified
+        `frequency`.
+
+        Note that because the transitions of a square wave are sudden and
+        discontinuous, small changes in timings (e.g. due to numerical rounding
+        errors) can affect the output value. This is particularly relevant at
+        the end of the waveform, as the final output value may be different than
+        expected if the end of the waveform is close to an edge of the square
+        wave. Care is taken in the implementation of this method to avoid such
+        effects, but it still may be desirable to call `constant()` after
+        `square_wave()` to ensure a particular final value. The output value may
+        also be different than expected at certain moments in the middle of the
+        waveform due to the finite samplerate (which may be different than the
+        requested `samplerate`), particularly if the actual samplerate is not a
+        multiple of `frequency`.
+
+        Args:
+            t (float): The time at which to start the square wave.
+            duration (float): The duration for which to output a square wave
+                (assuming `truncation=1.0`).
+            level_0 (float): The initial level of the square wave, when the
+                phase is zero.
+            level_1 (float): The other level of the square wave.
+            frequency (float): The frequency of the square wave, in Hz.
+            phase (float): The initial phase of the square wave. Note that the
+                square wave is defined such that the phase goes from 0 to 1 (NOT
+                2 pi) over one cycle, so setting `phase=0.5` will start the
+                square wave advanced by 1/2 of a cycle. Setting `phase` to be
+                `1 - duty_cycle` will cause the waveform to start at `level_1`
+                rather than `level_0`.
+            duty_cycle (float): The fraction of the cycle for which the output
+                should be set to `level_1`. This should be a number between zero
+                and one inclusively. For example, setting `duty_cycle=0.1` will
+                create a square wave which outputs `level_0` over 90% of the
+                cycle and outputs `level_1` over 10% of the cycle.
+            samplerate (float): The requested rate at which to update the output
+                value. Note that the actual samplerate used may be different if,
+                for example, another output of the same device has a
+                simultaneous ramp with a different requested `samplerate`, or if
+                `1 / samplerate` isn't an integer multiple of the pseudoclock's
+                timing resolution.
+            units (str, optional): The units of the output values. If set to
+                `None` then the output's base units will be used. Defaults to
+                `None`.
+            truncation (float, optional): The actual duration of the square wave
+                will be `duration * truncation` and `truncation` must be set to
+                a value in the range [0, 1] (inclusively). Set to `1` to output
+                the full duration of the square wave. Setting it to `0` will
+                skip the square wave entirely. Defaults to `1.`.
+
+        Returns:
+            duration (float): The actual duration of the square wave, accounting
+                for `truncation`.
+        """
+        # Check the argument values.
+        self._check_truncation(truncation)
+        if duty_cycle < 0 or duty_cycle > 1:
+            msg = """Square wave duty cycle must be in the range [0, 1]
+                (inclusively) but was set to {duty_cycle}.""".format(
+                duty_cycle=duty_cycle
+            )
+            raise LabscriptError(dedent(msg))
+
+        if truncation > 0:
+            # Add the instruction.
+            func = functions.square_wave(
+                round(t + duration, 10) - round(t, 10),
+                level_0,
+                level_1,
+                frequency,
+                phase,
+                duty_cycle,
+            )
+            self.add_instruction(
+                t,
+                {
+                    'function': func,
+                    'description': 'square wave',
+                    'initial time': t,
+                    'end time': t + truncation * duration,
+                    'clock rate': samplerate,
+                    'units': units,
+                }
+            )
+        return truncation * duration
+
     def customramp(self, t, duration, function, *args, **kwargs):
         units = kwargs.pop('units', None)
         samplerate = kwargs.pop('samplerate')
