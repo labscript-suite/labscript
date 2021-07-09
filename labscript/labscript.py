@@ -90,7 +90,7 @@ class NoWarnings(object):
 no_warnings = NoWarnings() # This is the object that should be used, not the class above
 
 def max_or_zero(*args, **kwargs):
-    """returns max(*args) or zero if given an empty sequence (in which case max() would throw an error)"""
+    """returns max(\*args) or zero if given an empty sequence (in which case max() would throw an error)"""
     if not args:
         return 0
     if not args[0]:
@@ -1451,18 +1451,22 @@ class AnalogQuantity(Output):
     def exp_ramp(self, t, duration, initial, final, samplerate, zero=0, units=None, truncation=None, truncation_type='linear', **kwargs):
         """Exponential ramp whose rate of change is set by an asymptotic value (zero argument).
         
-        Parameters:
-        t, duration : time to start the ramp and its duration
-        initial, final : initial and final values of the ramp (sans truncation)
-        zero: asymptotic value of the exponential decay/rise, i.e. limit as t --> inf
-        samplerate: rate to sample the function
-        units: unit conversion to apply to specified values before generating raw output
-        truncation_type: 'linear' or 'exponential'
-            'linear' truncation stops the ramp when it reaches the value given by the 
-            truncation parameter, which must be between initial and final
-            'exponential' truncation stops the ramp after a period of truncation*duration
-            In this instance, the truncation parameter should be between 0 (full truncation)
-            and 1 (no truncation).   
+        Args:
+            t (float): time to start the ramp
+            duration (float): duration of the ramp
+            initial (float): initial value of the ramp (sans truncation)
+            final (float): final value of the ramp (sans truncation)
+            zero (float): asymptotic value of the exponential decay/rise, i.e. limit as t --> inf
+            samplerate (float): rate to sample the function
+            units: unit conversion to apply to specified values before generating raw output
+            truncation_type (str): 
+
+                * `'linear'` truncation stops the ramp when it reaches the value given by the 
+                  truncation parameter, which must be between initial and final
+                * `'exponential'` truncation stops the ramp after a period of truncation*duration
+                  In this instance, the truncation parameter should be between 0 (full truncation)
+                  and 1 (no truncation). 
+
         """
         # Backwards compatibility for old kwarg names
         if 'trunc' in kwargs:
@@ -1493,19 +1497,23 @@ class AnalogQuantity(Output):
 
     def exp_ramp_t(self, t, duration, initial, final, time_constant, samplerate, units=None, truncation=None, truncation_type='linear', **kwargs):
         """Exponential ramp whose rate of change is set by the time_constant.
-        
-        Parameters:
-        t, duration : time to start the ramp and its duration
-        initial, final : initial and final values of the ramp (sans truncation)
-        time_constant: 1/e time of the exponential decay/rise
-        samplerate: rate to sample the function
-        units: unit conversion to apply to specified values before generating raw output
-        truncation_type: 'linear' or 'exponential'
-            'linear' truncation stops the ramp when it reaches the value given by the 
-            truncation parameter, which must be between initial and final
-            'exponential' truncation stops the ramp after a period of truncation*duration
-            In this instance, the truncation parameter should be between 0 (full truncation)
-            and 1 (no truncation).   
+
+        Args:
+            t (float): time to start the ramp
+            duration (float): duration of the ramp
+            initial (float): initial value of the ramp (sans truncation)
+            final (float): final value of the ramp (sans truncation)
+            time_constant (float): 1/e time of the exponential decay/rise
+            samplerate (float): rate to sample the function
+            units: unit conversion to apply to specified values before generating raw output
+            truncation_type (str): 
+
+                * `'linear'` truncation stops the ramp when it reaches the value given by the 
+                  truncation parameter, which must be between initial and final
+                * `'exponential'` truncation stops the ramp after a period of truncation*duration
+                  In this instance, the truncation parameter should be between 0 (full truncation)
+                  and 1 (no truncation).
+
         """
         # Backwards compatibility for old kwarg names
         if 'trunc' in kwargs:

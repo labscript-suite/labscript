@@ -9,14 +9,3 @@ API Reference
 
 	labscript.labscript
 	labscript.functions
-
-.. toctree:
-   :maxdepth: 2
-
-   device
-   pseudoclockdevice
-   pseudoclock
-   clockline
-   intermediatedevice
-   
-
