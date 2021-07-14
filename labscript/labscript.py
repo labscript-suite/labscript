@@ -90,7 +90,17 @@ class NoWarnings(object):
 no_warnings = NoWarnings() # This is the object that should be used, not the class above
 
 def max_or_zero(*args, **kwargs):
-    """returns max(\*args) or zero if given an empty sequence (in which case max() would throw an error)"""
+    """Returns max of the arguments or zero if sequence is empty.
+    
+    The protects the call to `max()` which would normally throw an error on an empty sequence.
+
+    Args:
+        *args: Items to compare.
+        **kwargs: Passed to `max()`.
+
+    Returns:
+        : Max of \*args.
+    """
     if not args:
         return 0
     if not args[0]:
@@ -99,8 +109,16 @@ def max_or_zero(*args, **kwargs):
         return max(*args, **kwargs)
     
 def bitfield(arrays,dtype):
-    """converts a list of arrays of ones and zeros into a single
-    array of unsigned ints of the given datatype."""
+    """Converts a list of arrays of ones and zeros into a single
+    array of unsigned ints of the given datatype.
+
+    Args:
+        arrays (list): List of numpy arrays consisting of ones and zeros.
+        dtype (data-type): Type to convert to.
+
+    Returns:
+        :obj:`numpy:numpy.ndarray`: Numpy array with data type `dtype`.
+    """
     n = {uint8:8,uint16:16,uint32:32}
     if np.array_equal(arrays[0], 0):
         y = zeros(max([len(arr) if iterable(arr) else 1 for arr in arrays]),dtype=dtype)
@@ -113,6 +131,7 @@ def bitfield(arrays,dtype):
 
 def fastflatten(inarray, dtype):
     """A faster way of flattening our arrays than pylab.flatten.
+
     pylab.flatten returns a generator which takes a lot of time and memory
     to convert into a numpy array via array(list(generator)).  The problem
     is that generators don't know how many values they'll return until
@@ -121,7 +140,15 @@ def fastflatten(inarray, dtype):
     magnitude faster. Note that we can't use numpy.ndarray.flatten here
     since our inarray is really a list of 1D arrays of varying length
     and/or single values, not a N-dimenional block of homogeneous data
-    like a numpy array."""
+    like a numpy array.
+
+    Args:
+        inarray (list): List of 1-D arrays to flatten.
+        dtype (data-type): Type of the data in the arrays.
+
+    Returns:
+        :obj:`numpy:numpy.ndarray`: Flattened array.
+    """
     total_points = sum([len(element) if iterable(element) else 1 for element in inarray])
     flat = empty(total_points,dtype=dtype)
     i = 0
@@ -137,17 +164,20 @@ def fastflatten(inarray, dtype):
 def set_passed_properties(property_names = {}):
     """
     Decorator for device __init__ methods that saves the listed arguments/keyword
-    arguments as properties. Argument values as passed to __init__ will be saved, with
+    arguments as properties. 
+
+    Argument values as passed to __init__ will be saved, with
     the exception that if an instance attribute exists after __init__ has run that has
     the same name as an argument, the instance attribute will be saved instead of the
     argument value. This allows code within __init__ to process default arguments
     before they are saved.
+
+    Internally, all properties are accessed by calling :obj:`self.get_property() <Device.get_property>`.
     
-    property_names is a dictionary {key:val}, where each val
-        is a list [var1, var2, ...] of variables to be pulled from
-        properties_dict and added to the property with name key (its location)
-        
-    internally they are all accessed by calling self.get_property()
+    Args:
+        property_names (dict): is a dictionary {key:val}, where each val
+            is a list [var1, var2, ...] of variables to be pulled from
+            properties_dict and added to the property with name key (its location)
     """
     def decorator(func):
         @wraps(func)
@@ -182,14 +212,37 @@ def set_passed_properties(property_names = {}):
 
 
 class Device(object):
+    """Parent class of all device and input/output channels.
+    
+    You usually won't interact directly with this class directly (i.e. you never
+    instantiate this class directly) but it provides some useful functionality
+    that is then available to all subclasses.
+    """
     description = 'Generic Device'
     allowed_children = None
+    """list: Defines types of devices that are allowed to be children of this device."""
     
     @set_passed_properties(
         property_names = {"device_properties": ["added_properties"]}
         )
     def __init__(self,name,parent_device,connection, call_parents_add_device=True, 
                  added_properties = {}, gui=None, worker=None, start_order=None, stop_order=None, **kwargs):
+        """Creates a Device.
+
+        Args:
+            name (str): python variable name to assign this device to.
+            parent_device (:obj:`Device`): Parent of this device.
+            connection (str): Connection on this device that links to parent.
+            call_parents_add_device (bool, optional): Flag to command device to
+                call its parent device's add_device when adding a device.
+            added_properties (dict, optional):
+            gui :
+            worker :
+            start_order (int, optional): Priority when starting, sorted with all devices.
+            stop_order (int, optional): Priority when stopping, sorted with all devices.
+            **kwargs: Other options to pass to parent.
+        """
+
         # Verify that no invalid kwargs were passed and the set properties
         if len(kwargs) != 0:        
             raise LabscriptError('Invalid keyword arguments: %s.'%kwargs)
@@ -305,10 +358,13 @@ class Device(object):
     def set_properties(self, properties_dict, property_names, overwrite = False):
         """
         Add one or a bunch of properties packed into properties_dict
-
-        property_names is a dictionary {key:val, ...} where each val
-            is a list [var1, var2, ...] of variables to be pulled from
-            properties_dict and added to the property with name key (it's location)
+        
+        Args:
+            properties_dict (dict): Dictionary of properties and their values.
+            property_names (dict): Is a dictionary {key:val, ...} where each val
+                is a list [var1, var2, ...] of variables to be pulled from
+                properties_dict and added to the property with name key (it's location)
+            overwrite (bool, optional): Toggles overwriting of existing properties.
         """
         for location, names in property_names.items():
             if not isinstance(names, list) and not isinstance(names, tuple):
@@ -499,10 +555,19 @@ class SecondaryControlSystem(_RemoteConnection):
         
 
 class IntermediateDevice(Device):
+    """Base class for all devices that are to be clocked by a pseudoclock."""
     
     @set_passed_properties(property_names = {})
     def __init__(self, name, parent_device, **kwargs):
+        """Provides some error checking to ensure parent_device
+        is a :obj:`ClockLine`.
 
+        Calls :func:`Device.__init__`.
+
+        Args:
+            name (str): python variable name to assign to device
+            parent_device (:obj:`ClockLine`): Parent ClockLine device.
+        """
         self.name = name
         # this should be checked here because it should only be connected a clockline
         # The allowed_children attribute of parent classes doesn't prevent this from being connected to something that accepts 
@@ -547,12 +612,24 @@ class ClockLine(Device):
 
         
 class Pseudoclock(Device):
+    """Parent class of all pseudoclocks.
+
+    You won't usually interact with this class directly, but it provides
+    common functionality to subclasses.
+    """
     description = 'Generic Pseudoclock'
     allowed_children = [ClockLine]
     
     @set_passed_properties(property_names = {})
     def __init__(self, name, pseudoclock_device, connection, **kwargs):
+        """Creates a Pseudoclock.
 
+        Args:
+            name (str): python variable name to assign the device instance to.
+            pseudoclock_device (:obj:`PseudoclockDevice`): Parent pseudoclock device
+            connection (str): Connection on this device that links to parent
+            **kwargs: Passed to `Device()`.
+        """
         Device.__init__(self, name, pseudoclock_device, connection, **kwargs)
         self.clock_limit = pseudoclock_device.clock_limit
         self.clock_resolution = pseudoclock_device.clock_resolution
@@ -1085,6 +1162,7 @@ class PseudoclockDevice(TriggerableDevice):
         
     
 class Output(Device):
+    """Base class for all output classes."""
     description = 'generic output'
     allowed_states = {}
     dtype = float64
@@ -1398,6 +1476,11 @@ class Output(Device):
         
 
 class AnalogQuantity(Output):
+    """Base class for :obj:`AnalogOut`.
+
+    It is also used internally by :obj:`DDS`. You should never instantiate this
+    class directly.
+    """
     description = 'analog quantity'
     default_value = 0
 
@@ -1541,6 +1624,20 @@ class AnalogQuantity(Output):
         return trunc_duration
 
     def piecewise_accel_ramp(self, t, duration, initial, final, samplerate, units=None, truncation=1.):
+        """Changes the output so that the second derivative follows one period of a triangle wave.
+
+        Args:
+            t (float): Time, in seconds, at which to begin the ramp.
+            duration (float): Duration of the ramp, in seconds.
+            initial (float): Initial output value at time `t`.
+            final (float): Final output value at time `t+duration`.
+            samplerate (float): Update rate of the output, in Hz.
+            units: Units, defined by the unit conversion class, the value is in.
+            truncation (float, optional): Fraction of ramp to perform. Default 1.0.
+
+        Returns:
+            float: Time the ramp will take to complete.
+        """
         self._check_truncation(truncation)
         if truncation > 0:
             self.add_instruction(t, {'function': functions.piecewise_accel(round(t + duration, 10) - round(t, 10), initial, final), 'description': 'piecewise linear accelleration ramp',
@@ -1564,6 +1661,13 @@ class AnalogQuantity(Output):
         return truncation*duration
 
     def constant(self,t,value,units=None):
+        """Sets the output to a constant value at time `t`.
+
+        Args:
+            t (float): Time, in seconds, to set the constant output.
+            value (float): Value to set.
+            units: Units, defined by the unit conversion class, the value is in.
+        """
         # verify that value can be converted to float
         try:
             val = float(value)
@@ -1880,7 +1984,9 @@ class WaitMonitor(Trigger):
         timeout_trigger_type='rising',
         **kwargs
     ):
-        """Create a wait monitor. This is a device or devices, one of which:
+        """Create a wait monitor. 
+
+        This is a device or devices, one of which:
 
         a) outputs pulses every time the master pseudoclock begins running (either at
            the start of the shot or after a wait
@@ -2117,9 +2223,19 @@ class StaticDDS(Device):
             raise LabscriptError('DDS %s does not have a digital gate, so you cannot use the disable(t) method.'%(self.name))
               
 class LabscriptError(Exception):
+    """A *labscript* error.
+
+    This is used to denote an error within the labscript suite itself.
+    Is a thin wrapper of :obj:`Exception`.
+    """
     pass
 
 def save_time_markers(hdf5_file):
+    """Save shot time markers to the shot file.
+
+    Args:
+        hdf5_file (:obj:`h5py:h5py.File`): Handle to file to save to.
+    """
     time_markers = compiler.time_markers
     dtypes = [('label','a256'), ('time', float), ('color', '(1,3)int')]
     data_array = zeros(len(time_markers), dtype=dtypes)
@@ -2128,6 +2244,11 @@ def save_time_markers(hdf5_file):
     time_markers_dataset = hdf5_file.create_dataset('time_markers', data = data_array)
 
 def generate_connection_table(hdf5_file):
+    """Generates the connection table for the compiled shot.
+
+    Args:
+        hdf5_file (:obj:`h5py:h5py.File`): Handle to file to save to.
+    """
     connection_table = []
     devicedict = {}
     
@@ -2184,6 +2305,14 @@ def generate_connection_table(hdf5_file):
   
   
 def save_labscripts(hdf5_file):
+    """Writes the script files for the compiled shot to the shot file.
+
+    If `save_hg_info` labconfig parameter is `True`, will attempt to save
+    hg version info as an attribute.
+
+    Args:
+        hdf5_file (:obj:`h5py:h5py.File`): Handle to file to save to.
+    """
     if compiler.labscript_file is not None:
         script_text = open(compiler.labscript_file).read()
     else:
@@ -2221,6 +2350,11 @@ def save_labscripts(hdf5_file):
 
 
 def write_device_properties(hdf5_file):
+    """Writes device_properties for each device in compiled shot to shto file.
+
+    Args:
+        hdf5_file (:obj:`h5py:h5py.File`): Handle to file to save to.
+    """
     for device in compiler.inventory:
         device_properties = device._properties["device_properties"]
 
@@ -2254,6 +2388,11 @@ def write_device_properties(hdf5_file):
 
 
 def generate_wait_table(hdf5_file):
+    """Generates the wait table for the shot and saves it to the shot file.
+
+    Args:
+        hdf5_file (:obj:`h5py:h5py.File`): Handle to file to save to.
+    """
     dtypes = [('label','a256'), ('time', float), ('timeout', float)]
     data_array = zeros(len(compiler.wait_table), dtype=dtypes)
     for i, t in enumerate(sorted(compiler.wait_table)):
@@ -2282,6 +2421,8 @@ def generate_wait_table(hdf5_file):
 
     
 def generate_code():
+    """Compiles a shot and saves it to the shot file.
+    """
     if compiler.hdf5_filename is None:
         raise LabscriptError('hdf5 file for compilation not set. Please call labscript_init')
     elif not os.path.exists(compiler.hdf5_filename):
@@ -2337,6 +2478,18 @@ def trigger_all_pseudoclocks(t='initial'):
     return max_delay + wait_delay
     
 def wait(label, t, timeout=5):
+    """Commands pseudoclocks to pause until resumed by an external trigger, or a timeout is reached.
+
+    Args:
+        label (str): Unique name for wait.
+        t (float): Time, in seconds, at which experiment should begin the wait.
+        timeout (float, optional): Maximum length of the wait, in seconds. After
+            this time, the pseudoclocks are automatically re-triggered.
+
+    Returns:
+        float: Time required for all pseudoclocks to resume execution once
+        wait has completed.            
+    """
     if not str(label):
         raise LabscriptError('Wait must have a name')
     max_delay = trigger_all_pseudoclocks(t)
@@ -2370,6 +2523,12 @@ def add_time_marker(t, label, color=None, verbose=False):
     compiler.time_markers[t] = {"label": label, "color": color}
 
 def start():
+    """Indicates the end of the connection table and the start of the 
+    experiment logic.
+
+    Returns:
+        float: Time required for all pseudoclocks to start execution.
+    """
     compiler.start_called = True
     # Get and save some timing info about the pseudoclocks:
     # TODO: What if you need to trigger individual Pseudolocks on the one device, rather than the PseudoclockDevice as a whole?
@@ -2426,33 +2585,33 @@ def start():
     
 def stop(t, target_cycle_time=None, cycle_time_delay_after_programming=False):
     """Indicate the end of an experiment at the given time, and initiate compilation of
-    instructions, saving them to the HDF5 file. Configure some shot options.
+    instructions, saving them to the HDF5 file. Configures some shot options.
     
-    t (float or None), default: `None`
-        The end time of the experiment.
+    Args:
+        t (float): The end time of the experiment.
 
-    target_cycle_time (float or None), default: `None`
-        How long, in seconds, after the previous shot was started, should this shot be
-        started by BLACS. This allows one to run shots at a constant rate even if they
-        are of different durations. If `None`, BLACS will run the next shot immediately
-        after the previous shot completes. Otherwise, BLACS will delay starting this
-        shot until the cycle time has elapsed. This is a request only, and may not be
-        met if running/programming/saving data from a shot takes long enough that it
-        cannot be met. This functionality requires the BLACS `cycle_time` plugin to be
-        enabled in labconfig. Its accuracy is also limited by software timing,
-        requirements of exact cycle times beyond software timing should be instead done
-        using hardware triggers to Pseudoclocks.
+        target_cycle_time (float, optional): default: `None`
+            How long, in seconds, after the previous shot was started, should this shot be
+            started by BLACS. This allows one to run shots at a constant rate even if they
+            are of different durations. If `None`, BLACS will run the next shot immediately
+            after the previous shot completes. Otherwise, BLACS will delay starting this
+            shot until the cycle time has elapsed. This is a request only, and may not be
+            met if running/programming/saving data from a shot takes long enough that it
+            cannot be met. This functionality requires the BLACS `cycle_time` plugin to be
+            enabled in labconfig. Its accuracy is also limited by software timing,
+            requirements of exact cycle times beyond software timing should be instead done
+            using hardware triggers to Pseudoclocks.
 
-    cycle_time_delay_after_programming (bool), default: `False`
-        Whether the BLACS cycle_time plugin should insert the required delay for the
-        target cycle time *after* programming devices, as opposed to before programming
-        them. This is more precise, but may cause some devices to output their first
-        instruction for longer than desired, since some devices begin outputting their
-        first instruction as soon as they are programmed rather than when they receive
-        their first clock tick. If not set, the *average* cycle time will still be just
-        as close to as requested (so long as there is adequate time available), however
-        the time interval between the same part of the experiment from one shot to the
-        next will not be as precise due to variations in programming time.
+        cycle_time_delay_after_programming (bool, optional): default: `False`
+            Whether the BLACS cycle_time plugin should insert the required delay for the
+            target cycle time *after* programming devices, as opposed to before programming
+            them. This is more precise, but may cause some devices to output their first
+            instruction for longer than desired, since some devices begin outputting their
+            first instruction as soon as they are programmed rather than when they receive
+            their first clock tick. If not set, the *average* cycle time will still be just
+            as close to as requested (so long as there is adequate time available), however
+            the time interval between the same part of the experiment from one shot to the
+            next will not be as precise due to variations in programming time.
     """
     # Indicate the end of an experiment and initiate compilation:
     if t == 0:
