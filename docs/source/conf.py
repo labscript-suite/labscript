@@ -11,7 +11,6 @@
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
 import os
-from colorama import Fore, Style
 from pathlib import Path
 from m2r import MdInclude
 from recommonmark.transform import AutoStructify
@@ -258,10 +257,10 @@ def doc_report(app, exception):
     # print out report of documentation coverage
     total_docs = undoc_count + doc_count
     if total_docs != 0:
-        print(f'{Fore.GREEN}Doc coverage of {doc_count/total_docs:.1%}{Style.RESET_ALL}')
+        print(f'\nAPI Doc coverage of {doc_count/total_docs:.1%}')
         if undoc_print_objects or os.environ.get('READTHEDOCS'):
             print('\nItems lacking documentation')
             print('===========================')
             print(*undoc_objects, sep='\n')
     else:
-        print(f'{Fore.YELLOW}No docs counted, run \'make clean\' then rebuild to get the count.{Style.RESET_ALL}')
+        print('No docs counted, run \'make clean\' then rebuild to get the count.')
