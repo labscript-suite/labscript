@@ -11,6 +11,7 @@
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
 import os
+from colorama import Fore, Style
 from pathlib import Path
 from m2r import MdInclude
 from recommonmark.transform import AutoStructify
@@ -225,3 +226,42 @@ def setup(app):
                 img_path=img_path
             )
         )
+
+    app.connect('autodoc-process-docstring', doc_coverage)
+    app.connect('build-finished', doc_report)
+
+
+members_to_watch = ['module', 'class', 'function', 'exception', 'method', 'attribute']
+doc_count = 0
+undoc_count = 0
+undoc_objects = []
+undoc_print_objects = False
+
+
+def doc_coverage(app, what, name, obj, options, lines):
+    global doc_count
+    global undoc_count
+    global undoc_objects
+
+    if (what in members_to_watch and len(lines) == 0):
+        # blank docstring detected
+        undoc_count += 1
+        undoc_objects.append(name)
+    else:
+        doc_count += 1
+
+
+def doc_report(app, exception):
+    global doc_count
+    global undoc_count
+    global undoc_objects
+    # print out report of documentation coverage
+    total_docs = undoc_count + doc_count
+    if total_docs != 0:
+        print(f'{Fore.GREEN}Doc coverage of {doc_count/total_docs:.1%}{Style.RESET_ALL}')
+        if undoc_print_objects or os.environ.get('READTHEDOCS'):
+            print('\nItems lacking documentation')
+            print('===========================')
+            print(*undoc_objects, sep='\n')
+    else:
+        print(f'{Fore.YELLOW}No docs counted, run \'make clean\' then rebuild to get the count.{Style.RESET_ALL}')
