@@ -163,7 +163,8 @@ def pulse_sequence(pulse_sequence,period):
     Args:
         pulse_sequence (:obj:`numpy:numpy.ndarray`): 2-D timeseries of
             change times and associated states.
-        period (float): Period of each pulse.
+        period (float): How long, in seconds, to hold the final state
+            before repeating the sequence.
 
     Returns:
         func: Interpolating function that takes a single parameter `t`.
