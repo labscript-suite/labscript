@@ -90,7 +90,17 @@ class NoWarnings(object):
 no_warnings = NoWarnings() # This is the object that should be used, not the class above
 
 def max_or_zero(*args, **kwargs):
-    """returns max(*args) or zero if given an empty sequence (in which case max() would throw an error)"""
+    """Returns max of the arguments or zero if sequence is empty.
+    
+    The protects the call to `max()` which would normally throw an error on an empty sequence.
+
+    Args:
+        *args: Items to compare.
+        **kwargs: Passed to `max()`.
+
+    Returns:
+        : Max of \*args.
+    """
     if not args:
         return 0
     if not args[0]:
@@ -99,8 +109,16 @@ def max_or_zero(*args, **kwargs):
         return max(*args, **kwargs)
     
 def bitfield(arrays,dtype):
-    """converts a list of arrays of ones and zeros into a single
-    array of unsigned ints of the given datatype."""
+    """Converts a list of arrays of ones and zeros into a single
+    array of unsigned ints of the given datatype.
+
+    Args:
+        arrays (list): List of numpy arrays consisting of ones and zeros.
+        dtype (data-type): Type to convert to.
+
+    Returns:
+        :obj:`numpy:numpy.ndarray`: Numpy array with data type `dtype`.
+    """
     n = {uint8:8,uint16:16,uint32:32}
     if np.array_equal(arrays[0], 0):
         y = zeros(max([len(arr) if iterable(arr) else 1 for arr in arrays]),dtype=dtype)
@@ -113,6 +131,7 @@ def bitfield(arrays,dtype):
 
 def fastflatten(inarray, dtype):
     """A faster way of flattening our arrays than pylab.flatten.
+
     pylab.flatten returns a generator which takes a lot of time and memory
     to convert into a numpy array via array(list(generator)).  The problem
     is that generators don't know how many values they'll return until
@@ -121,7 +140,15 @@ def fastflatten(inarray, dtype):
     magnitude faster. Note that we can't use numpy.ndarray.flatten here
     since our inarray is really a list of 1D arrays of varying length
     and/or single values, not a N-dimenional block of homogeneous data
-    like a numpy array."""
+    like a numpy array.
+
+    Args:
+        inarray (list): List of 1-D arrays to flatten.
+        dtype (data-type): Type of the data in the arrays.
+
+    Returns:
+        :obj:`numpy:numpy.ndarray`: Flattened array.
+    """
     total_points = sum([len(element) if iterable(element) else 1 for element in inarray])
     flat = empty(total_points,dtype=dtype)
     i = 0
@@ -137,17 +164,20 @@ def fastflatten(inarray, dtype):
 def set_passed_properties(property_names = {}):
     """
     Decorator for device __init__ methods that saves the listed arguments/keyword
-    arguments as properties. Argument values as passed to __init__ will be saved, with
+    arguments as properties. 
+
+    Argument values as passed to __init__ will be saved, with
     the exception that if an instance attribute exists after __init__ has run that has
     the same name as an argument, the instance attribute will be saved instead of the
     argument value. This allows code within __init__ to process default arguments
     before they are saved.
+
+    Internally, all properties are accessed by calling :obj:`self.get_property() <Device.get_property>`.
     
-    property_names is a dictionary {key:val}, where each val
-        is a list [var1, var2, ...] of variables to be pulled from
-        properties_dict and added to the property with name key (its location)
-        
-    internally they are all accessed by calling self.get_property()
+    Args:
+        property_names (dict): is a dictionary {key:val}, where each val
+            is a list [var1, var2, ...] of variables to be pulled from
+            properties_dict and added to the property with name key (its location)
     """
     def decorator(func):
         @wraps(func)
@@ -182,14 +212,38 @@ def set_passed_properties(property_names = {}):
 
 
 class Device(object):
+    """Parent class of all device and input/output channels.
+    
+    You usually won't interact directly with this class directly (i.e. you never
+    instantiate this class directly) but it provides some useful functionality
+    that is then available to all subclasses.
+    """
     description = 'Generic Device'
+    """Brief description of the device."""
     allowed_children = None
+    """list: Defines types of devices that are allowed to be children of this device."""
     
     @set_passed_properties(
         property_names = {"device_properties": ["added_properties"]}
         )
     def __init__(self,name,parent_device,connection, call_parents_add_device=True, 
                  added_properties = {}, gui=None, worker=None, start_order=None, stop_order=None, **kwargs):
+        """Creates a Device.
+
+        Args:
+            name (str): python variable name to assign this device to.
+            parent_device (:obj:`Device`): Parent of this device.
+            connection (str): Connection on this device that links to parent.
+            call_parents_add_device (bool, optional): Flag to command device to
+                call its parent device's add_device when adding a device.
+            added_properties (dict, optional):
+            gui :
+            worker :
+            start_order (int, optional): Priority when starting, sorted with all devices.
+            stop_order (int, optional): Priority when stopping, sorted with all devices.
+            **kwargs: Other options to pass to parent.
+        """
+
         # Verify that no invalid kwargs were passed and the set properties
         if len(kwargs) != 0:        
             raise LabscriptError('Invalid keyword arguments: %s.'%kwargs)
@@ -271,20 +325,27 @@ class Device(object):
             self.set_property('gui', gui.name, 'connection_table_properties')
             self.set_property('worker', worker.name, 'connection_table_properties')
             
-    
-    # Method to set a property for this device. 
-    #
-    # The property will be stored in the connection table and be used 
-    # during connection table comparisons.
-    #
-    # The value must satisfy eval(repr(value)) == value
-    #
-    # You cannot overwrite an existing property unless you set the 
-    # overwrite flag to True on subsequent calls to this method
-    # 
-    # you can specify a location = "device_properties" or "connection_table_properties"
-    # to set where these are stored.
+
     def set_property(self, name, value, location=None, overwrite=False):
+        """Method to set a property for this device.
+
+        Property will be stored in the connection table and used
+        during connection table comparisons.
+
+        Value must satisfy `eval(repr(value)) == value`.
+
+        Args:
+            name (str): Name to save property value to.
+            value: Value to set property to.
+            location (str, optional): Specify a location to save property to, such as
+                `'device_properties'` or `'connection_table_properties'`.
+            overwrite (bool, optional): If `True`, allow overwriting a property
+                already set.
+
+        Raises:
+            LabscriptError: If `'location'` is not valid or trying to overwrite an
+                existing property with `'overwrite'=False`.
+        """
         if location is None or location not in labscript_utils.properties.VALID_PROPERTY_LOCATIONS:
             raise LabscriptError('Device %s requests invalid property assignment %s for property %s'%(self.name, location, name))
             
@@ -305,10 +366,13 @@ class Device(object):
     def set_properties(self, properties_dict, property_names, overwrite = False):
         """
         Add one or a bunch of properties packed into properties_dict
-
-        property_names is a dictionary {key:val, ...} where each val
-            is a list [var1, var2, ...] of variables to be pulled from
-            properties_dict and added to the property with name key (it's location)
+        
+        Args:
+            properties_dict (dict): Dictionary of properties and their values.
+            property_names (dict): Is a dictionary {key:val, ...} where each val
+                is a list [var1, var2, ...] of variables to be pulled from
+                properties_dict and added to the property with name key (it's location)
+            overwrite (bool, optional): Toggles overwriting of existing properties.
         """
         for location, names in property_names.items():
             if not isinstance(names, list) and not isinstance(names, tuple):
@@ -319,31 +383,44 @@ class Device(object):
                                   overwrite = overwrite, 
                                   location = location)
     
-    # Method to get a property of this device already set using Device.set_property
-    #
-    # If the property is not already set, a default value will be returned 
-    # if specified as the argument after 'name' if there is only one argument
-    # after 'name' and the argument is either not a keyword argument or is a 
-    # keyword argument with the name 'default'
-    #
-    # If the property is not already set, or one of the above conventions is
-    # violated, a LabscriptError will be raised
-    #
-    # Example acceptable signatures:
-    #
-    # get_property('example')            # 'example will be returned if set, or an exception will be raised
-    # get_property('example', 7)         # 7 will be returned if 'example' is not set
-    # get_property('example', default=7) # 7 will be returned is 'example' is not set
-    #
-    #
-    # Example signatures that WILL ALWAYS RAISE AN EXCEPTION:
-    # get_property('example', 7, 8)
-    # get_property('example', 7, default=9)
-    # get_property('example', default=7, x=9)
-    #
-    # the named argument location, if passed, requests the keyword be searched
-    # from only that location
+
     def get_property(self, name, location = None, *args, **kwargs):#default = None):
+        """Method to get a property of this device already set using :func:`Device.set_property`.
+
+        If the property is not already set, a default value will be returned
+        if specified as the argument after `'name'`, if there is only one argument
+        after `'name'` and the argument is either not a keyword argurment or is a
+        keyword argument with the name `'default'`.
+
+        Args:
+            name (str): Name of property to get.
+            location (str, optional): If not `None`, only search for `name`
+                in `location`.
+            *args: Must be length 1, provides a default value if property 
+                is not defined.
+            **kwargs: Must have key `'default'`, provides a default value
+                if property is not defined.
+
+        Returns:
+            : Property value.
+
+        Raises:
+            LabscriptError: If property not set and default not provided, or default
+                conventions not followed.
+
+        Examples:
+            Examples of acceptable signatures:
+
+            >>> get_property('example')             # 'example' will be returned if set, or an exception raised
+            >>> get_property('example', 7)          # 7 returned if 'example' is not set
+            >>> get_property('example', default=7)  # 7 returnd if 'example' is not set
+
+            Example signatures that WILL ALWAYS RAISE AN EXCEPTION:
+
+            >>> get_property('example', 7, 8)
+            >>> get_property('example', 7, default=9)
+            >>> get_property('example', default=7, x=9)
+        """
         if len(kwargs) == 1 and 'default' not in kwargs:
             raise LabscriptError('A call to %s.get_property had a keyword argument that was not name or default'%self.name)
         if len(args) + len(kwargs) > 1:
@@ -370,9 +447,14 @@ class Device(object):
 
     def get_properties(self, location = None):
         """
-        Get all properties in location
+        Get all properties in location.
         
-        If location is None we return all keys
+        Args:
+            location (str, optional): Location to get properties from.
+                If `None`, return all properties.
+
+        Returns:
+            dict: Dictionary of properties.
         """
     
         # self._properties may not be instantiated
@@ -388,6 +470,14 @@ class Device(object):
         return temp_dict
 
     def add_device(self, device):
+        """Adds a child device to this device.
+
+        Args:
+            device (:obj:`Device`): Device to add.
+
+        Raises:
+            LabscriptError: If `device` is not an allowed child of this device.
+        """
         if any([isinstance(device,DeviceClass) for DeviceClass in self.allowed_children]):
             self.child_devices.append(device)
         else:
@@ -395,6 +485,7 @@ class Device(object):
     
     @property    
     def pseudoclock_device(self):
+        """:obj:`PseudoclockDevice`: Stores the clocking pseudoclock, which may be itself."""
         if isinstance(self, PseudoclockDevice):
             return self 
         parent = self.parent_device
@@ -406,6 +497,15 @@ class Device(object):
             raise LabscriptError('Couldn\'t find parent pseudoclock device of %s, what\'s going on? Original error was %s.'%(self.name, str(e)))
     
     def quantise_to_pseudoclock(self, times):
+        """Quantises `times` to the resolution of the controlling pseudoclock.
+
+        Args:
+            times (:obj:`numpy:numpy.ndarray` or list or set or float): Time, 
+                in seconds, to quantise.
+
+        Returns:
+            same type as `times`: Quantised times.
+        """
         convert_back_to = None 
         if not isinstance(times, ndarray):
             if isinstance(times, list):
@@ -425,6 +525,7 @@ class Device(object):
     
     @property 
     def parent_clock_line(self):
+        """:obj:`ClockLine`: Stores the clocking clockline, which may be itself."""
         if isinstance(self, ClockLine):
             return self
         parent = self.parent_device
@@ -437,8 +538,9 @@ class Device(object):
     
     @property
     def t0(self):
-        """The earliest time output can be commanded from this device at the start of the experiment.
-        This is nonzeo on secondary pseudoclock devices due to triggering delays."""
+        """float: The earliest time output can be commanded from this device at
+            the start of the experiment. This is nonzeo on secondary pseudoclock 
+            devices due to triggering delays."""
         parent = self.pseudoclock_device
         if parent is None or parent.is_master_pseudoclock:
             return 0
@@ -446,6 +548,11 @@ class Device(object):
             return round(parent.trigger_times[0] + parent.trigger_delay, 10)
                             
     def get_all_outputs(self):
+        """Get all children devices that are outputs.
+
+        Returns:
+            list: List of children :obj:`Output`.
+        """
         all_outputs = []
         for device in self.child_devices:
             if isinstance(device,Output):
@@ -455,6 +562,11 @@ class Device(object):
         return all_outputs
     
     def get_all_children(self):
+        """Get all children devices for this device.
+
+        Returns:
+            list: List of children :obj:`Device`.
+        """
         all_children = []
         for device in self.child_devices:
               all_children.append(device)
@@ -462,11 +574,27 @@ class Device(object):
         return all_children
 
     def generate_code(self, hdf5_file):
-        
+        """Generate hardware instructions for device and children, then save
+        to h5 file.
+
+        Will recursively call `generate_code` for all children devices.
+
+        Args:
+            hdf5_file (:obj:`h5py:h5py.File`): Handle to shot file.
+        """
         for device in self.child_devices:
             device.generate_code(hdf5_file)
 
     def init_device_group(self, hdf5_file):
+        """Creates the device group in the shot file.
+
+        Args:
+            hdf5_file (:obj:`h5py:h5py.File`): File handle to
+                create the group in.
+
+        Returns:
+            :class:`h5py:h5py.Group`: Created group handle.
+        """
         group = hdf5_file['/devices'].create_group(self.name)
         return group
 
@@ -499,10 +627,19 @@ class SecondaryControlSystem(_RemoteConnection):
         
 
 class IntermediateDevice(Device):
+    """Base class for all devices that are to be clocked by a pseudoclock."""
     
     @set_passed_properties(property_names = {})
     def __init__(self, name, parent_device, **kwargs):
+        """Provides some error checking to ensure parent_device
+        is a :obj:`ClockLine`.
 
+        Calls :func:`Device.__init__`.
+
+        Args:
+            name (str): python variable name to assign to device
+            parent_device (:obj:`ClockLine`): Parent ClockLine device.
+        """
         self.name = name
         # this should be checked here because it should only be connected a clockline
         # The allowed_children attribute of parent classes doesn't prevent this from being connected to something that accepts 
@@ -537,6 +674,7 @@ class ClockLine(Device):
     # The calculation of maximum clock_limit should be done by the add_device method above
     @property
     def clock_limit(self):
+        """float: Clock limit for this line, typically set by speed of child Intermediate Devices."""
         # If no child device has specified a clock limit
         if self._clock_limit is None:
             # return the Pseudoclock clock_limit
@@ -547,12 +685,24 @@ class ClockLine(Device):
 
         
 class Pseudoclock(Device):
+    """Parent class of all pseudoclocks.
+
+    You won't usually interact with this class directly, but it provides
+    common functionality to subclasses.
+    """
     description = 'Generic Pseudoclock'
     allowed_children = [ClockLine]
     
     @set_passed_properties(property_names = {})
     def __init__(self, name, pseudoclock_device, connection, **kwargs):
+        """Creates a Pseudoclock.
 
+        Args:
+            name (str): python variable name to assign the device instance to.
+            pseudoclock_device (:obj:`PseudoclockDevice`): Parent pseudoclock device
+            connection (str): Connection on this device that links to parent
+            **kwargs: Passed to `Device()`.
+        """
         Device.__init__(self, name, pseudoclock_device, connection, **kwargs)
         self.clock_limit = pseudoclock_device.clock_limit
         self.clock_resolution = pseudoclock_device.clock_resolution
@@ -566,12 +716,28 @@ class Pseudoclock(Device):
 
     def collect_change_times(self, all_outputs, outputs_by_clockline):
         """Asks all connected outputs for a list of times that they
-        change state. Takes the union of all of these times. Note
+        change state. 
+
+        Takes the union of all of these times. Note
         that at this point, a change from holding-a-constant-value
         to ramping-through-values is considered a single state
         change. The clocking times will be filled in later in the
         expand_change_times function, and the ramp values filled in with
-        expand_timeseries."""
+        expand_timeseries.
+
+        Args:
+            all_outputs (list): List of all outputs connected to this
+                pseudoclock.
+            outputs_by_clockline (dict): List of all outputs connected
+                to this pseudoclock, organized by clockline.
+
+        Returns:
+            tuple: Tuple containing:
+
+            - **all_change_times** (list): List of all change times.
+            - **change_times** (dict): Dictionary of all change times
+              organised by which clock they are attached to.
+        """
         change_times = {}
         all_change_times = []
         ramps_by_clockline = {}
@@ -859,6 +1025,14 @@ class Pseudoclock(Device):
         return all_times, clock
     
     def get_outputs_by_clockline(self):
+        """Obtain all outputs by clockline.
+
+        Returns:
+            tuple: Tuple containing:
+            
+            - **all_outputs** (list): List of all outputs, obtained from :meth:`get_all_outputs`.
+            - **outputs_by_clockline** (dict): Dictionary of outputs, organised by clockline.
+        """
         outputs_by_clockline = {}
         for clock_line in self.child_devices:
             if isinstance(clock_line, ClockLine):
@@ -874,6 +1048,9 @@ class Pseudoclock(Device):
         return all_outputs, outputs_by_clockline
 
     def generate_clock(self):
+        """Generate the pseudoclock and configure outputs for each tick
+        of the clock.
+        """
         all_outputs, outputs_by_clockline = self.get_outputs_by_clockline()
         
         # Get change_times for all outputs, and also grouped by clockline
@@ -912,15 +1089,32 @@ class Pseudoclock(Device):
         
 
 class TriggerableDevice(Device):
+    """A triggerable version of :obj:`Device`.
+
+    This class is for devices that do not require a 
+    pseudoclock, but do require a trigger. This enables
+    them to have a Trigger device as a parent.
+    """
     trigger_edge_type = 'rising'
+    """str: Type of trigger. Must be `'rising'` or `'falling'`."""
     minimum_recovery_time = 0
-    # A class devices should inherit if they do
-    # not require a pseudoclock, but do require a trigger.
-    # This enables them to have a Trigger device as a parent
+    """float: Minimum time required before another trigger can occur."""
     
     @set_passed_properties(property_names = {})
     def __init__(self, name, parent_device, connection, parentless=False, **kwargs):
+        """Instantiate a Triggerable Device.
 
+        Args:
+            name (str):
+            parent_device ():
+            connection (str):
+            parentless (bool, optional):
+            **kwargs: Passed to :meth:`Device.__init__`.
+
+        Raises:
+            LabscriptError: If trigger type of this device does not match
+                the trigger type of the parent Trigger.
+        """
         if None in [parent_device, connection] and not parentless:
             raise LabscriptError('No parent specified. If this device does not require a parent, set parentless=True')
         if isinstance(parent_device, Trigger):
@@ -939,8 +1133,12 @@ class TriggerableDevice(Device):
         Device.__init__(self, name, parent_device, connection, **kwargs)
 
     def trigger(self, t, duration):
-        """Request parent trigger device to produce a trigger at time t with given
-        duration."""
+        """Request parent trigger device to produce a trigger.
+
+        Args:
+            t (float): Time, in seconds, to produce a trigger.
+            duration (float): Duration, in seconds, of the trigger pulse.
+        """
         # Only ask for a trigger if one has not already been requested by another device
         # attached to the same trigger:
         already_requested = False
@@ -980,6 +1178,12 @@ class TriggerableDevice(Device):
         self.__triggers.append([t, duration])
 
     def do_checks(self):
+        """Check that all devices sharing a trigger device have triggers when
+        this device has a trigger.
+
+        Raises:
+            LabscriptError: If correct triggers do not exist for all devices.
+        """
         # Check that all devices sharing a trigger device have triggers when we have triggers:
         for device in self.trigger_device.child_devices:
             if device is not self:
@@ -997,6 +1201,7 @@ class TriggerableDevice(Device):
 
     
 class PseudoclockDevice(TriggerableDevice):
+    """Device that implements a pseudoclock."""
     description = 'Generic Pseudoclock Device'
     allowed_children = [Pseudoclock]
     trigger_edge_type = 'rising'
@@ -1009,7 +1214,16 @@ class PseudoclockDevice(TriggerableDevice):
     
     @set_passed_properties(property_names = {})
     def __init__(self, name, trigger_device=None, trigger_connection=None, **kwargs):
+        """Instantiates a pseudoclock device.
 
+        Args:
+            name (str): python variable to assign to this device.
+            trigger_device (:obj:`DigitalOut`): Sets the parent triggering output.
+                If `None`, this is considered the master pseudoclock.
+            trigger_connection (str, optional): Must be provided if `trigger_device` is
+                provided. Specifies the channel of the parent device.
+            **kwargs: Passed to :meth:`TriggerableDevice.__init__`.
+        """
         if trigger_device is None:
             for device in compiler.inventory:
                 if isinstance(device, PseudoclockDevice) and device.is_master_pseudoclock:
@@ -1030,9 +1244,17 @@ class PseudoclockDevice(TriggerableDevice):
     
     @property    
     def is_master_pseudoclock(self):
+        """bool: Whether this device is the master pseudoclock."""
         return self.parent_device is None
     
     def set_initial_trigger_time(self, t):
+        """Sets the initial trigger time of the pseudoclock.
+
+        If this is the master pseudoclock, time must be 0.
+
+        Args:
+            t (float): Time, in seconds, to trigger this device.
+        """
         t = round(t,10)
         if compiler.start_called:
             raise LabscriptError('Initial trigger times must be set prior to calling start()')
@@ -1042,7 +1264,14 @@ class PseudoclockDevice(TriggerableDevice):
             self.initial_trigger_time = t
             
     def trigger(self, t, duration, wait_delay = 0):
-        """Ask the trigger device to produce a digital pulse of a given duration to trigger this pseudoclock"""
+        """Ask the trigger device to produce a digital pulse of a given duration
+        to trigger this pseudoclock.
+
+        Args:
+            t (float): Time, in seconds, to trigger this device.
+            duration (float): Duration, in seconds, of the trigger pulse.
+            wait_delay (float, optional): Time, in seconds, to delay the trigger.
+        """
         if type(t) in [str, bytes] and t == 'initial':
             t = self.initial_trigger_time
         t = round(t,10)
@@ -1056,11 +1285,20 @@ class PseudoclockDevice(TriggerableDevice):
             self.trigger_times.append(round(t + wait_delay,10))
             
     def do_checks(self, outputs):
-        """Basic error checking to ensure the user's instructions make sense"""
+        """Basic error checking to ensure the user's instructions make sense.
+
+        Args:
+            outputs (list): List of outputs to check.
+        """
         for output in outputs:
             output.do_checks(self.trigger_times)
             
     def offset_instructions_from_trigger(self, outputs):
+        """Offset instructions for child devices by the appropriate trigger times.
+
+        Args:
+            outputs (list): List of outputs to offset.
+        """
         for output in outputs:
             output.offset_instructions_from_trigger(self.trigger_times)
         
@@ -1085,13 +1323,36 @@ class PseudoclockDevice(TriggerableDevice):
         
     
 class Output(Device):
+    """Base class for all output classes."""
     description = 'generic output'
     allowed_states = {}
     dtype = float64
     scale_factor = 1
     
-    @set_passed_properties(property_names = {})
-    def __init__(self,name,parent_device,connection,limits = None,unit_conversion_class = None, unit_conversion_parameters = None, default_value=None, **kwargs):
+    @set_passed_properties(property_names={})
+    def __init__(self, name, parent_device, connection, limits=None,
+                 unit_conversion_class=None, unit_conversion_parameters=None,
+                 default_value=None, **kwargs):
+        """Instantiate an Output.
+
+        Args:
+            name (str): python variable name to assign the Output to.
+            parent_device (:obj:`IntermediateDevice`): Parent device the output
+                is connected to.
+            connection (str): Channel of parent device output is connected to.
+            limits (tuple, optional): `(min,max)` allowed for the output.
+            unit_conversion_class (:obj:`labscript_utils:labscript_utils.unitconversions`, optional):
+                Unit concersion class to use for the output.
+            unit_conversion_parameters (dict, optional): Dictonary or kwargs to
+                pass to the unit conversion class.
+            default_value (float, optional): Default value of the output if no
+                output is commanded.
+            **kwargs: Passed to :meth:`Device.__init__`.
+
+        Raises:
+            LabscriptError: Limits tuple is invalid or unit conversion class
+                units don't line up.
+        """
         Device.__init__(self,name,parent_device,connection, **kwargs)
 
         self.instructions = {}
@@ -1129,12 +1390,13 @@ class Output(Device):
     
     @property
     def clock_limit(self):
+        """float: Returns the parent clock line's clock limit."""
         parent = self.parent_clock_line
         return parent.clock_limit
     
     @property
     def trigger_delay(self):
-        """The earliest time output can be commanded from this device after a trigger.
+        """float: The earliest time output can be commanded from this device after a trigger.
         This is nonzeo on secondary pseudoclocks due to triggering delays."""
         parent = self.pseudoclock_device
         if parent.is_master_pseudoclock:
@@ -1144,7 +1406,7 @@ class Output(Device):
     
     @property
     def wait_delay(self):
-        """The earliest time output can be commanded from this device after a wait.
+        """float: The earliest time output can be commanded from this device after a wait.
         This is nonzeo on secondary pseudoclocks due to triggering delays and the fact
         that the master clock doesn't provide a resume trigger to secondary clocks until
         a minimum time has elapsed: compiler.wait_delay. This is so that if a wait is 
@@ -1154,6 +1416,20 @@ class Output(Device):
         return self.trigger_delay + delay
             
     def apply_calibration(self,value,units):
+        """Apply the calibration defined by the unit conversion class, if present.
+
+        Args:
+            value (float): Value to apply calibration to.
+            units (str): Units to convert to. Must be defined by the unit
+                conversion class.
+
+        Returns:
+            float: Converted value.
+
+        Raises:
+            LabscriptError: If no unit conversion class is defined or `units` not
+                in that class.
+        """
         # Is a calibration in use?
         if self.unit_conversion_class is None:
             raise LabscriptError('You can not specify the units in an instruction for output "%s" as it does not have a calibration associated with it'%(self.name))
@@ -1166,7 +1442,15 @@ class Output(Device):
         return getattr(self.calibration,units+"_to_base")(value)
         
     def instruction_to_string(self,instruction):
-        """gets a human readable description of an instruction"""
+        """Gets a human readable description of an instruction.
+
+        Args:
+            instruction (dict or str): Instruction to get description of,
+                or a fixed instruction defined in :attr:`allowed_states`.
+
+        Returns:
+            str: Instruction description.
+        """
         if isinstance(instruction,dict):
             return instruction['description']
         elif self.allowed_states:
@@ -1175,6 +1459,18 @@ class Output(Device):
             return str(instruction)
 
     def add_instruction(self,time,instruction,units=None):
+        """Adds a hardware instruction to the device instruction list.
+
+        Args:
+            time (float): Time, in seconds, that the instruction begins.
+            instruction (dict or float): Instruction to add.
+            units (str, optional): Units instruction is in, if `instruction`
+                is a `float`.
+
+        Raises:
+            LabscriptError: If time requested is not allowed or samplerate
+                is too fast.
+        """
         if not compiler.start_called:
             raise LabscriptError('Cannot add instructions prior to calling start()')
         # round to the nearest 0.1 nanoseconds, to prevent floating point
@@ -1227,7 +1523,15 @@ class Output(Device):
         self.instructions[time] = instruction
     
     def do_checks(self, trigger_times):
-        """Basic error checking to ensure the user's instructions make sense"""
+        """Basic error checking to ensure the user's instructions make sense.
+
+        Args:
+            trigger_times (iterable): Times to confirm don't conflict with
+                instructions.
+
+        Raises:
+            LabscriptError: If a trigger time conflicts with an instruction.
+        """
         # Check if there are no instructions. Generate a warning and insert an
         # instruction telling the output to remain at its default value.
         if not self.instructions:
@@ -1267,7 +1571,11 @@ class Output(Device):
                            'the latest output possible before this trigger is at t=%s'%str(trigger_time - max(self.clock_limit, compiler.wait_delay)))
                            
     def offset_instructions_from_trigger(self, trigger_times):
-        """Subtracts self.trigger_delay from all instructions at or after each trigger_time"""
+        """Subtracts self.trigger_delay from all instructions at or after each trigger_time.
+
+        Args:
+            trigger_times (iterable): Times of all trigger events.
+        """
         offset_instructions = {}
         for t, instruction in self.instructions.items():
             # How much of a delay is there for this instruction? That depends how many triggers there are prior to it:
@@ -1301,7 +1609,11 @@ class Output(Device):
     def get_change_times(self):
         """If this function is being called, it means that the parent
         Pseudoclock has requested a list of times that this output changes
-        state."""        
+        state.
+
+        Returns:
+            list: List of times output changes values.
+        """        
         times = list(self.instructions.keys())
         times.sort()
 
@@ -1318,6 +1630,12 @@ class Output(Device):
         return times
         
     def get_ramp_times(self):
+        """If this is being called, then it means the parent Pseuedoclock
+        has asked for a list of the output ramp start and stop times.
+
+        Returns:
+            list: List of (start, stop) times of ramps for this Output.
+        """
         return self.ramp_limits
     
     def make_timeseries(self, change_times):
@@ -1398,6 +1716,11 @@ class Output(Device):
         
 
 class AnalogQuantity(Output):
+    """Base class for :obj:`AnalogOut`.
+
+    It is also used internally by :obj:`DDS`. You should never instantiate this
+    class directly.
+    """
     description = 'analog quantity'
     default_value = 0
 
@@ -1407,6 +1730,24 @@ class AnalogQuantity(Output):
                 'Truncation argument must be between %f and %f (inclusive), but is %f.' % (min, max, truncation))
 
     def ramp(self, t, duration, initial, final, samplerate, units=None, truncation=1.):
+        """Command the output to perform a linear ramp.
+
+        Defined by
+        `f(t) = ((final - initial)/duration)*t + initial`
+
+        Args:
+            t (float): Time, in seconds, to begin the ramp.
+            duration (float): Length, in seconds, of the ramp.
+            initial (float): Initial output value, at time `t`.
+            final (float): Final output value, at time `t+duration`.
+            samplerate (float): Rate, in Hz, to update the output.
+            units: Units the output values are given in, as specified by the
+                unit conversion class.
+            truncation (float, optional): Fraction of ramp to perform. Must be between 0 and 1.
+
+        Returns:
+            float: Length of time ramp will take to complete. 
+        """
         self._check_truncation(truncation)
         if truncation > 0:
             # if start and end value are the same, we don't need to ramp and can save the sample ticks etc
@@ -1421,6 +1762,26 @@ class AnalogQuantity(Output):
         return truncation * duration
 
     def sine(self, t, duration, amplitude, angfreq, phase, dc_offset, samplerate, units=None, truncation=1.):
+        """Command the output to perform a sinusoidal modulation.
+
+        Defined by
+        `f(t) = amplitude*sin(angfreq*t + phase) + dc_offset`
+
+        Args:
+            t (float): Time, in seconds, to begin the ramp.
+            duration (float): Length, in seconds, of the ramp.
+            amplitude (float): Amplitude of the modulation.
+            angfreq (float): Angular frequency, in radians per second.
+            phase (float): Phase offset of the sine wave, in radians.
+            dc_offset (float): DC offset of output away from 0.
+            samplerate (float): Rate, in Hz, to update the output.
+            units: Units the output values are given in, as specified by the
+                unit conversion class.
+            truncation (float, optional): Fraction of duration to perform. Must be between 0 and 1.
+
+        Returns:
+            float: Length of time modulation will take to complete. Equivalent to `truncation*duration`.
+        """
         self._check_truncation(truncation)
         if truncation > 0:
             self.add_instruction(t, {'function': functions.sine(round(t + duration, 10) - round(t, 10), amplitude, angfreq, phase, dc_offset), 'description': 'sine wave',
@@ -1428,6 +1789,24 @@ class AnalogQuantity(Output):
         return truncation*duration
 
     def sine_ramp(self, t, duration, initial, final, samplerate, units=None, truncation=1.):
+        """Command the output to perform a ramp defined by one half period of a squared sine wave.
+
+        Defined by
+        `f(t) = (final-initial)*(sin(pi*t/(2*duration)))^2 + initial`
+
+        Args:
+            t (float): Time, in seconds, to begin the ramp.
+            duration (float): Length, in seconds, of the ramp.
+            initial (float): Initial output value, at time `t`.
+            final (float): Final output value, at time `t+duration`.
+            samplerate (float): Rate, in Hz, to update the output.
+            units: Units the output values are given in, as specified by the
+                unit conversion class.
+            truncation (float, optional): Fraction of ramp to perform. Must be between 0 and 1.
+
+        Returns:
+            float: Length of time ramp will take to complete. 
+        """
         self._check_truncation(truncation)
         if truncation > 0:
             self.add_instruction(t, {'function': functions.sine_ramp(round(t + duration, 10) - round(t, 10), initial, final), 'description': 'sinusoidal ramp',
@@ -1435,6 +1814,24 @@ class AnalogQuantity(Output):
         return truncation*duration
 
     def sine4_ramp(self, t, duration, initial, final, samplerate, units=None, truncation=1.):
+        """Command the output to perform an increasing ramp defined by one half period of a quartic sine wave.
+
+        Defined by
+        `f(t) = (final-initial)*(sin(pi*t/(2*duration)))^4 + initial`
+
+        Args:
+            t (float): Time, in seconds, to begin the ramp.
+            duration (float): Length, in seconds, of the ramp.
+            initial (float): Initial output value, at time `t`.
+            final (float): Final output value, at time `t+duration`.
+            samplerate (float): Rate, in Hz, to update the output.
+            units: Units the output values are given in, as specified by the
+                unit conversion class.
+            truncation (float, optional): Fraction of ramp to perform. Must be between 0 and 1.
+
+        Returns:
+            float: Length of time ramp will take to complete. 
+        """
         self._check_truncation(truncation)
         if truncation > 0:
             self.add_instruction(t, {'function': functions.sine4_ramp(round(t + duration, 10) - round(t, 10), initial, final), 'description': 'sinusoidal ramp',
@@ -1442,6 +1839,24 @@ class AnalogQuantity(Output):
         return truncation*duration
 
     def sine4_reverse_ramp(self, t, duration, initial, final, samplerate, units=None, truncation=1.):
+        """Command the output to perform a decreasing ramp defined by one half period of a quartic sine wave.
+
+        Defined by
+        `f(t) = (final-initial)*(sin(pi*t/(2*duration)))^4 + initial`
+
+        Args:
+            t (float): Time, in seconds, to begin the ramp.
+            duration (float): Length, in seconds, of the ramp.
+            initial (float): Initial output value, at time `t`.
+            final (float): Final output value, at time `t+duration`.
+            samplerate (float): Rate, in Hz, to update the output.
+            units: Units the output values are given in, as specified by the
+                unit conversion class.
+            truncation (float, optional): Fraction of ramp to perform. Must be between 0 and 1.
+
+        Returns:
+            float: Length of time ramp will take to complete. 
+        """
         self._check_truncation(truncation)
         if truncation > 0:
             self.add_instruction(t, {'function': functions.sine4_reverse_ramp(round(t + duration, 10) - round(t, 10), initial, final), 'description': 'sinusoidal ramp',
@@ -1451,18 +1866,22 @@ class AnalogQuantity(Output):
     def exp_ramp(self, t, duration, initial, final, samplerate, zero=0, units=None, truncation=None, truncation_type='linear', **kwargs):
         """Exponential ramp whose rate of change is set by an asymptotic value (zero argument).
         
-        Parameters:
-        t, duration : time to start the ramp and its duration
-        initial, final : initial and final values of the ramp (sans truncation)
-        zero: asymptotic value of the exponential decay/rise, i.e. limit as t --> inf
-        samplerate: rate to sample the function
-        units: unit conversion to apply to specified values before generating raw output
-        truncation_type: 'linear' or 'exponential'
-            'linear' truncation stops the ramp when it reaches the value given by the 
-            truncation parameter, which must be between initial and final
-            'exponential' truncation stops the ramp after a period of truncation*duration
-            In this instance, the truncation parameter should be between 0 (full truncation)
-            and 1 (no truncation).   
+        Args:
+            t (float): time to start the ramp
+            duration (float): duration of the ramp
+            initial (float): initial value of the ramp (sans truncation)
+            final (float): final value of the ramp (sans truncation)
+            zero (float): asymptotic value of the exponential decay/rise, i.e. limit as t --> inf
+            samplerate (float): rate to sample the function
+            units: unit conversion to apply to specified values before generating raw output
+            truncation_type (str): 
+
+                * `'linear'` truncation stops the ramp when it reaches the value given by the 
+                  truncation parameter, which must be between initial and final
+                * `'exponential'` truncation stops the ramp after a period of truncation*duration
+                  In this instance, the truncation parameter should be between 0 (full truncation)
+                  and 1 (no truncation). 
+
         """
         # Backwards compatibility for old kwarg names
         if 'trunc' in kwargs:
@@ -1493,19 +1912,23 @@ class AnalogQuantity(Output):
 
     def exp_ramp_t(self, t, duration, initial, final, time_constant, samplerate, units=None, truncation=None, truncation_type='linear', **kwargs):
         """Exponential ramp whose rate of change is set by the time_constant.
-        
-        Parameters:
-        t, duration : time to start the ramp and its duration
-        initial, final : initial and final values of the ramp (sans truncation)
-        time_constant: 1/e time of the exponential decay/rise
-        samplerate: rate to sample the function
-        units: unit conversion to apply to specified values before generating raw output
-        truncation_type: 'linear' or 'exponential'
-            'linear' truncation stops the ramp when it reaches the value given by the 
-            truncation parameter, which must be between initial and final
-            'exponential' truncation stops the ramp after a period of truncation*duration
-            In this instance, the truncation parameter should be between 0 (full truncation)
-            and 1 (no truncation).   
+
+        Args:
+            t (float): time to start the ramp
+            duration (float): duration of the ramp
+            initial (float): initial value of the ramp (sans truncation)
+            final (float): final value of the ramp (sans truncation)
+            time_constant (float): 1/e time of the exponential decay/rise
+            samplerate (float): rate to sample the function
+            units: unit conversion to apply to specified values before generating raw output
+            truncation_type (str): 
+
+                * `'linear'` truncation stops the ramp when it reaches the value given by the 
+                  truncation parameter, which must be between initial and final
+                * `'exponential'` truncation stops the ramp after a period of truncation*duration
+                  In this instance, the truncation parameter should be between 0 (full truncation)
+                  and 1 (no truncation).
+
         """
         # Backwards compatibility for old kwarg names
         if 'trunc' in kwargs:
@@ -1533,6 +1956,20 @@ class AnalogQuantity(Output):
         return trunc_duration
 
     def piecewise_accel_ramp(self, t, duration, initial, final, samplerate, units=None, truncation=1.):
+        """Changes the output so that the second derivative follows one period of a triangle wave.
+
+        Args:
+            t (float): Time, in seconds, at which to begin the ramp.
+            duration (float): Duration of the ramp, in seconds.
+            initial (float): Initial output value at time `t`.
+            final (float): Final output value at time `t+duration`.
+            samplerate (float): Update rate of the output, in Hz.
+            units: Units, defined by the unit conversion class, the value is in.
+            truncation (float, optional): Fraction of ramp to perform. Default 1.0.
+
+        Returns:
+            float: Time the ramp will take to complete.
+        """
         self._check_truncation(truncation)
         if truncation > 0:
             self.add_instruction(t, {'function': functions.piecewise_accel(round(t + duration, 10) - round(t, 10), initial, final), 'description': 'piecewise linear accelleration ramp',
@@ -1540,6 +1977,23 @@ class AnalogQuantity(Output):
         return truncation*duration
 
     def customramp(self, t, duration, function, *args, **kwargs):
+        """Define a custom function for the output.
+
+        Args:
+            t (float): Time, in seconds, to start the function.
+            duration (float): Length in time, in seconds, to perform the function.
+            function (func): Function handle that defines the output waveform.
+                First argument is the relative time from function start, in seconds.
+            *args: Arguments passed to `function`.
+            **kwargs: Keyword arguments pass to `function`.
+                Standard kwargs common to other output functions are: `units`, 
+                `samplerate`, and `truncation`. These kwargs are optional, but will
+                not be passed to `function` if present.
+
+        Returns:
+            float: Duration the function is to be evaluate for. Equivalent to 
+            `truncation*duration`.
+        """
         units = kwargs.pop('units', None)
         samplerate = kwargs.pop('samplerate')
         truncation = kwargs.pop('truncation', 1.)
@@ -1556,6 +2010,13 @@ class AnalogQuantity(Output):
         return truncation*duration
 
     def constant(self,t,value,units=None):
+        """Sets the output to a constant value at time `t`.
+
+        Args:
+            t (float): Time, in seconds, to set the constant output.
+            value (float): Value to set.
+            units: Units, defined by the unit conversion class, the value is in.
+        """
         # verify that value can be converted to float
         try:
             val = float(value)
@@ -1565,19 +2026,44 @@ class AnalogQuantity(Output):
         
       
 class AnalogOut(AnalogQuantity):
+    """Analog Output class for use with all devices that support timed analog outputs."""
     description = 'analog output'
     
     
 class StaticAnalogQuantity(Output):
+    """Base class for :obj:`StaticAnalogOut`.
+
+    It can also be used internally by other more complex output types.
+    """
     description = 'static analog quantity'
     default_value = 0.0
+    """float: Value of output if no constant value is commanded."""
     
     @set_passed_properties(property_names = {})
     def __init__(self, *args, **kwargs):
+        """Instatiantes the static analog quantity.
+
+        Defines an internal tracking variable of the static output value and
+        calls :func:`Output.__init__`.
+
+        Args:
+            *args: Passed to :func:`Output.__init__`.
+            **kwargs: Passed to :func:`Output.__init__`.
+        """
         Output.__init__(self, *args, **kwargs)
         self._static_value = None
         
     def constant(self, value, units=None):
+        """Set the static output value of the output.
+
+        Args:
+            value (float): Value to set the output to.
+            units: Units, defined by the unit conversion class, the value is in.
+
+        Raises:
+            LabscriptError: If static output has already been set to another value
+                or the value lies outside the output limits.
+        """
         if self._static_value is None:
             # If we have units specified, convert the value
             if units is not None:
@@ -1593,16 +2079,25 @@ class StaticAnalogQuantity(Output):
             raise LabscriptError('%s %s has already been set to %s (base units). It cannot also be set to %s (%s).'%(self.description, self.name, str(self._static_value), str(value),units if units is not None else "base units"))
     
     def get_change_times(self):
+        """Enforces no change times.
+
+        Returns:
+            list: An empty list, as expected by the parent pseudoclock.
+        """
         return []  # Return an empty list as the calling function at the pseudoclock level expects a list
         
     def make_timeseries(self,change_times):
+        """Since output is static, does nothing."""
         pass
     
     def expand_timeseries(self,*args,**kwargs):
+        """Defines the `raw_output` attribute.
+        """
         self.raw_output = array([self.static_value], dtype=self.dtype)
 
     @property
     def static_value(self):
+        """float: The value of the static output."""
         if self._static_value is None:
             if not config.suppress_mild_warnings and not config.suppress_all_warnings:
                 sys.stderr.write(' '.join(['WARNING:', self.name, 'has no value set. It will be set to %s.\n'%self.instruction_to_string(self.default_value)]))
@@ -1610,9 +2105,14 @@ class StaticAnalogQuantity(Output):
         return self._static_value
         
 class StaticAnalogOut(StaticAnalogQuantity):
+    """Static Analog Output class for use with all devices that have constant outputs."""
     description = 'static analog output'
         
 class DigitalQuantity(Output):
+    """Base class for :obj:`DigitalOut`.
+
+    It is also used internally by other, more complex, output types.
+    """
     description = 'digital quantity'
     allowed_states = {1:'high', 0:'low'}
     default_value = 0
@@ -1621,49 +2121,83 @@ class DigitalQuantity(Output):
     # Redefine __init__ so that you cannot define a limit or calibration for DO
     @set_passed_properties(property_names = {"connection_table_properties": ["inverted"]})
     def __init__(self, name, parent_device, connection, inverted=False, **kwargs):
+        """Instantiate a digital quantity.
+
+        Args:
+            name (str): python variable name to assign the quantity to.
+            parent_device (:obj:`IntermediateDevice`): Device this quantity is attached to.
+            connection (str): Connection on parent device we are connected to.
+            inverted (bool, optional): If `True`, output is logic inverted.
+            **kwargs: Passed to :func:`Output.__init__`.
+        """
         Output.__init__(self,name,parent_device,connection, **kwargs)
         self.inverted = bool(inverted)
 
     def go_high(self,t):
+        """Commands the output to go high.
+
+        Args:
+            t (float): Time, in seconds, when the output goes high.
+        """
         self.add_instruction(t, 1)
 
     def go_low(self,t):
+        """Commands the output to go low.
+
+        Args:
+            t (float): Time, in seconds, when the output goes low.
+        """
         self.add_instruction(t, 0)
 
     def enable(self,t):
+        """Commands the output to enable.
+
+        If `inverted=True`, this will set the output low.
+
+        Args:
+            t (float): Time, in seconds, when the output enables.
+        """
         if self.inverted:
             self.go_low(t)
         else:
             self.go_high(t)
 
     def disable(self,t):
+        """Commands the output to disable.
+
+        If `inverted=True`, this will set the output high.
+
+        Args:
+            t (float): Time, in seconds, when the output disables.
+        """
         if self.inverted:
             self.go_high(t)
         else:
             self.go_low(t)
 
-    '''
-    This function only works if the DigitalQuantity is on a fast clock
-    
-    The pulse_sequence parameter should be specified as a list of tuples. 
-    Each tuple should be of the form (time,state)
-    
-    The period parmeter should, in general, be longer than the entire pulse sequence, 
-    and defines how long the final tuple should be held for before repeating the pulse sequence.
-    
-    The pulse sequence specified will be repeated from time t until t+duration.
-    
-    The samplerate parameter specifies how often to update the output
-    
-    Note 1: The samplerate should be significantly faster than the smallest time difference between 
-    two states in the pulse sequence, or else points in your pulse sequence may never be evaluated.
-    
-    Note 2: The time points your pulse sequence is evaluated at may be different than you expect,
-    if another output changes state between t and t+duration. As such, you should set the samplerate
-    high enough that even if this rounding of tie points occurs (to fit in the update required to change the other output)
-    your pulse sequence will not be significantly altered)
-    '''
     def repeat_pulse_sequence(self,t,duration,pulse_sequence,period,samplerate):
+        '''This function only works if the DigitalQuantity is on a fast clock
+        
+        The pulse sequence specified will be repeated from time t until t+duration.
+        
+        Note 1: The samplerate should be significantly faster than the smallest time difference between 
+        two states in the pulse sequence, or else points in your pulse sequence may never be evaluated.
+        
+        Note 2: The time points your pulse sequence is evaluated at may be different than you expect,
+        if another output changes state between t and t+duration. As such, you should set the samplerate
+        high enough that even if this rounding of tie points occurs (to fit in the update required to change the other output)
+        your pulse sequence will not be significantly altered)
+
+        Args:
+            t (float): Time, in seconds, to start the pulse sequence.
+            duration (float): How long, in seconds, to repeat the sequence.
+            pulse_sequence (list): List of tuples, with each tuple of the form
+                `(time, state)`.
+            period (float): Defines how long the final tuple will be held for before
+                repeating the pulse sequence. In general, should be longer than the 
+                entire pulse sequence.
+            samplerate (float): How often to update the output, in Hz.
+        '''
         self.add_instruction(t, {'function': functions.pulse_sequence(pulse_sequence,period), 'description':'pulse sequence',
                                  'initial time':t, 'end time': t + duration, 'clock rate': samplerate, 'units': None})
         
@@ -1671,19 +2205,39 @@ class DigitalQuantity(Output):
 
         
 class DigitalOut(DigitalQuantity):
+    """Digital output class for use with all devices."""
     description = 'digital output'
 
     
 class StaticDigitalQuantity(DigitalQuantity):
+    """Base class for :obj:`StaticDigitalOut`.
+
+    It can also be used internally by other, more complex, output types.
+    """
     description = 'static digital quantity'
     default_value = 0
+    """float: Value of output if no constant value is commanded."""
     
     @set_passed_properties(property_names = {})
     def __init__(self, *args, **kwargs):
+        """Instatiantes the static digital quantity.
+
+        Defines an internal tracking variable of the static output value and
+        calls :func:`Output.__init__`.
+
+        Args:
+            *args: Passed to :func:`Output.__init__`.
+            **kwargs: Passed to :func:`Output.__init__`.
+        """
         DigitalQuantity.__init__(self, *args, **kwargs)
         self._static_value = None
         
     def go_high(self):
+        """Command a static high output.
+
+        Raises:
+            LabscriptError: If output has already been set low.
+        """
         if self._static_value is None:
             self.add_instruction(0,1)
             self._static_value = 1
@@ -1691,6 +2245,11 @@ class StaticDigitalQuantity(DigitalQuantity):
             raise LabscriptError('%s %s has already been set to %s. It cannot also be set to %s.'%(self.description, self.name, self.instruction_to_string[self._static_value], self.instruction_to_string[value]))
             
     def go_low(self):
+        """Command a static low output.
+
+        Raises:
+            LabscriptError: If output has already been set high.
+        """
         if self._static_value is None:
             self.add_instruction(0,0) 
             self._static_value = 0
@@ -1698,16 +2257,25 @@ class StaticDigitalQuantity(DigitalQuantity):
             raise LabscriptError('%s %s has already been set to %s. It cannot also be set to %s.'%(self.description, self.name, self.instruction_to_string[self._static_value], self.instruction_to_string[value]))
     
     def get_change_times(self):
+        """Enforces no change times.
+
+        Returns:
+            list: An empty list, as expected by the parent pseudoclock.
+        """
         return []  # Return an empty list as the calling function at the pseudoclock level expects a list
     
     def make_timeseries(self,change_times):
+        """Since output is static, does nothing."""
         pass
     
     def expand_timeseries(self,*args,**kwargs):
+        """Defines the `raw_output` attribute.
+        """
         self.raw_output = array([self.static_value], dtype=self.dtype)
 
     @property
     def static_value(self):
+        """float: The value of the static output."""
         if self._static_value is None:
             if not config.suppress_mild_warnings and not config.suppress_all_warnings:
                 sys.stderr.write(' '.join(['WARNING:', self.name, 'has no value set. It will be set to %s.\n'%self.instruction_to_string(self.default_value)]))
@@ -1716,20 +2284,43 @@ class StaticDigitalQuantity(DigitalQuantity):
     
 
 class StaticDigitalOut(StaticDigitalQuantity):
+    """Static Digital Output class for use with all devices that have constant outputs."""
     description = 'static digital output'
         
 class AnalogIn(Device):
+    """Analog Input for use with all devices that have an analog input."""
     description = 'Analog Input'
     
     @set_passed_properties(property_names = {})
     def __init__(self,name,parent_device,connection,scale_factor=1.0,units='Volts',**kwargs):
-                
+        """Instantiates an Analog Input.
+
+        Args:
+            name (str): python variable to assign this input to.
+            parent_device (:obj:`IntermediateDevice`): Device input is connected to.
+            scale_factor (float, optional): Factor to scale the recorded values by.
+            units (str, optional): Units of the input.
+            **kwargs: Keyword arguments passed to :func:`Device.__init__`.
+        """
         self.acquisitions = []
         self.scale_factor = scale_factor
         self.units=units
         Device.__init__(self,name,parent_device,connection, **kwargs)
    
     def acquire(self,label,start_time,end_time,wait_label='',scale_factor=None,units=None):
+        """Command an acquisition for this input.
+
+        Args:
+            label (str): Unique label for the acquisition. Used to identify the saved trace.
+            start_time (float): Time, in seconds, when the acquisition should start.
+            end_time (float): Time, in seconds, when the acquisition should end.
+            wait_label (str, optional): 
+            scale_factor (float): Factor to scale the saved values by.
+            units: Units of the input, consistent with the unit conversion class.
+
+        Returns:
+            float: Duration of the acquistion, equivalent to `end_time - start_time`.
+        """
         if scale_factor is None:
             scale_factor = self.scale_factor
         if units is None:
@@ -1740,6 +2331,20 @@ class AnalogIn(Device):
 
 
 class Shutter(DigitalOut):
+    """Customized version of :obj:`DigitalOut` that accounts for the open/close
+    delay of a shutter automatically.
+
+    When using the methods :meth:`open` and :meth:`close`, the shutter open
+    and close times are precise without haveing to track the delays. Note:
+    delays can be set using runmanager globals and periodically updated
+    via a calibration.
+
+    .. Warning:: 
+
+        If the shutter is asked to do something at `t=0`, it cannot start
+        moving earlier than that. This means the initial shutter states
+        will have imprecise timing.
+    """
     description = 'shutter'
     
     @set_passed_properties(
@@ -1747,7 +2352,22 @@ class Shutter(DigitalOut):
         )
     def __init__(self,name,parent_device,connection,delay=(0,0),open_state=1,
                  **kwargs):
+        """Instantiates a Shutter.
 
+        Args:
+            name (str): python variable to assign the object to.
+            parent_device (:obj:`IntermediateDevice`): Parent device the
+                digital output is connected to.
+            connection (str): Physical output port of the device the digital
+                output is connected to.
+            delay (tuple, optional): Tuple of the (open, close) delays, specified
+                in seconds.
+            open_state (int, optional): Allowed values are `0` or `1`. Defines which
+                state of the digital output opens the shutter.
+
+        Raises:
+            LabscriptError: If the `open_state` is not `0` or `1`.
+        """
         DigitalOut.__init__(self, name, parent_device, connection, inverted=not bool(open_state), **kwargs)
         self.open_delay, self.close_delay = delay
         self.open_state = open_state
@@ -1765,11 +2385,25 @@ class Shutter(DigitalOut):
     # would throw a warning for every shutter. The documentation will
     # have to make a point of this.
     def open(self, t):
+        """Command the shutter to open at time `t`.
+
+        Takes the open delay time into account.
+
+        Args:
+            t (float): Time, in seconds, when shutter should be open.
+        """
         t_calc = t-self.open_delay if t >= self.open_delay else 0
         self.actual_times[t] = {'time': t_calc, 'instruction': 1}
         self.enable(t_calc)
 
     def close(self, t):
+        """Command the shutter to close at time `t`.
+
+        Takes the close delay time into account.
+
+        Args:
+            t (float): Time, in seconds, when shutter should be closed.
+        """
         t_calc = t-self.close_delay if t >= self.close_delay else 0
         self.actual_times[t] = {'time': t_calc, 'instruction': 0}
         self.disable(t_calc)
@@ -1809,6 +2443,8 @@ class Shutter(DigitalOut):
 
 
 class Trigger(DigitalOut):
+    """Customized version of :obj:`DigitalOut` that tracks edge type.
+    """
     description = 'trigger device'
     allowed_states = {1:'high', 0:'low'}
     allowed_children = [TriggerableDevice]
@@ -1816,7 +2452,15 @@ class Trigger(DigitalOut):
     @set_passed_properties(property_names = {})
     def __init__(self, name, parent_device, connection, trigger_edge_type='rising',
                  **kwargs):
+        """Instantiates a DigitalOut object that tracks the trigger edge type.
 
+        Args:
+            name (str): python variable name to assign the quantity to.
+            parent_device (:obj:`IntermediateDevice`): Device this quantity is attached to.
+            trigger_edge_type (str, optional): Allowed values are `'rising'` and `'falling'`.
+            **kwargs: Passed to :func:`Output.__init__`.
+
+        """
         DigitalOut.__init__(self,name,parent_device,connection, **kwargs)
         self.trigger_edge_type = trigger_edge_type
         if self.trigger_edge_type == 'rising':
@@ -1834,6 +2478,12 @@ class Trigger(DigitalOut):
         
         
     def trigger(self, t, duration):
+        """Command a trigger pulse.
+
+        Args:
+            t (float): Time, in seconds, for the trigger edge to occur.
+            duration (float): Duration of the trigger, in seconds.
+        """
         assert duration > 0, "Negative or zero trigger duration given"
         if t != self.t0 and self.t0 not in self.instructions:
             self.disable(self.t0)
@@ -1872,7 +2522,9 @@ class WaitMonitor(Trigger):
         timeout_trigger_type='rising',
         **kwargs
     ):
-        """Create a wait monitor. This is a device or devices, one of which:
+        """Create a wait monitor. 
+
+        This is a device or devices, one of which:
 
         a) outputs pulses every time the master pseudoclock begins running (either at
            the start of the shot or after a wait
@@ -1953,6 +2605,13 @@ class WaitMonitor(Trigger):
         
         
 class DDSQuantity(Device):
+    """Used to define a DDS output. 
+
+    It is a container class, with properties that allow access to a frequency,
+    amplitude, and phase of the output as :obj:`AnalogQuantity`. 
+    It can also have a gate, which provides enable/disable control of the output 
+    as :obj:`DigitalOut`.
+    """
     description = 'DDS'
     allowed_children = [AnalogQuantity,DigitalOut,DigitalQuantity] # Adds its own children when initialised
 
@@ -1960,6 +2619,39 @@ class DDSQuantity(Device):
     def __init__(self, name, parent_device, connection, digital_gate={}, freq_limits=None, freq_conv_class=None, freq_conv_params={},
                  amp_limits=None, amp_conv_class=None, amp_conv_params={}, phase_limits=None, phase_conv_class=None, phase_conv_params = {},
                  call_parents_add_device = True, **kwargs):
+        """Instantiates a DDS quantity.
+
+        Args:
+            name (str): python variable for the object created.
+            parent_device (:obj:`IntermediateDevice`): Device this output is
+                connected to.
+            connection (str): Output of parent device this DDS is connected to.
+            digital_gate (dict, optional): Configures a digital output to use as an enable/disable
+                gate for the output. Should contain keys `'device'` and `'connection'`
+                with arguments for the `parent_device` and `connection` for instantiating
+                the :obj:`DigitalOut`.
+            freq_limits (tuple, optional): `(lower, upper)` limits for the 
+                frequency of the output
+            freq_conv_class (:obj:`labscript_utils:labscript_utils.unitconversions`, optional): 
+                Unit conversion class for the frequency of the output.
+            freq_conv_params (dict, optional): Keyword arguments passed to the 
+                unit conversion class for the frequency of the output.
+            amp_limits (tuple, optional): `(lower, upper)` limits for the 
+                amplitude of the output
+            amp_conv_class (:obj:`labscript_utils:labscript_utils.unitconversions`, optional): 
+                Unit conversion class for the amplitude of the output.
+            amp_conv_params (dict, optional): Keyword arguments passed to the 
+                unit conversion class for the amplitude of the output.
+            phase_limits (tuple, optional): `(lower, upper)` limits for the 
+                phase of the output
+            phase_conv_class (:obj:`labscript_utils:labscript_utils.unitconversions`, optional): 
+                Unit conversion class for the phase of the output.
+            phase_conv_params (dict, optional): Keyword arguments passed to the 
+                unit conversion class for the phase of the output.
+            call_parents_add_device (bool, optional): Have the parent device run
+                its `add_device` method.
+            **kwargs: Keyword arguments passed to :func:`Device.__init__`.
+        """
         #self.clock_type = parent_device.clock_type # Don't see that this is needed anymore
         
         # Here we set call_parents_add_device=False so that we
@@ -2010,25 +2702,79 @@ class DDSQuantity(Device):
             self.parent_device.add_device(self)
         
     def setamp(self, t, value, units=None):
+        """Set the amplitude of the output.
+
+        Args:
+            t (float): Time, in seconds, when the amplitude is set.
+            value (float): Amplitude to set to.
+            units: Units that the value is defined in.
+        """
         self.amplitude.constant(t, value, units)
         
     def setfreq(self, t, value, units=None):
+        """Set the frequency of the output.
+
+        Args:
+            t (float): Time, in seconds, when the frequency is set.
+            value (float): Frequency to set to.
+            units: Units that the value is defined in.
+        """
         self.frequency.constant(t, value, units)
         
     def setphase(self, t, value, units=None):
+        """Set the phase of the output.
+
+        Args:
+            t (float): Time, in seconds, when the phase is set.
+            value (float): Phase to set to.
+            units: Units that the value is defined in.
+        """
         self.phase.constant(t, value, units)
         
     def enable(self, t):
+        """Enable the Output.
+
+        Args:
+            t (float): Time, in seconds, to enable the output at.
+
+        Raises:
+            LabscriptError: If the DDS is not instantiated with a digital gate.
+        """
         if self.gate is None:
             raise LabscriptError('DDS %s does not have a digital gate, so you cannot use the enable(t) method.' % (self.name))
         self.gate.go_high(t)
 
     def disable(self, t):
+        """Disable the Output.
+
+        Args:
+            t (float): Time, in seconds, to disable the output at.
+
+        Raises:
+            LabscriptError: If the DDS is not instantiated with a digital gate.
+        """
         if self.gate is None:
             raise LabscriptError('DDS %s does not have a digital gate, so you cannot use the disable(t) method.' % (self.name))
         self.gate.go_low(t)
             
     def pulse(self, t, duration, amplitude, frequency, phase=None, amplitude_units = None, frequency_units = None, phase_units = None, print_summary=False):
+        """Pulse the output.
+
+        Args:
+            t (float): Time, in seconds, to start the pulse at.
+            duration (float): Length of the pulse, in seconds.
+            amplitude (float): Amplitude to set the output to during the pulse.
+            frequency (float): Frequency to set the output to during the pulse.
+            phase (float, optional): Phase to set the output to during the pulse.
+            amplitude_units: Units of `amplitude`.
+            frequency_units: Units of `frequency`.
+            phase_units: Units of `phase`.
+            print_summary (bool, optional): Print a summary of the pulse during
+                compilation time.
+
+        Returns:
+            float: Duration of the pulse, in seconds.
+        """
         if print_summary:
             functions.print_time(t, '%s pulse at %.4f MHz for %.3f ms' % (self.name, frequency/MHz, duration/ms))
         self.setamp(t, amplitude, amplitude_units)
@@ -2043,15 +2789,50 @@ class DDSQuantity(Device):
         return duration
 
 class DDS(DDSQuantity):
+    """DDS class for use with all devices that have DDS-like outputs."""
     pass
 
 class StaticDDS(Device):
+    """Static DDS class for use with all devices that have static DDS-like outputs."""
     description = 'Static RF'
     allowed_children = [StaticAnalogQuantity,DigitalOut,StaticDigitalOut]
     
     @set_passed_properties(property_names = {})
     def __init__(self,name,parent_device,connection,digital_gate = {},freq_limits = None,freq_conv_class = None,freq_conv_params = {},amp_limits=None,amp_conv_class = None,amp_conv_params = {},phase_limits=None,phase_conv_class = None,phase_conv_params = {},
                  **kwargs):
+        """Instantiates a Static DDS quantity.
+
+        Args:
+            name (str): python variable for the object created.
+            parent_device (:obj:`IntermediateDevice`): Device this output is
+                connected to.
+            connection (str): Output of parent device this DDS is connected to.
+            digital_gate (dict, optional): Configures a digital output to use as an enable/disable
+                gate for the output. Should contain keys `'device'` and `'connection'`
+                with arguments for the `parent_device` and `connection` for instantiating
+                the :obj:`DigitalOut`.
+            freq_limits (tuple, optional): `(lower, upper)` limits for the 
+                frequency of the output
+            freq_conv_class (:obj:`labscript_utils:labscript_utils.unitconversions`, optional): 
+                Unit conversion class for the frequency of the output.
+            freq_conv_params (dict, optional): Keyword arguments passed to the 
+                unit conversion class for the frequency of the output.
+            amp_limits (tuple, optional): `(lower, upper)` limits for the 
+                amplitude of the output
+            amp_conv_class (:obj:`labscript_utils:labscript_utils.unitconversions`, optional): 
+                Unit conversion class for the amplitude of the output.
+            amp_conv_params (dict, optional): Keyword arguments passed to the 
+                unit conversion class for the amplitude of the output.
+            phase_limits (tuple, optional): `(lower, upper)` limits for the 
+                phase of the output
+            phase_conv_class (:obj:`labscript_utils:labscript_utils.unitconversions`, optional): 
+                Unit conversion class for the phase of the output.
+            phase_conv_params (dict, optional): Keyword arguments passed to the 
+                unit conversion class for the phase of the output.
+            call_parents_add_device (bool, optional): Have the parent device run
+                its `add_device` method.
+            **kwargs: Keyword arguments passed to :func:`Device.__init__`.
+        """
         #self.clock_type = parent_device.clock_type # Don't see that this is needed anymore
         
         # We tell Device.__init__ to not call
@@ -2088,30 +2869,74 @@ class StaticDDS(Device):
         self.parent_device.add_device(self)
         
     def setamp(self,value,units=None):
+        """Set the static amplitude of the output.
+
+        Args:
+            value (float): Amplitude to set to.
+            units: Units that the value is defined in.
+        """
         self.amplitude.constant(value,units)
         
     def setfreq(self,value,units=None):
+        """Set the static frequency of the output.
+
+        Args:
+            value (float): Frequency to set to.
+            units: Units that the value is defined in.
+        """
         self.frequency.constant(value,units)
         
     def setphase(self,value,units=None):
+        """Set the static phase of the output.
+
+        Args:
+            value (float): Phase to set to.
+            units: Units that the value is defined in.
+        """
         self.phase.constant(value,units) 
             
-    def enable(self,t=None):        
+    def enable(self,t=None):
+        """Enable the Output.
+
+        Args:
+            t (float, optional): Time, in seconds, to enable the output at.
+
+        Raises:
+            LabscriptError: If the DDS is not instantiated with a digital gate.
+        """        
         if self.gate:
             self.gate.go_high(t)
         else:
             raise LabscriptError('DDS %s does not have a digital gate, so you cannot use the enable(t) method.'%(self.name))
                         
     def disable(self,t=None):
+        """Disable the Output.
+
+        Args:
+            t (float, optional): Time, in seconds, to disable the output at.
+
+        Raises:
+            LabscriptError: If the DDS is not instantiated with a digital gate.
+        """
         if self.gate:
             self.gate.go_low(t)
         else:
             raise LabscriptError('DDS %s does not have a digital gate, so you cannot use the disable(t) method.'%(self.name))
               
 class LabscriptError(Exception):
+    """A *labscript* error.
+
+    This is used to denote an error within the labscript suite itself.
+    Is a thin wrapper of :obj:`Exception`.
+    """
     pass
 
 def save_time_markers(hdf5_file):
+    """Save shot time markers to the shot file.
+
+    Args:
+        hdf5_file (:obj:`h5py:h5py.File`): Handle to file to save to.
+    """
     time_markers = compiler.time_markers
     dtypes = [('label','a256'), ('time', float), ('color', '(1,3)int')]
     data_array = zeros(len(time_markers), dtype=dtypes)
@@ -2120,6 +2945,11 @@ def save_time_markers(hdf5_file):
     time_markers_dataset = hdf5_file.create_dataset('time_markers', data = data_array)
 
 def generate_connection_table(hdf5_file):
+    """Generates the connection table for the compiled shot.
+
+    Args:
+        hdf5_file (:obj:`h5py:h5py.File`): Handle to file to save to.
+    """
     connection_table = []
     devicedict = {}
     
@@ -2176,6 +3006,14 @@ def generate_connection_table(hdf5_file):
   
   
 def save_labscripts(hdf5_file):
+    """Writes the script files for the compiled shot to the shot file.
+
+    If `save_hg_info` labconfig parameter is `True`, will attempt to save
+    hg version info as an attribute.
+
+    Args:
+        hdf5_file (:obj:`h5py:h5py.File`): Handle to file to save to.
+    """
     if compiler.labscript_file is not None:
         script_text = open(compiler.labscript_file).read()
     else:
@@ -2213,6 +3051,11 @@ def save_labscripts(hdf5_file):
 
 
 def write_device_properties(hdf5_file):
+    """Writes device_properties for each device in compiled shot to shto file.
+
+    Args:
+        hdf5_file (:obj:`h5py:h5py.File`): Handle to file to save to.
+    """
     for device in compiler.inventory:
         device_properties = device._properties["device_properties"]
 
@@ -2246,6 +3089,11 @@ def write_device_properties(hdf5_file):
 
 
 def generate_wait_table(hdf5_file):
+    """Generates the wait table for the shot and saves it to the shot file.
+
+    Args:
+        hdf5_file (:obj:`h5py:h5py.File`): Handle to file to save to.
+    """
     dtypes = [('label','a256'), ('time', float), ('timeout', float)]
     data_array = zeros(len(compiler.wait_table), dtype=dtypes)
     for i, t in enumerate(sorted(compiler.wait_table)):
@@ -2274,6 +3122,8 @@ def generate_wait_table(hdf5_file):
 
     
 def generate_code():
+    """Compiles a shot and saves it to the shot file.
+    """
     if compiler.hdf5_filename is None:
         raise LabscriptError('hdf5 file for compilation not set. Please call labscript_init')
     elif not os.path.exists(compiler.hdf5_filename):
@@ -2329,6 +3179,18 @@ def trigger_all_pseudoclocks(t='initial'):
     return max_delay + wait_delay
     
 def wait(label, t, timeout=5):
+    """Commands pseudoclocks to pause until resumed by an external trigger, or a timeout is reached.
+
+    Args:
+        label (str): Unique name for wait.
+        t (float): Time, in seconds, at which experiment should begin the wait.
+        timeout (float, optional): Maximum length of the wait, in seconds. After
+            this time, the pseudoclocks are automatically re-triggered.
+
+    Returns:
+        float: Time required for all pseudoclocks to resume execution once
+        wait has completed.            
+    """
     if not str(label):
         raise LabscriptError('Wait must have a name')
     max_delay = trigger_all_pseudoclocks(t)
@@ -2362,6 +3224,12 @@ def add_time_marker(t, label, color=None, verbose=False):
     compiler.time_markers[t] = {"label": label, "color": color}
 
 def start():
+    """Indicates the end of the connection table and the start of the 
+    experiment logic.
+
+    Returns:
+        float: Time required for all pseudoclocks to start execution.
+    """
     compiler.start_called = True
     # Get and save some timing info about the pseudoclocks:
     # TODO: What if you need to trigger individual Pseudolocks on the one device, rather than the PseudoclockDevice as a whole?
@@ -2418,33 +3286,33 @@ def start():
     
 def stop(t, target_cycle_time=None, cycle_time_delay_after_programming=False):
     """Indicate the end of an experiment at the given time, and initiate compilation of
-    instructions, saving them to the HDF5 file. Configure some shot options.
+    instructions, saving them to the HDF5 file. Configures some shot options.
     
-    t (float or None), default: `None`
-        The end time of the experiment.
+    Args:
+        t (float): The end time of the experiment.
 
-    target_cycle_time (float or None), default: `None`
-        How long, in seconds, after the previous shot was started, should this shot be
-        started by BLACS. This allows one to run shots at a constant rate even if they
-        are of different durations. If `None`, BLACS will run the next shot immediately
-        after the previous shot completes. Otherwise, BLACS will delay starting this
-        shot until the cycle time has elapsed. This is a request only, and may not be
-        met if running/programming/saving data from a shot takes long enough that it
-        cannot be met. This functionality requires the BLACS `cycle_time` plugin to be
-        enabled in labconfig. Its accuracy is also limited by software timing,
-        requirements of exact cycle times beyond software timing should be instead done
-        using hardware triggers to Pseudoclocks.
+        target_cycle_time (float, optional): default: `None`
+            How long, in seconds, after the previous shot was started, should this shot be
+            started by BLACS. This allows one to run shots at a constant rate even if they
+            are of different durations. If `None`, BLACS will run the next shot immediately
+            after the previous shot completes. Otherwise, BLACS will delay starting this
+            shot until the cycle time has elapsed. This is a request only, and may not be
+            met if running/programming/saving data from a shot takes long enough that it
+            cannot be met. This functionality requires the BLACS `cycle_time` plugin to be
+            enabled in labconfig. Its accuracy is also limited by software timing,
+            requirements of exact cycle times beyond software timing should be instead done
+            using hardware triggers to Pseudoclocks.
 
-    cycle_time_delay_after_programming (bool), default: `False`
-        Whether the BLACS cycle_time plugin should insert the required delay for the
-        target cycle time *after* programming devices, as opposed to before programming
-        them. This is more precise, but may cause some devices to output their first
-        instruction for longer than desired, since some devices begin outputting their
-        first instruction as soon as they are programmed rather than when they receive
-        their first clock tick. If not set, the *average* cycle time will still be just
-        as close to as requested (so long as there is adequate time available), however
-        the time interval between the same part of the experiment from one shot to the
-        next will not be as precise due to variations in programming time.
+        cycle_time_delay_after_programming (bool, optional): default: `False`
+            Whether the BLACS cycle_time plugin should insert the required delay for the
+            target cycle time *after* programming devices, as opposed to before programming
+            them. This is more precise, but may cause some devices to output their first
+            instruction for longer than desired, since some devices begin outputting their
+            first instruction as soon as they are programmed rather than when they receive
+            their first clock tick. If not set, the *average* cycle time will still be just
+            as close to as requested (so long as there is adequate time available), however
+            the time interval between the same part of the experiment from one shot to the
+            next will not be as precise due to variations in programming time.
     """
     # Indicate the end of an experiment and initiate compilation:
     if t == 0:
@@ -2495,6 +3363,16 @@ def load_globals(hdf5_filename):
 # TO_DELETE:runmanager-batchompiler-agnostic 
 #   load_globals_values=True            
 def labscript_init(hdf5_filename, labscript_file=None, new=False, overwrite=False, load_globals_values=True):
+    """Initialises labscript and prepares for compilation.
+
+    Args:
+        hdf5_filename (str): Path to shot file to compile.
+        labscript_file: Handle to the labscript file.
+        new (bool, optional): If `True`, ensure a new shot file is created.
+        overwrite (bool, optional): If `True`, overwrite existing shot file, if it exists.
+        load_globals_values (bool, optional): If `True`, load global values 
+            from the existing shot file.
+    """
     # save the builtins for later restoration in labscript_cleanup
     compiler._existing_builtins_dict = _builtins_dict.copy()
     
@@ -2543,6 +3421,8 @@ def labscript_cleanup():
     compiler.shot_properties = {}
 
 class compiler(object):
+    """Compiler object that saves relevant parameters during
+    compilation of each shot."""
     # The labscript file being compiled:
     labscript_file = None
     # All defined devices:
