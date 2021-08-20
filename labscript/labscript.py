@@ -39,10 +39,10 @@ import labscript_utils.properties
 # other code is using:
 import qtutils
 
+from pylab import *
+
 from labscript_utils import dedent
 from labscript_utils.properties import set_attributes
-
-from pylab import *
 
 import labscript.functions as functions
 try:
