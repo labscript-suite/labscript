@@ -2975,12 +2975,17 @@ def generate_connection_table(hdf5_file):
             #if there is no BLACS connection, make sure there is no "gui" or "worker" entry in the connection table properties
             if 'worker' in properties or 'gui' in properties:
                 raise LabscriptError('You cannot specify a remote GUI or worker for a device (%s) that does not have a tab in BLACS'%(device.name))
-            
-            
+          
+        if getattr(device, 'unit_conversion_class', None) is not None:
+            c = device.unit_conversion_class
+            unit_conversion_class_repr = f"{c.__module__}.{c.__name__}"
+        else:
+            unit_conversion_class_repr = repr(None)
+
         connection_table.append((device.name, device.__class__.__name__,
                                  device.parent_device.name if device.parent_device else str(None),
                                  str(device.connection if device.parent_device else str(None)),
-                                 device.unit_conversion_class.__name__ if hasattr(device,"unit_conversion_class") and device.unit_conversion_class is not None else str(None),
+                                 unit_conversion_class_repr,
                                  serialised_unit_conversion_parameters,
                                  BLACS_connection,
                                  serialised_properties))
