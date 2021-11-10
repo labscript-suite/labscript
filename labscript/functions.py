@@ -51,7 +51,7 @@ def piecewise_accel(duration,initial,final):
 def square_wave(duration, level_0, level_1, frequency, phase, duty_cycle):
     def square_wave_fixed_parameters(t):
         # Phase goes from 0 to 1 (NOT 2 pi) over one period.
-        rising_edge_phase = 1 - duty_cycle
+        edge_phase_0_to_1 = duty_cycle
         wrapped_phases = (frequency * t + phase) % 1.0
         # Ensure wrapped_phases is an array.
         wrapped_phases = np.array(wrapped_phases)
@@ -67,14 +67,14 @@ def square_wave(duration, level_0, level_1, frequency, phase, duty_cycle):
         MIN_PHASE_STEP = frequency * LABSCRIPT_TIME_RESOLUTION
         PHASE_TOLERANCE = MIN_PHASE_STEP / 2.0
         # Round phases near level_0 -> level_1 transition at phase =
-        # rising_edge_phase.
+        # edge_phase_0_to_1.
         is_near_edge = np.isclose(
             wrapped_phases,
-            rising_edge_phase,
+            edge_phase_0_to_1,
             rtol=0,
             atol=PHASE_TOLERANCE,
         )
-        wrapped_phases[is_near_edge] = rising_edge_phase
+        wrapped_phases[is_near_edge] = edge_phase_0_to_1
         # Round phases near level_1 -> level_0 transition at phase = 1.
         is_near_edge = np.isclose(
             wrapped_phases,
@@ -90,7 +90,7 @@ def square_wave(duration, level_0, level_1, frequency, phase, duty_cycle):
         # Use boolean indexing to set output to level_1 at the appropriate
         # times. For example level_0 for phases [0, 0.5) and level_1 for phases
         # [0.5, 1.0) when duty_cycle is 0.5.
-        level_1_times = (wrapped_phases >= rising_edge_phase)
+        level_1_times = (wrapped_phases >= edge_phase_0_to_1)
         outputs[level_1_times] = level_1
         return outputs
     return square_wave_fixed_parameters
