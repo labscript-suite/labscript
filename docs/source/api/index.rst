@@ -2,13 +2,10 @@
 API Reference
 =============
 
-.. toctree::
-   :maxdepth: 2
+.. autosummary::
+	:toctree: _autosummary
+	:template: autosummary-module.rst
+	:recursive:
 
-   device
-   pseudoclockdevice
-   pseudoclock
-   clockline
-   intermediatedevice
-   
-
+	labscript.labscript
+	labscript.functions

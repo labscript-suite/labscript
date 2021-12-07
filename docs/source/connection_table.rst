@@ -2,7 +2,8 @@ Connection Table
 ================
 The connection table maps out the way input/output devices are connected to each other in your lab, and the channels (individual inputs/outputs) they have. The devices in your lab should be connected in a similar way to that shown in the figure below.
 
-TODO: insert figure!
+.. image:: img/connection_diagram.png
+	:alt: Example wiring diagram.
 
 Here we see two :py:class:`PseudoclockDevice <labscript.PseudoclockDevice>` instances in the top tier of the diagram. They do not have a parent device that tells them when to update their output (this is true for all :py:class:`PseudoclockDevice <labscript.PseudoclockDevice>` instances). However, all but one (the master pseudoclock device) must be triggered by an output clocked by the master pseudoclock device. 
 
