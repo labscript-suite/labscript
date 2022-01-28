@@ -18,7 +18,7 @@ import subprocess
 import keyword
 import threading
 from inspect import getcallargs
-from functools import wraps
+from functools import wraps, lru_cache
 
 # Notes for v3
 #
@@ -3194,6 +3194,18 @@ def _file_watcher_callback(name, info, event):
 
 _file_watcher = FileWatcher(_file_watcher_callback)
 
+@lru_cache(None)
+def _have_vcs(vcs):
+    try:
+        subprocess.check_output([vcs, '--version'])
+        return True
+    except FileNotFoundError:
+        msg = f"""Warning: Cannot run {vcs} commands, {vcs} info for labscriptlib files
+        will not be saved. You can disable this warning by setting
+        [labscript]/save_{vcs}_info = False in labconfig."""
+        sys.stderr.write(dedent(msg) + '\n')
+        return False
+
 def _run_vcs_commands(path):
     """Run some VCS commands on a file and return their output.
     
@@ -3221,7 +3233,7 @@ def _run_vcs_commands(path):
     # Gather together a list of commands to run.
     module_directory, module_filename = os.path.split(path)
     vcs_commands = []
-    if compiler.save_hg_info:
+    if compiler.save_hg_info and _have_vcs('hg'):
         hg_commands = [
             ['log', '--limit', '1'],
             ['status'],
@@ -3230,7 +3242,7 @@ def _run_vcs_commands(path):
         for command in hg_commands:
             command = tuple(['hg'] + command + [module_filename])
             vcs_commands.append((command, module_directory))
-    if compiler.save_git_info:
+    if compiler.save_git_info and _have_vcs('git'):
         git_commands = [
             ['branch', '--show-current'],
             ['describe', '--tags', '--always', 'HEAD'],
@@ -3280,34 +3292,33 @@ def save_labscripts(hdf5_file):
     script.attrs['path'] = os.path.dirname(compiler.labscript_file).encode() if compiler.labscript_file is not None else sys.path[0]
     try:
         import labscriptlib
-        prefix = os.path.dirname(labscriptlib.__file__)
-        for module in sys.modules.values():
-            if getattr(module, '__file__', None) is not None:
-                path = os.path.abspath(module.__file__)
-                if path.startswith(prefix) and (path.endswith('.pyc') or path.endswith('.py')):
-                    path = path.replace('.pyc', '.py')
-                    save_path = 'labscriptlib/' + path.replace(prefix, '').replace('\\', '/').replace('//', '/')
-                    if save_path in hdf5_file:
-                        # Don't try to save the same module script twice! 
-                        # (seems to at least double count __init__.py when you import an entire module as in from labscriptlib.stages import * where stages is a folder with an __init__.py file.
-                        # Doesn't seem to want to double count files if you just import the contents of a file within a module
-                        continue
-                    hdf5_file.create_dataset(save_path, data=open(path).read())
-                    with _vcs_cache_rlock:
-                        already_cached = path in _vcs_cache
-                    if not already_cached:
+    except ImportError:
+        return
+    prefix = os.path.dirname(labscriptlib.__file__)
+    for module in sys.modules.values():
+        if getattr(module, '__file__', None) is not None:
+            path = os.path.abspath(module.__file__)
+            if path.startswith(prefix) and (path.endswith('.pyc') or path.endswith('.py')):
+                path = path.replace('.pyc', '.py')
+                save_path = 'labscriptlib/' + path.replace(prefix, '').replace('\\', '/').replace('//', '/')
+                if save_path in hdf5_file:
+                    # Don't try to save the same module script twice! (seems to at least
+                    # double count __init__.py when you import an entire module as in
+                    # from labscriptlib.stages import * where stages is a folder with an
+                    # __init__.py file. Doesn't seem to want to double count files if
+                    # you just import the contents of a file within a module
+                    continue
+                hdf5_file.create_dataset(save_path, data=open(path).read())
+                with _vcs_cache_rlock:
+                    if not path in _vcs_cache:
                         # Add file to watch list and create its entry in the cache.
                         _file_watcher.add_file(path)
                         _file_watcher_callback(path, None, None)
-                    with _vcs_cache_rlock:
-                        # Save the cached vcs output to the file.
-                        for command, info, err in _vcs_cache[path]:
-                            attribute_str = command[0] + ' ' + command[1]
-                            hdf5_file[save_path].attrs[attribute_str] = (info + '\n' + err)
-    except ImportError:
-        pass
-    except WindowsError if os.name == 'nt' else None:
-        sys.stderr.write('Warning: Cannot save version control data for imported scripts. Check that the hg and/or git command can be run from the command line.\n')
+                    # Save the cached vcs output to the file.
+                    for command, info, err in _vcs_cache[path]:
+                        attribute_str = command[0] + ' ' + command[1]
+                        hdf5_file[save_path].attrs[attribute_str] = (info + '\n' + err)
+
 
 
 def write_device_properties(hdf5_file):
