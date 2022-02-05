@@ -15,6 +15,10 @@ from pathlib import Path
 from m2r import MdInclude
 from recommonmark.transform import AutoStructify
 from jinja2 import FileSystemLoader, Environment
+try:
+    import importlib.metadata as importlib_metadata
+except ImportError:
+    import importlib_metadata
 
 # -- Project information (unique to each project) -------------------------------------
 
@@ -22,7 +26,7 @@ project = "labscript"
 copyright = "2020, labscript suite"
 author = "labscript suite contributors"
 
-from labscript import __version__ as version  # noqa: E402
+version = importlib_metadata.version('labscript')
 
 release = version
 
@@ -51,6 +55,7 @@ extensions = [
 autodoc_typehints = 'description'
 autosummary_generate = True
 add_module_names = False
+autodoc_mock_imports = ['labscript_utils']
 
 # Prefix each autosectionlabel with the name of the document it is in and a colon
 autosectionlabel_prefix_document = True
