@@ -74,7 +74,7 @@ else:
     startupinfo = None
 
 # Extract settings from labconfig
-_SAVE_HG_INFO = LabConfig().getboolean('labscript', 'save_hg_info', fallback=True)
+_SAVE_HG_INFO = LabConfig().getboolean('labscript', 'save_hg_info', fallback=False)
 _SAVE_GIT_INFO = LabConfig().getboolean('labscript', 'save_git_info', fallback=False)
         
 class config(object):
