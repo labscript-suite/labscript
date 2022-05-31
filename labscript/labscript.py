@@ -3476,6 +3476,9 @@ def generate_code():
         # Save shot properties:
         group = hdf5_file.create_group('shot_properties')
         set_attributes(group, compiler.shot_properties)
+                
+        # add lyse hostname
+        hdf5_file.attrs['lyse_host'] = compiler.lyse_host if compiler.lyse_host is not None else ''
 
 
 def trigger_all_pseudoclocks(t='initial'):
@@ -3683,7 +3686,12 @@ def load_globals(hdf5_filename):
             
 # TO_DELETE:runmanager-batchompiler-agnostic 
 #   load_globals_values=True            
-def labscript_init(hdf5_filename, labscript_file=None, new=False, overwrite=False, load_globals_values=True):
+def labscript_init(hdf5_filename, 
+                   labscript_file=None, 
+                   new=False, 
+                   overwrite=False, 
+                   load_globals_values=True, 
+                   lyse_host=None):
     """Initialises labscript and prepares for compilation.
 
     Args:
@@ -3693,6 +3701,7 @@ def labscript_init(hdf5_filename, labscript_file=None, new=False, overwrite=Fals
         overwrite (bool, optional): If `True`, overwrite existing shot file, if it exists.
         load_globals_values (bool, optional): If `True`, load global values 
             from the existing shot file.
+        lyse_host (str, optional): the lyse hose 
     """
     # save the builtins for later restoration in labscript_cleanup
     compiler._existing_builtins_dict = _builtins_dict.copy()
@@ -3716,6 +3725,8 @@ def labscript_init(hdf5_filename, labscript_file=None, new=False, overwrite=Fals
         labscript_file = __main__.__file__
     compiler.labscript_file = os.path.abspath(labscript_file)
     
+    compiler.lyse_host = lyse_host
+    
 
 def labscript_cleanup():
     """restores builtins and the labscript module to its state before
@@ -3728,6 +3739,7 @@ def labscript_cleanup():
     
     compiler.inventory = []
     compiler.hdf5_filename = None
+    compiler.lyse_host = None
     compiler.labscript_file = None
     compiler.start_called = False
     compiler.wait_table = {}
@@ -3752,6 +3764,7 @@ class compiler(object):
     # The filepath of the h5 file containing globals and which will
     # contain compilation output:
     hdf5_filename = None
+    lyse_host = None
     start_called = False
     wait_table = {}
     wait_monitor = None
