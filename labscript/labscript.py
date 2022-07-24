@@ -2694,11 +2694,13 @@ class Trigger(DigitalOut):
         """
         DigitalOut.__init__(self,name,parent_device,connection, **kwargs)
         self.trigger_edge_type = trigger_edge_type
-        if self.trigger_edge_type == 'rising':
+        if ((self.trigger_edge_type == 'rising' and not self.inverted) or 
+            (self.trigger_edge_type == 'falling' and self.inverted)):
             self.enable = self.go_high
             self.disable = self.go_low
             self.allowed_states = {1:'enabled', 0:'disabled'}
-        elif self.trigger_edge_type == 'falling':
+        elif ((self.trigger_edge_type == 'rising' and self.inverted) or 
+            (self.trigger_edge_type == 'falling' and not self.inverted)):
             self.enable = self.go_low
             self.disable = self.go_high
             self.allowed_states = {1:'disabled', 0:'enabled'}
