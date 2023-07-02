@@ -819,7 +819,8 @@ class Pseudoclock(Device):
         # Check that the pseudoclock can handle updates this fast
         for i, t in enumerate(all_change_times[:-1]):
             dt = all_change_times[i+1] - t
-            if dt < 1.0/self.clock_limit:
+            epsilon = (1.0/self.clock_limit)*1E-15
+            if dt < 1.0/self.clock_limit - epsilon:
                 raise LabscriptError(
                     "Commands have been issued to devices attached to "
                     f"{self.name} at t={t} and t={all_change_times[i+1]}. "
@@ -852,7 +853,8 @@ class Pseudoclock(Device):
             # isn't too close to the time of the last instruction:
             if not self.parent_device.stop_time in change_time_list:
                 dt = self.parent_device.stop_time - change_time_list[-1]
-                if abs(dt) < 1.0/clock_line.clock_limit:
+                epsilon = (1.0/clock_line.clock_limit)*1E-15
+                if abs(dt) < 1.0/clock_line.clock_limit - epsilon:
                     raise LabscriptError(
                         "The stop time of the experiment is "
                         f"t={self.parent_device.stop_time}, but the last "
@@ -879,7 +881,8 @@ class Pseudoclock(Device):
             # Check that no two instructions are too close together:
             for i, t in enumerate(change_time_list[:-1]):
                 dt = change_time_list[i+1] - t
-                if dt < 1.0/clock_line.clock_limit:
+                epsilon = (1.0/clock_line.clock_limit)*1E-15
+                if dt < 1.0/clock_line.clock_limit - epsilon:
                     raise LabscriptError(
                         "Commands have been issued to devices attached to "
                         f"clockline {clock_line.name} at t={t} and "
@@ -898,7 +901,8 @@ class Pseudoclock(Device):
                 # would force this clock tick to be faster than the minimum
                 # clock high time)
                 dt = all_change_times[j+1] - t
-                if dt < (2 * clock_line.minimum_clock_high_time):
+                epsilon = (2 * clock_line.minimum_clock_high_time)*1E-15
+                if dt < (2 * clock_line.minimum_clock_high_time) - epsilon:
                     raise LabscriptError(
                         "Commands have been issued to devices attached to "
                         f"{self.name} at t={t} and t={all_change_times[j+1]}. "
