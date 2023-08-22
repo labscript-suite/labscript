@@ -19,6 +19,7 @@ import keyword
 import threading
 from inspect import getcallargs
 from functools import wraps, lru_cache
+import numpy as np
 
 # Notes for v3
 #
@@ -1722,7 +1723,7 @@ class Output(Device):
         # If this output is not ramping, then its timeseries should
         # not be expanded. It's already as expanded as it'll get.
         if not self.parent_clock_line.ramping_allowed:
-            self.raw_output = np.array(self.timeseries, dtype=np.dtype)
+            self.raw_output = np.array(self.timeseries, dtype=np.dtype(self.dtype))
             return
         outputarray = np.empty((flat_all_times_len,), dtype=np.dtype(self.dtype))
         j=0
