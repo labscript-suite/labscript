@@ -19,6 +19,7 @@ import keyword
 import threading
 from inspect import getcallargs
 from functools import wraps, lru_cache
+import numpy as np
 
 # Notes for v3
 #
@@ -1722,7 +1723,7 @@ class Output(Device):
         # If this output is not ramping, then its timeseries should
         # not be expanded. It's already as expanded as it'll get.
         if not self.parent_clock_line.ramping_allowed:
-            self.raw_output = np.array(self.timeseries, dtype=np.dtype)
+            self.raw_output = np.array(self.timeseries, dtype=np.dtype(self.dtype))
             return
         outputarray = np.empty((flat_all_times_len,), dtype=np.dtype(self.dtype))
         j=0
@@ -2860,7 +2861,7 @@ class DDSQuantity(Device):
             digital_gate (dict, optional): Configures a digital output to use as an enable/disable
                 gate for the output. Should contain keys `'device'` and `'connection'`
                 with arguments for the `parent_device` and `connection` for instantiating
-                the :obj:`DigitalOut`.
+                the :obj:`DigitalOut`. All other (optional) keys are passed as kwargs.
             freq_limits (tuple, optional): `(lower, upper)` limits for the 
                 frequency of the output
             freq_conv_class (:obj:`labscript_utils:labscript_utils.unitconversions`, optional): 
@@ -2912,8 +2913,10 @@ class DDSQuantity(Device):
         self.phase = AnalogQuantity(self.name + '_phase', self, 'phase', phase_limits, phase_conv_class, phase_conv_params)
 
         self.gate = None
-        if 'device' in digital_gate and 'connection' in digital_gate:            
-            self.gate = DigitalOut(name + '_gate', digital_gate['device'], digital_gate['connection'])
+        if 'device' in digital_gate and 'connection' in digital_gate:
+            dev = digital_gate.pop('device')
+            conn = digital_gate.pop('connection')
+            self.gate = DigitalOut(name + '_gate', dev, conn, **digital_gate)
         # Did they only put one key in the dictionary, or use the wrong keywords?
         elif len(digital_gate) > 0:
             raise LabscriptError('You must specify the "device" and "connection" for the digital gate of %s.' % (self.name))
@@ -3041,7 +3044,7 @@ class StaticDDS(Device):
             digital_gate (dict, optional): Configures a digital output to use as an enable/disable
                 gate for the output. Should contain keys `'device'` and `'connection'`
                 with arguments for the `parent_device` and `connection` for instantiating
-                the :obj:`DigitalOut`.
+                the :obj:`DigitalOut`. All other (optional) keys are passed as kwargs.
             freq_limits (tuple, optional): `(lower, upper)` limits for the 
                 frequency of the output
             freq_conv_class (:obj:`labscript_utils:labscript_utils.unitconversions`, optional): 
@@ -3091,8 +3094,10 @@ class StaticDDS(Device):
         self.amplitude = StaticAnalogQuantity(self.name+'_amp',self,'amp',amp_limits,amp_conv_class,amp_conv_params)
         self.phase = StaticAnalogQuantity(self.name+'_phase',self,'phase',phase_limits,phase_conv_class,phase_conv_params)        
         
-        if 'device' in digital_gate and 'connection' in digital_gate:            
-            self.gate = DigitalOut(self.name+'_gate',digital_gate['device'],digital_gate['connection'])
+        if 'device' in digital_gate and 'connection' in digital_gate:
+            dev = digital_gate.pop('device')
+            conn = digital_gate.pop('connection')
+            self.gate = DigitalOut(name + '_gate', dev, conn, **digital_gate)
         # Did they only put one key in the dictionary, or use the wrong keywords?
         elif len(digital_gate) > 0:
             raise LabscriptError('You must specify the "device" and "connection" for the digital gate of %s.'%(self.name))
