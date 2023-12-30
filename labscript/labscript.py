@@ -12,6 +12,7 @@
 #####################################################################
 
 import builtins
+import contextlib
 import os
 import sys
 import subprocess
@@ -30,10 +31,16 @@ import numpy as np
 # The code to be removed relates to the move of the globals loading code from
 # labscript to runmanager batch compiler.
 
-
+from .compiler import compiler
+from .utils import (
+    LabscriptError,
+    is_clock_line,
+    is_pseudoclock_device,
+    is_remote_connection,
+    set_passed_properties
+)
 import labscript_utils.h5_lock, h5py
 import labscript_utils.properties
-from labscript_utils.labconfig import LabConfig
 from labscript_utils.filewatcher import FileWatcher
 
 # This imports the default Qt library that other labscript suite code will
@@ -74,27 +81,49 @@ if os.name=='nt':
 else:
     startupinfo = None
 
-# Extract settings from labconfig
-_SAVE_HG_INFO = LabConfig().getboolean('labscript', 'save_hg_info', fallback=False)
-_SAVE_GIT_INFO = LabConfig().getboolean('labscript', 'save_git_info', fallback=False)
-        
+
 class config(object):
     suppress_mild_warnings = True
     suppress_all_warnings = False
     compression = 'gzip'  # set to 'gzip' for compression 
-   
+
+
+@contextlib.contextmanager()
+def suppress_mild_warnings(state=True):
+    """A context manager which modifies config.suppress_mild_warnings
+
+    Allows the user to suppress (or show) mild warnings for specific lines. Useful when
+    you want to hide/show all warnings from specific lines.
+
+    Arguments:
+        state (bool): The new state for ``config.suppress_mild_warnings``. Defaults to
+        ``True`` if not explicitly provided.
+    """
+    previous_warning_setting = config.suppress_mild_warnings
+    config.suppress_mild_warnings = state
+    yield
+    config.suppress_mild_warnings = previous_warning_setting
+
+
+@contextlib.contextmanager()
+def suppress_all_warnings(state=True):
+    """A context manager which modifies config.suppress_all_warnings
+
+    Allows the user to suppress (or show) all warnings for specific lines. Useful when
+    you want to hide/show all warnings from specific lines.
     
-class NoWarnings(object):
-    """A context manager which sets config.suppress_mild_warnings to True
-    whilst in use.  Allows the user to suppress warnings for specific
-    lines when they know that the warning does not indicate a problem."""
-    def __enter__(self):
-        self.existing_warning_setting = config.suppress_all_warnings
-        config.suppress_all_warnings = True
-    def __exit__(self, *args):
-        config.suppress_all_warnings = self.existing_warning_setting
-    
-no_warnings = NoWarnings() # This is the object that should be used, not the class above
+    Arguments:
+        state (bool): The new state for ``config.suppress_all_warnings``. Defaults to
+        ``True`` if not explicitly provided.
+    """
+    previous_warning_setting = config.suppress_all_warnings
+    config.suppress_all_warnings = state
+    yield
+    config.suppress_all_warnings = previous_warning_setting
+
+
+no_warnings = suppress_all_warnings # Historical alias
+
 
 def max_or_zero(*args, **kwargs):
     """Returns max of the arguments or zero if sequence is empty.
@@ -114,7 +143,7 @@ def max_or_zero(*args, **kwargs):
         return 0
     else:
         return max(*args, **kwargs)
-    
+
 def bitfield(arrays,dtype):
     """Converts a list of arrays of ones and zeros into a single
     array of unsigned ints of the given datatype.
@@ -168,54 +197,6 @@ def fastflatten(inarray, dtype):
             i += 1
     return flat
 
-def set_passed_properties(property_names = {}):
-    """
-    Decorator for device __init__ methods that saves the listed arguments/keyword
-    arguments as properties. 
-
-    Argument values as passed to __init__ will be saved, with
-    the exception that if an instance attribute exists after __init__ has run that has
-    the same name as an argument, the instance attribute will be saved instead of the
-    argument value. This allows code within __init__ to process default arguments
-    before they are saved.
-
-    Internally, all properties are accessed by calling :obj:`self.get_property() <Device.get_property>`.
-    
-    Args:
-        property_names (dict): is a dictionary {key:val}, where each val
-            is a list [var1, var2, ...] of variables to be pulled from
-            properties_dict and added to the property with name key (its location)
-    """
-    def decorator(func):
-        @wraps(func)
-        def new_function(inst, *args, **kwargs):
-
-            return_value = func(inst, *args, **kwargs)
-
-            # Get a dict of the call arguments/keyword arguments by name:
-            call_values = getcallargs(func, inst, *args, **kwargs)
-
-            all_property_names = set()
-            for names in property_names.values():
-                all_property_names.update(names)
-
-            property_values = {}
-            for name in all_property_names:
-                # If there is an instance attribute with that name, use that, otherwise
-                # use the call value:
-                if hasattr(inst, name):
-                    property_values[name] = getattr(inst, name)
-                else:
-                    property_values[name] = call_values[name]
-
-            # Save them:
-            inst.set_properties(property_values, property_names)
-
-            return return_value
-
-        return new_function
-    
-    return decorator
 
 
 class Device(object):
@@ -227,14 +208,26 @@ class Device(object):
     """
     description = 'Generic Device'
     """Brief description of the device."""
+
     allowed_children = None
     """list: Defines types of devices that are allowed to be children of this device."""
     
     @set_passed_properties(
         property_names = {"device_properties": ["added_properties"]}
         )
-    def __init__(self,name,parent_device,connection, call_parents_add_device=True, 
-                 added_properties = {}, gui=None, worker=None, start_order=None, stop_order=None, **kwargs):
+    def __init__(
+        self,
+        name,
+        parent_device,
+        connection,
+        call_parents_add_device=True,
+        added_properties={},
+        gui=None,
+        worker=None,
+        start_order=None,
+        stop_order=None,
+        **kwargs,
+    ):
         """Creates a Device.
 
         Args:
@@ -253,7 +246,9 @@ class Device(object):
 
         # Verify that no invalid kwargs were passed and the set properties
         if len(kwargs) != 0:        
-            raise LabscriptError('Invalid keyword arguments: %s.'%kwargs)
+            raise LabscriptError(
+                f"Invalid keyword arguments ({kwargs}) passed to '{name}'."
+            )
 
         if self.allowed_children is None:
             self.allowed_children = [Device]
@@ -263,11 +258,19 @@ class Device(object):
         self.start_order = start_order
         self.stop_order = stop_order
         if start_order is not None and not isinstance(start_order, int):
-            raise TypeError("start_order must be int, not %s" % type(start_order).__name__)
+            raise TypeError(
+                f"Error when instantiating {name}. start_order must be an integer, not "
+                f"{start_order.__class__.__name__} (the value provided was "
+                f"{start_order})."
+            )
         if stop_order is not None and not isinstance(stop_order, int):
-            raise TypeError("stop_order must be int, not %s" % type(stop_order).__name__)
+            raise TypeError(
+                f"Error when instantiating {name}. start_order must be an integer, not "
+                f"{stop_order.__class__.__name__} (the value provided was "
+                f"{stop_order})."
+            )
         self.child_devices = []
-        
+
         # self._properties may be instantiated already
         if not hasattr(self, "_properties"):
             self._properties = {}
@@ -284,21 +287,23 @@ class Device(object):
             # self.parent_device.add_device(self) *must* be called later
             # on, it is not optional.
             parent_device.add_device(self)
-            
+
         # Check that the name doesn't already exist in the python namespace
         if name in locals() or name in globals() or name in _builtins_dict:
-            raise LabscriptError('The device name %s already exists in the Python namespace. Please choose another.'%name)
-        if name in keyword.kwlist:
-            raise LabscriptError('%s is a reserved Python keyword.'%name +
-                                 ' Please choose a different device name.')
-                                     
-        try:
-            # Test that name is a valid Python variable name:
-            exec('%s = None'%name)
-            assert '.' not in name
-        except:
-            raise ValueError('%s is not a valid Python variable name.'%name)
-        
+            raise LabscriptError(
+                f"{name} already exists in the Python namespace. "
+                f"Please choose another name for this {self.__class__.__name__}."
+            )
+        if keyword.iskeyword(name):
+            raise LabscriptError(
+                f"{name} is a reserved Python keyword. "
+                f"Please choose a different {self.__class__.__name__} name."
+            )
+
+        # Test that name is a valid Python variable name:
+        if not name.isidentifier():
+            raise ValueError(f"{name} is not a valid Python variable name.")
+
         # Put self into the global namespace:
         _builtins_dict[name] = self
         
@@ -314,24 +319,35 @@ class Device(object):
                     worker = gui
                     
                 # check that worker and gui are appropriately typed
-                if not isinstance(gui, _RemoteConnection):
-                    raise LabscriptError('the "gui" argument for %s must be specified as a subclass of _RemoteConnection'%(self.name))
+                if not is_remote_connection(gui):
+                    raise LabscriptError(
+                        f"The 'gui' argument for {name} must be specified as a "
+                        "subclass of _RemoteConnection"
+                    )
             else:
                 # just remote worker
                 gui = compiler._PrimaryBLACS
             
-            if not isinstance(worker, _RemoteConnection):
-                raise LabscriptError('the "worker" argument for %s must be specified as a subclass of _RemoteConnection'%(self.name))
+            if not is_remote_connection(worker):
+                raise LabscriptError(
+                        f"The 'worker' argument for {name} must be specified as a "
+                        "subclass of _RemoteConnection"
+                    )
             
             # check that worker is equal to, or a child of, gui
             if worker != gui and worker not in gui.get_all_children():
-                print(gui.get_all_children())
-                raise LabscriptError('The remote worker (%s) for %s must be a child of the specified gui (%s) '%(worker.name, self.name, gui.name))
+                raise LabscriptError(
+                    f"The remote worker ({worker.name}) for {name} must be a child of "
+                    f"the specified gui ({gui.name}). Available gui children are: "
+                    f"{gui.get_all_children()}"
+                )
                 
             # store worker and gui as properties of the connection table
-            self.set_property('gui', gui.name, 'connection_table_properties')
-            self.set_property('worker', worker.name, 'connection_table_properties')
-            
+            self.set_property("gui", gui.name, "connection_table_properties")
+            self.set_property("worker", worker.name, "connection_table_properties")
+
+    def __repr__(self):
+        return f"{self.name} ({self.__class__.__name__})"
 
     def set_property(self, name, value, location=None, overwrite=False):
         """Method to set a property for this device.
@@ -354,7 +370,10 @@ class Device(object):
                 existing property with `'overwrite'=False`.
         """
         if location is None or location not in labscript_utils.properties.VALID_PROPERTY_LOCATIONS:
-            raise LabscriptError('Device %s requests invalid property assignment %s for property %s'%(self.name, location, name))
+            raise LabscriptError(
+                f"Device {self.name} requests invalid property assignment {location} "
+                f"for property {name}"
+            )
             
         # if this try fails then self."location" may not be instantiated
         if not hasattr(self, "_properties"):
@@ -370,7 +389,7 @@ class Device(object):
 
         selected_properties[name] = value
 
-    def set_properties(self, properties_dict, property_names, overwrite = False):
+    def set_properties(self, properties_dict, property_names, overwrite=False):
         """
         Add one or a bunch of properties packed into properties_dict
         
@@ -378,20 +397,22 @@ class Device(object):
             properties_dict (dict): Dictionary of properties and their values.
             property_names (dict): Is a dictionary {key:val, ...} where each val
                 is a list [var1, var2, ...] of variables to be pulled from
-                properties_dict and added to the property with name key (it's location)
+                properties_dict and added to the property localtion with name ``key``
             overwrite (bool, optional): Toggles overwriting of existing properties.
         """
         for location, names in property_names.items():
-            if not isinstance(names, list) and not isinstance(names, tuple):
-                raise TypeError('%s names (%s) must be list or tuple, not %s'%(location, repr(names), str(type(names))))
-            temp_dict = {key:val for key, val in properties_dict.items() if key in names}                  
-            for (name, value) in temp_dict.items():
-                self.set_property(name, value, 
-                                  overwrite = overwrite, 
-                                  location = location)
-    
+            if not isinstance(names, (list, tuple, set)):
+                raise TypeError(
+                    f"Names for {location} ({names}) must be a list, tuple, or set, "
+                    f"not {names.__class__.__name__}."
+                )
+            properties_for_location = {
+                key: val for key, val in properties_dict.items() if key in names
+            }                  
+            for (name, value) in properties_for_location.items():
+                self.set_property(name, value, overwrite=overwrite, location=location)
 
-    def get_property(self, name, location = None, *args, **kwargs):#default = None):
+    def get_property(self, name, location=None, *args, **kwargs):
         """Method to get a property of this device already set using :func:`Device.set_property`.
 
         If the property is not already set, a default value will be returned
@@ -403,10 +424,8 @@ class Device(object):
             name (str): Name of property to get.
             location (str, optional): If not `None`, only search for `name`
                 in `location`.
-            *args: Must be length 1, provides a default value if property 
-                is not defined.
-            **kwargs: Must have key `'default'`, provides a default value
-                if property is not defined.
+            default: The default value. If not provided, an exception is raised if the
+                value is not set.
 
         Returns:
             : Property value.
@@ -429,12 +448,20 @@ class Device(object):
             >>> get_property('example', default=7, x=9)
         """
         if len(kwargs) == 1 and 'default' not in kwargs:
-            raise LabscriptError('A call to %s.get_property had a keyword argument that was not name or default'%self.name)
+            raise LabscriptError(
+                f"A call to {self.name}.get_property had a keyword argument that was "
+                "not name, location, or default"
+            )
         if len(args) + len(kwargs) > 1:
-            raise LabscriptError('A call to %s.get_property has too many arguments and/or keyword arguments'%self.name)
+            raise LabscriptError(
+                f"A call to {self.name}.get_property has too many arguments and/or "
+                "keyword arguments"
+            )
 
         if (location is not None) and (location not in labscript_utils.properties.VALID_PROPERTY_LOCATIONS):
-            raise LabscriptError('Device %s requests invalid property read location %s'%(self.name, location))
+            raise LabscriptError(
+                f"Device {self.name} requests invalid property read location {location}"
+            )
             
         # self._properties may not be instantiated
         if not hasattr(self, "_properties"):
@@ -450,7 +477,9 @@ class Device(object):
         elif len(args) == 1:
             return args[0]
         else:
-            raise LabscriptError('The property %s has not been set for device %s'%(name, self.name))
+            raise LabscriptError(
+                f"The property {name} has not been set for device {self.name}"
+            )
 
     def get_properties(self, location = None):
         """
@@ -463,18 +492,19 @@ class Device(object):
         Returns:
             dict: Dictionary of properties.
         """
-    
+
         # self._properties may not be instantiated
         if not hasattr(self, "_properties"):
             self._properties =  {}
 
         if location is not None:
-            temp_dict = self._properties.get(location, {})
+            properties = self._properties.get(location, {})
         else:
-            temp_dict = {}
-            for key,val in self._properties.items(): temp_dict.update(val)
-                
-        return temp_dict
+            properties = {}
+            for key, val in self._properties.items():
+                properties.update(val)
+
+        return properties
 
     def add_device(self, device):
         """Adds a child device to this device.
@@ -485,23 +515,29 @@ class Device(object):
         Raises:
             LabscriptError: If `device` is not an allowed child of this device.
         """
-        if any([isinstance(device,DeviceClass) for DeviceClass in self.allowed_children]):
+        if any([isinstance(device, DeviceClass) for DeviceClass in self.allowed_children]):
             self.child_devices.append(device)
         else:
-            raise LabscriptError('Devices of type %s cannot be attached to devices of type %s.'%(device.description,self.description))
+            raise LabscriptError(
+                f"Devices of type {device.description} cannot be attached to devices "
+                f"of type {self.description}."
+            )
     
     @property    
     def pseudoclock_device(self):
         """:obj:`PseudoclockDevice`: Stores the clocking pseudoclock, which may be itself."""
-        if isinstance(self, PseudoclockDevice):
+        if is_pseudoclock_device(self):
             return self 
         parent = self.parent_device
         try:
-            while parent is not None and not isinstance(parent,PseudoclockDevice):
+            while parent is not None and not is_pseudoclock_device(parent):
                 parent = parent.parent_device
             return parent
         except Exception as e:
-            raise LabscriptError('Couldn\'t find parent pseudoclock device of %s, what\'s going on? Original error was %s.'%(self.name, str(e)))
+            raise LabscriptError(
+                f"Couldn't find parent pseudoclock device of {self.name}, what's going "
+                f"on? Original error was {e}."
+            )
     
     def quantise_to_pseudoclock(self, times):
         """Quantises `times` to the resolution of the controlling pseudoclock.
@@ -533,15 +569,18 @@ class Device(object):
     @property 
     def parent_clock_line(self):
         """:obj:`ClockLine`: Stores the clocking clockline, which may be itself."""
-        if isinstance(self, ClockLine):
+        if is_clock_line(self):
             return self
         parent = self.parent_device
         try:
-            while not isinstance(parent,ClockLine):
+            while not is_clock_line(parent):
                 parent = parent.parent_device
             return parent
         except Exception as e:
-            raise LabscriptError('Couldn\'t find parent ClockLine of %s, what\'s going on? Original error was %s.'%(self.name, str(e)))
+            raise LabscriptError(
+                f"Couldn't find parent ClockLine of {self.name}, what's going on? "
+                f"Original error was {e}."
+            )
     
     @property
     def t0(self):
@@ -557,15 +596,15 @@ class Device(object):
     def get_all_outputs(self):
         """Get all children devices that are outputs.
 
+        Recursively calls ``get_all_outputs()`` on each child device. ``Output``'s will
+        return a list containing just themselves.
+
         Returns:
             list: List of children :obj:`Output`.
         """
         all_outputs = []
         for device in self.child_devices:
-            if isinstance(device,Output):
-                all_outputs.append(device)
-            else:
-                all_outputs.extend(device.get_all_outputs())
+            all_outputs.extend(device.get_all_outputs())
         return all_outputs
     
     def get_all_children(self):
@@ -606,32 +645,6 @@ class Device(object):
         return group
 
 
-class _PrimaryBLACS(Device):
-    pass
-    
-class _RemoteConnection(Device):
-    @set_passed_properties(
-        property_names = {}
-    )
-    def __init__(self, name, parent=None, connection=None):
-        if parent is None:
-            # define a hidden parent of top level remote connections so that
-            # "connection" is stored correctly in the connection table
-            if compiler._PrimaryBLACS is None:
-                compiler._PrimaryBLACS = _PrimaryBLACS('__PrimaryBLACS', None, None)
-            parent = compiler._PrimaryBLACS
-        Device.__init__(self, name, parent, connection)
-        
-        
-class RemoteBLACS(_RemoteConnection):
-    def __init__(self, name, host, port=7341, parent=None):
-        _RemoteConnection.__init__(self, name, parent, "%s:%s"%(host, port))
-        
-        
-class SecondaryControlSystem(_RemoteConnection):
-    def __init__(self, name, host, port, parent=None):
-        _RemoteConnection.__init__(self, name, parent, "%s:%s"%(host, port))
-        
 
 class IntermediateDevice(Device):
     """Base class for all devices that are to be clocked by a pseudoclock."""
@@ -1472,6 +1485,16 @@ class Output(Device):
         """
         delay = compiler.wait_delay if self.pseudoclock_device.is_master_pseudoclock else 0
         return self.trigger_delay + delay
+
+    def get_all_outputs(self):
+        """Get all children devices that are outputs.
+
+        For ``Output``, this is `self`.
+
+        Returns:
+            list: List of children :obj:`Output`.
+        """
+        return [self]
             
     def apply_calibration(self,value,units):
         """Apply the calibration defined by the unit conversion class, if present.
@@ -3158,14 +3181,6 @@ class StaticDDS(Device):
             self.gate.go_low(t)
         else:
             raise LabscriptError('DDS %s does not have a digital gate, so you cannot use the disable(t) method.'%(self.name))
-              
-class LabscriptError(Exception):
-    """A *labscript* error.
-
-    This is used to denote an error within the labscript suite itself.
-    Is a thin wrapper of :obj:`Exception`.
-    """
-    pass
 
 def save_time_markers(hdf5_file):
     """Save shot time markers to the shot file.
@@ -3711,7 +3726,7 @@ def labscript_init(hdf5_filename, labscript_file=None, new=False, overwrite=Fals
             from the existing shot file.
     """
     # save the builtins for later restoration in labscript_cleanup
-    compiler._existing_builtins_dict = _builtins_dict.copy()
+    compiler.save_builtins_state()
     
     if new:
         # defer file creation until generate_code(), so that filesystem
@@ -3736,50 +3751,4 @@ def labscript_init(hdf5_filename, labscript_file=None, new=False, overwrite=Fals
 def labscript_cleanup():
     """restores builtins and the labscript module to its state before
     labscript_init() was called"""
-    for name in _builtins_dict.copy(): 
-        if name not in compiler._existing_builtins_dict:
-            del _builtins_dict[name]
-        else:
-            _builtins_dict[name] = compiler._existing_builtins_dict[name]
-    
-    compiler.inventory = []
-    compiler.hdf5_filename = None
-    compiler.labscript_file = None
-    compiler.start_called = False
-    compiler.wait_table = {}
-    compiler.wait_monitor = None
-    compiler.master_pseudoclock = None
-    compiler.all_pseudoclocks = None
-    compiler.trigger_duration = 0
-    compiler.wait_delay = 0
-    compiler.time_markers = {}
-    compiler._PrimaryBLACS = None
-    compiler.save_hg_info = _SAVE_HG_INFO
-    compiler.save_git_info = _SAVE_GIT_INFO
-    compiler.shot_properties = {}
-
-class compiler(object):
-    """Compiler object that saves relevant parameters during
-    compilation of each shot."""
-    # The labscript file being compiled:
-    labscript_file = None
-    # All defined devices:
-    inventory = []
-    # The filepath of the h5 file containing globals and which will
-    # contain compilation output:
-    hdf5_filename = None
-    start_called = False
-    wait_table = {}
-    wait_monitor = None
-    master_pseudoclock = None
-    all_pseudoclocks = None
-    trigger_duration = 0
-    wait_delay = 0
-    time_markers = {}
-    _PrimaryBLACS = None
-    save_hg_info = _SAVE_HG_INFO
-    save_git_info = _SAVE_GIT_INFO
-    shot_properties = {}
-
-    # safety measure in case cleanup is called before init
-    _existing_builtins_dict = _builtins_dict.copy() 
+    compiler.reset()
