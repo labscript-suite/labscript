@@ -406,7 +406,7 @@ class Device(object):
     @property
     def t0(self):
         """float: The earliest time output can be commanded from this device at
-            the start of the experiment. This is nonzeo on secondary pseudoclock 
+            the start of the experiment. This is nonzero on secondary pseudoclock 
             devices due to triggering delays."""
         parent = self.pseudoclock_device
         if parent is None or parent.is_master_pseudoclock:
