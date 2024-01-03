@@ -62,5 +62,12 @@ class Compiler(object):
         self.save_git_info = _SAVE_GIT_INFO
         self.shot_properties = {}
 
+        # This used to be in a separate config object, but it's been moved here so it
+        # gets reset
+        self.suppress_mild_warnings = True
+        self.suppress_all_warnings = False
+        self.compression = 'gzip'  # set to 'gzip' for compression 
+
+
 compiler = Compiler()
 """The compiler instance"""

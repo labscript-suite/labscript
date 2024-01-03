@@ -1,7 +1,10 @@
+import contextlib
 from inspect import getcallargs
 from functools import wraps
 
 import numpy as np
+
+from .compiler import compiler
 
 _RemoteConnection = None
 ClockLine = None
@@ -177,6 +180,40 @@ def bitfield(arrays,dtype):
         if np.iterable(arrays[i]):
             y |= arrays[i] << i
     return y
+
+
+@contextlib.contextmanager()
+def suppress_mild_warnings(state=True):
+    """A context manager which modifies compiler.suppress_mild_warnings
+
+    Allows the user to suppress (or show) mild warnings for specific lines. Useful when
+    you want to hide/show all warnings from specific lines.
+
+    Arguments:
+        state (bool): The new state for ``compiler.suppress_mild_warnings``. Defaults to
+        ``True`` if not explicitly provided.
+    """
+    previous_warning_setting = compiler.suppress_mild_warnings
+    compiler.suppress_mild_warnings = state
+    yield
+    compiler.suppress_mild_warnings = previous_warning_setting
+
+
+@contextlib.contextmanager()
+def suppress_all_warnings(state=True):
+    """A context manager which modifies compiler.suppress_all_warnings
+
+    Allows the user to suppress (or show) all warnings for specific lines. Useful when
+    you want to hide/show all warnings from specific lines.
+    
+    Arguments:
+        state (bool): The new state for ``compiler.suppress_all_warnings``. Defaults to
+        ``True`` if not explicitly provided.
+    """
+    previous_warning_setting = compiler.suppress_all_warnings
+    compiler.suppress_all_warnings = state
+    yield
+    compiler.suppress_all_warnings = previous_warning_setting
 
 
 class LabscriptError(Exception):

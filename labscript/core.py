@@ -399,7 +399,7 @@ class Pseudoclock(Device):
 
             if maxrate:
                 # If there was ramping at this timestep, how many clock ticks fit before the next instruction?
-                n_ticks, remainder = divmod((all_change_times[i+1] - time)*maxrate, 1)
+                n_ticks, remainder = np.divmod((all_change_times[i+1] - time)*maxrate, 1)
                 n_ticks = int(n_ticks)
                 # Can we squeeze the final clock cycle in at the end?
                 if remainder and remainder/float(maxrate) >= 1/float(local_clock_limit):
