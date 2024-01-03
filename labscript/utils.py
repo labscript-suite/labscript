@@ -1,6 +1,8 @@
 from inspect import getcallargs
 from functools import wraps
 
+import numpy as np
+
 _RemoteConnection = None
 ClockLine = None
 PseudoClockDevice = None
@@ -28,7 +30,7 @@ def is_clock_line(device):
     the lookup in the modules hash table is slower).
     """
     if ClockLine is None:
-        from .labscript import ClockLine
+        from .core import ClockLine
     return isinstance(device, _RemoteConnection)
 
 
@@ -41,7 +43,7 @@ def is_pseudoclock_device(device):
     the lookup in the modules hash table is slower).
     """
     if PseudoclockDevice is None:
-        from .labscript import PseudoclockDevice
+        from .core import PseudoclockDevice
     return isinstance(device, PseudoclockDevice)
 
 
@@ -97,6 +99,84 @@ def set_passed_properties(property_names=None):
         return new_function
     
     return decorator
+
+
+def fastflatten(inarray, dtype):
+    """A faster way of flattening our arrays than pylab.flatten.
+
+    pylab.flatten returns a generator which takes a lot of time and memory
+    to convert into a numpy array via array(list(generator)).  The problem
+    is that generators don't know how many values they'll return until
+    they're done. This algorithm produces a numpy array directly by
+    first calculating what the length will be. It is several orders of
+    magnitude faster. Note that we can't use numpy.ndarray.flatten here
+    since our inarray is really a list of 1D arrays of varying length
+    and/or single values, not a N-dimenional block of homogeneous data
+    like a numpy array.
+
+    Args:
+        inarray (list): List of 1-D arrays to flatten.
+        dtype (data-type): Type of the data in the arrays.
+
+    Returns:
+        :obj:`numpy:numpy.ndarray`: Flattened array.
+    """
+    total_points = np.sum([len(element) if np.iterable(element) else 1 for element in inarray])
+    flat = np.empty(total_points,dtype=dtype)
+    i = 0
+    for val in inarray:
+        if np.iterable(val):
+            flat[i:i+len(val)] = val[:]
+            i += len(val)
+        else:
+            flat[i] = val
+            i += 1
+    return flat
+
+
+def max_or_zero(*args, **kwargs):
+    """Returns max of the arguments or zero if sequence is empty.
+    
+    This protects the call to `max()` which would normally throw an error on an empty
+    sequence.
+
+    Args:
+        *args: Items to compare.
+        **kwargs: Passed to `max()`.
+
+    Returns:
+        : Max of \*args.
+    """
+    if not args:
+        return 0
+    if not args[0]:
+        return 0
+    else:
+        return max(*args, **kwargs)
+
+
+def bitfield(arrays,dtype):
+    """Converts a list of arrays of ones and zeros into a single
+    array of unsigned ints of the given datatype.
+
+    Args:
+        arrays (list): List of numpy arrays consisting of ones and zeros.
+        dtype (data-type): Type to convert to.
+
+    Returns:
+        :obj:`numpy:numpy.ndarray`: Numpy array with data type `dtype`.
+    """
+    n = {np.uint8: 8, np.uint16: 16, np.uint32: 32}
+    if np.array_equal(arrays[0], 0):
+        y = np.zeros(
+            max([len(arr) if np.iterable(arr) else 1 for arr in arrays]), dtype=np.dtype
+        )
+    else:
+        y = np.array(arrays[0], dtype=dtype)
+    for i in range(1, n[dtype]):
+        if np.iterable(arrays[i]):
+            y |= arrays[i] << i
+    return y
 
 
 class LabscriptError(Exception):
