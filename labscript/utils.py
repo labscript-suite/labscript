@@ -6,9 +6,9 @@ import numpy as np
 
 from .compiler import compiler
 
-_RemoteConnection = None
-ClockLine = None
-PseudoClockDevice = None
+cached_RemoteConnection = None
+cached_ClockLine = None
+cached_PseudoclockDevice = None
 
 
 def is_remote_connection(connection):
@@ -19,9 +19,11 @@ def is_remote_connection(connection):
     maintaining reasonable performance (this performs better than importing each time as
     the lookup in the modules hash table is slower).
     """
-    if _RemoteConnection is None:
+    global cached_RemoteConnection
+    if cached_RemoteConnection is None:
         from .remote import _RemoteConnection
-    return isinstance(connection, _RemoteConnection)
+        cached_RemoteConnection = _RemoteConnection
+    return isinstance(connection, cached_RemoteConnection)
 
 
 def is_clock_line(device):
@@ -32,22 +34,26 @@ def is_clock_line(device):
     maintaining reasonable performance (this performs better than importing each time as
     the lookup in the modules hash table is slower).
     """
-    if ClockLine is None:
+    global cached_ClockLine
+    if cached_ClockLine is None:
         from .core import ClockLine
-    return isinstance(device, _RemoteConnection)
+        cached_ClockLine = ClockLine
+    return isinstance(device, cached_ClockLine)
 
 
 def is_pseudoclock_device(device):
     """Returns whether the connection is an instance of ``PseudoclockDevice``
     
-    This function defers and caches the import of ``_RemoteConnection``. This both
-    breaks the circular import between ``Device`` and ``_RemoteConnection``, while
+    This function defers and caches the import of ``PseudoclockDevice``. This both
+    breaks the circular import between ``Device`` and ``PseudoclockDevice``, while
     maintaining reasonable performance (this performs better than importing each time as
     the lookup in the modules hash table is slower).
     """
-    if PseudoclockDevice is None:
+    global cached_PseudoclockDevice
+    if cached_PseudoclockDevice is None:
         from .core import PseudoclockDevice
-    return isinstance(device, PseudoclockDevice)
+        cached_PseudoclockDevice = PseudoclockDevice
+    return isinstance(device, cached_PseudoclockDevice)
 
 
 def set_passed_properties(property_names=None):
@@ -182,7 +188,7 @@ def bitfield(arrays,dtype):
     return y
 
 
-@contextlib.contextmanager()
+@contextlib.contextmanager
 def suppress_mild_warnings(state=True):
     """A context manager which modifies compiler.suppress_mild_warnings
 
@@ -199,7 +205,7 @@ def suppress_mild_warnings(state=True):
     compiler.suppress_mild_warnings = previous_warning_setting
 
 
-@contextlib.contextmanager()
+@contextlib.contextmanager
 def suppress_all_warnings(state=True):
     """A context manager which modifies compiler.suppress_all_warnings
 
