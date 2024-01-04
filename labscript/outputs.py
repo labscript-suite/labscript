@@ -347,7 +347,10 @@ class Output(Device):
                         f"t={trigger_time + self.trigger_delay}"
                     )
                 # Check that there are no instructions too soon before the trigger:
-                if 0 < trigger_time - t < max(self.clock_limit, compiler.wait_delay):
+                if (
+                    t < trigger_time
+                    and max(self.clock_limit, compiler.wait_delay) < trigger_time - t
+                ):
                     raise LabscriptError(
                         f"{self.description} {self.name} has an instruction at t={t}. "
                         f"This is too soon before a trigger at t={trigger_time}, "
