@@ -11,7 +11,7 @@
 #                                                                   #
 #####################################################################
 
-"""Everything else including the `start()`, `stop()`, and `wait()` functions. All other
+"""Everything else including the `start()`, `stop()`, and `wait()` functions - all other
 classes are also imported here for backwards compatibility"""
 
 import builtins

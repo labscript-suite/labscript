@@ -11,7 +11,7 @@
 #                                                                   #
 #####################################################################
 
-"""Core classes containing common device functionality. These are used in
+"""Core classes containing common device functionality - these are used in
 labscript-devices when adding support for a hardware device."""
 
 import sys

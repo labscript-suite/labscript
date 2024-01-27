@@ -26,6 +26,20 @@ cached_ClockLine = None
 cached_PseudoclockDevice = None
 
 
+def print_time(t, description):
+    """Print time with a descriptive string.
+
+    Useful debug tool to print time at a specific point
+    in the shot, during shot compilation. Helpful when
+    the time is calculated.
+
+    Args:
+        t (float): Time to print
+        description (str): Descriptive label to print with it
+    """
+    print(f"t={t:.9f}s: {description}")
+
+
 def is_remote_connection(connection):
     """Returns whether the connection is an instance of ``_RemoteConnection``
     

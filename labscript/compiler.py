@@ -11,7 +11,7 @@
 #                                                                   #
 #####################################################################
 
-"""The labscript compiler interface. This is only relevant to developers and those
+"""The labscript compiler interface - this is only relevant to developers and those
 interested in the labscript interface to runmanager."""
 
 import builtins
