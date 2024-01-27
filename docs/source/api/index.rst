@@ -9,6 +9,7 @@ API Reference
 
 	labscript.core
 	labscript.outputs
+	labscript.inputs
 	labscript.remote
 	labscript.constants
 	labscript.labscript

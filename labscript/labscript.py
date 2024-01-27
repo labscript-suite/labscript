@@ -62,9 +62,9 @@ from .core import (
     PseudoclockDevice,
     TriggerableDevice,
 )
+from .inputs import AnalogIn
 from .outputs import (
     Output,
-    AnalogIn,
     AnalogOut,
     AnalogQuantity,
     DDS,
