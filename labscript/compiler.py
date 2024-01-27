@@ -25,7 +25,10 @@ _SAVE_HG_INFO = LabConfig().getboolean("labscript", "save_hg_info", fallback=Fal
 _SAVE_GIT_INFO = LabConfig().getboolean("labscript", "save_git_info", fallback=False)
 
 
-class Compiler(object):
+# Note: This class name is chosen to work around a autosummary bug, see
+# https://github.com/sphinx-doc/sphinx/issues/11362 It could be reverted to just
+# ``Compiler`` once the bug is fixed.
+class _Compiler(object):
     """Compiler singleton that saves relevant parameters during compilation of each shot"""
 
     _instance = None
@@ -85,5 +88,5 @@ class Compiler(object):
         self.compression = 'gzip'  # set to 'gzip' for compression 
 
 
-compiler = Compiler()
+compiler = _Compiler()
 """The compiler instance"""
