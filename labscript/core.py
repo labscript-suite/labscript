@@ -74,7 +74,7 @@ class ClockLine(Device):
         # Update minimum clock high time if this new device requires a longer high time.
         if getattr(device, 'minimum_clock_high_time', None) is not None:
             self._minimum_clock_high_time = max(
-                device.minimum_clock_high_time, self.minimum_clock_high_time
+                device.minimum_clock_high_time, self._minimum_clock_high_time
             )
 
     @property
