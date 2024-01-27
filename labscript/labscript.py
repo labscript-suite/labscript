@@ -11,6 +11,9 @@
 #                                                                   #
 #####################################################################
 
+"""Everything else including the `start()`, `stop()`, and `wait()` functions. All other
+classes are also imported here for backwards compatibility"""
+
 import builtins
 import os
 import sys

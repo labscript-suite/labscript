@@ -11,6 +11,9 @@
 #                                                                   #
 #####################################################################
 
+"""Contains the functional forms of analog output ramps. These are not used directly,
+instead see the interfaces in `AnalogQuantity`/`AnalogOut`."""
+
 from pylab import *
 import numpy as np
 
