@@ -13,3 +13,5 @@ If a device is not a :py:class:`PseudoclockDevice <labscript.core.PseudoclockDev
 
 If a :py:class:`PseudoclockDevice <labscript.core.PseudoclockDevice>` also has outputs that are not used for a :py:class:`ClockLine <labscript.core.ClockLine>`, then an :py:class:`IntermediateDevice <labscript.core.IntermediateDevice>` is internally instantiated, and should be made available through the ``PseudoclockDevice.direct_outputs`` attribute (for example see the :py:class:`PulseBlaster <labscript_devices.PulseBlaster.PulseBlaster>` implementation).
 
+.. note::
+	Most user's will not need to use :py:class:`PseudoclockDevice <labscript.core.PseudoclockDevice>`, :py:class:`Pseudoclock <labscript.core.Pseudoclock>`, and :py:class:`IntermediateDevice <labscript.core.IntermediateDevice>` directly. These are generic classes that are subclassed by device implementations in :doc:`labscript-devices <labscript-devices:index>`. It is these device implementations that you are most likely to use.
