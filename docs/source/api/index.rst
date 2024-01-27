@@ -7,5 +7,12 @@ API Reference
 	:template: autosummary-module.rst
 	:recursive:
 
+	labscript.core
+	labscript.outputs
+	labscript.remote
+	labscript.constants
 	labscript.labscript
 	labscript.functions
+	labscript.base
+	labscript.compiler
+	labscript.utils
