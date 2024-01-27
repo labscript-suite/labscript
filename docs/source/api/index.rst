@@ -15,5 +15,4 @@ API Reference
 	labscript.labscript
 	labscript.functions
 	labscript.base
-	labscript.compiler
 	labscript.utils
