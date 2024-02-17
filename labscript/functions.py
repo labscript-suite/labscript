@@ -11,21 +11,14 @@
 #                                                                   #
 #####################################################################
 
+"""Contains the functional forms of analog output ramps - these are not used directly,
+instead see the interfaces in `AnalogQuantity`/`AnalogOut`."""
+
 from pylab import *
 import numpy as np
 
-def print_time(t, description):
-    """Print time with a descriptive string.
+from .utils import print_time
 
-    Useful debug tool to print time at a specific point
-    in the shot, during shot compilation. Helpful when
-    the time is calculated.
-
-    Args:
-        t (float): Time to print
-        description (str): Descriptive label to print with it
-    """
-    print('t = {0:.9f} s:'.format(t),description)
 
 def ramp(duration, initial, final):
     """Defines a linear ramp.
