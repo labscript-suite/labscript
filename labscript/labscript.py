@@ -706,8 +706,8 @@ def stop(t, target_cycle_time=None, cycle_time_delay_after_programming=False):
 # TO_DELETE:runmanager-batchompiler-agnostic
 #   entire function load_globals can be deleted
 def load_globals(hdf5_filename):
-    import runmanager
-    params = runmanager.get_shot_globals(hdf5_filename)
+    import labscript_utils.shot_utils
+    params = labscript_utils.shot_utils.get_shot_globals(hdf5_filename)
     with h5py.File(hdf5_filename,'r') as hdf5_file:
         for name in params.keys():
             if name in globals() or name in locals() or name in _builtins_dict:
