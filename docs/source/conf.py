@@ -13,10 +13,7 @@
 import os
 from pathlib import Path
 from jinja2 import FileSystemLoader, Environment
-try:
-    import importlib.metadata as importlib_metadata
-except ImportError:
-    import importlib_metadata
+import importlib.metadata
 
 # -- Project information (unique to each project) -------------------------------------
 
@@ -24,7 +21,7 @@ project = "labscript"
 copyright = "2020, labscript suite"
 author = "labscript suite contributors"
 
-version = importlib_metadata.version('labscript')
+version = importlib.metadata.version('labscript')
 
 release = version
 
@@ -68,7 +65,10 @@ templates_path = ['_templates']
 exclude_patterns = []
 
 # The suffix(es) of source filenames.
-source_suffix = ['.rst', '.md']
+source_suffix = {
+    '.rst': 'restructuredtext',
+    '.md': 'markdown',
+}
 
 # The master toctree document.
 master_doc = 'index'
@@ -89,7 +89,7 @@ intersphinx_mapping = {
     'h5py': ('https://docs.h5py.org/en/stable/', None),
     'pydaqmx': ('https://pythonhosted.org/PyDAQmx/', None),
     'qt': (
-        '',
+        'https://riverbankcomputing.com/static/Docs/PyQt5/',
         'pyqt5-modified-objects.inv',
     )  # from https://github.com/MSLNZ/msl-qt/blob/master/docs/create_pyqt_objects.py
     # under MIT License

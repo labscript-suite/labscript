@@ -3,8 +3,9 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-labscript
-=========
+labscript |version|
+===================
+
 **labscript**, a component of the labscript suite, is an API used to define the experiment logic of a buffered experiment shot. This documentation will outline the general device hierarchy used when defining a connection table, and the **labscript** classes used to command input and output. For device specific documentation, and documentation for adding support for new devices, please refer to the :doc:`labscript-devices <labscript-devices:index>` documentation.
 
 
