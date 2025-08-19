@@ -52,4 +52,5 @@ docs = [
     "Sphinx==8.2.3",
     "sphinx-rtd-theme==3.0.2",
     "myst_parser==4.0.1",
+    "numpy<2", # necessary to work-around pylab star import collision on core submodule
 ]
