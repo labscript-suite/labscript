@@ -145,20 +145,29 @@ elif labscript_suite_doc_version not in ['stable', 'latest']:
     labscript_suite_doc_version = 'latest'
 
 # add intersphinx references for each component
+labscript_intersphinx_mapping = {}
 for ls_prog in labscript_suite_programs:
-    intersphinx_mapping[ls_prog] = (
+    val = (
         'https://docs.labscriptsuite.org/projects/{}/en/{}/'.format(
             ls_prog, labscript_suite_doc_version
         ),
         None,
     )
+    labscript_intersphinx_mapping[ls_prog] = val
+    if ls_prog != project:
+        # don't add intersphinx for current project
+        # if internal links break, they can silently be filled by links to existing online docs
+        # this is confusing and difficult to detect
+        intersphinx_mapping[ls_prog] = val
 
 # add intersphinx reference for the metapackage
 if project != "the labscript suite":
-    intersphinx_mapping['labscript-suite'] = (
+    val = (
         'https://docs.labscriptsuite.org/en/{}/'.format(labscript_suite_doc_version),
         None,
     )
+    intersphinx_mapping['labscript-suite'] = val
+    labscript_intersphinx_mapping['labscript-suite'] = val
 
 # Make `some code` equivalent to :code:`some code`
 default_role = 'code'
@@ -208,7 +217,7 @@ def setup(app):
     with open(Path(__file__).resolve().parent / 'components.rst', 'w') as f:
         f.write(
             template.render(
-                intersphinx_mapping=intersphinx_mapping,
+                intersphinx_mapping=labscript_intersphinx_mapping,
                 programs=labscript_suite_programs,
                 current_project=project,
                 img_path=img_path
