@@ -183,7 +183,7 @@ def max_or_zero(*args, **kwargs):
         **kwargs: Passed to `max()`.
 
     Returns:
-        : Max of \*args.
+        : Max of *args.
     """
     if not args:
         return 0
