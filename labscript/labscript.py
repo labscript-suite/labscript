@@ -404,6 +404,9 @@ def save_labscripts(hdf5_file):
         if getattr(module, '__file__', None) is not None:
             path = os.path.abspath(module.__file__)
             if path.startswith(prefix) and (path.endswith('.pyc') or path.endswith('.py')):
+                if 'signature_bootstrap.py' in path or 'shibokensupport' in path:
+                    # ignore PySide6 shenaniganry
+                    continue
                 path = path.replace('.pyc', '.py')
                 save_path = 'labscriptlib/' + path.replace(prefix, '').replace('\\', '/').replace('//', '/')
                 if save_path in hdf5_file:
