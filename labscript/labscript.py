@@ -229,7 +229,7 @@ def generate_connection_table(hdf5_file):
     devicedict = {}
     
     # Only use a string dtype as long as is needed:
-    max_BLACS_conn_length = -1
+    max_BLACS_conn_length = 0
 
     for device in compiler.inventory:
         devicedict[device.name] = device
