@@ -93,7 +93,6 @@ class Device(object):
         self.connection = connection
         self.start_order = start_order
         self.stop_order = stop_order
-        self.BLACS_connection = ""
         if start_order is not None and not isinstance(start_order, int):
             raise TypeError(
                 f"Error when instantiating {name}. start_order must be an integer, not "

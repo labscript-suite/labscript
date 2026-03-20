@@ -228,9 +228,6 @@ def generate_connection_table(hdf5_file):
     connection_table = []
     devicedict = {}
     
-    # Only use a string dtype as long as is needed:
-    max_BLACS_conn_length = 0
-
     for device in compiler.inventory:
         devicedict[device.name] = device
 
@@ -244,8 +241,6 @@ def generate_connection_table(hdf5_file):
         if hasattr(device,"BLACS_connection"):
             # Make sure it is a string!
             BLACS_connection = str(device.BLACS_connection)
-            if len(BLACS_connection) > max_BLACS_conn_length:
-                max_BLACS_conn_length = len(BLACS_connection)
         else:
             BLACS_connection = ""
             
@@ -269,11 +264,17 @@ def generate_connection_table(hdf5_file):
     
     connection_table.sort()
     vlenstring = h5py.special_dtype(vlen=str)
-    connection_table_dtypes = [('name','a256'), ('class','a256'), ('parent','a256'), ('parent port','a256'),
-                               ('unit conversion class','a256'), ('unit conversion params', vlenstring),
-                               ('BLACS_connection','a'+str(max_BLACS_conn_length)),
-                               ('properties', vlenstring)]
-    connection_table_array = empty(len(connection_table),dtype=connection_table_dtypes)
+    connection_table_dtypes = [
+        ('name', "a256"),
+        ('class', vlenstring),
+        ('parent', vlenstring),
+        ('parent port', vlenstring),
+        ('unit conversion class', vlenstring),
+        ('unit conversion params', vlenstring),
+        ('BLACS_connection', vlenstring),
+        ('properties', vlenstring),
+    ]
+    connection_table_array = empty(len(connection_table), dtype=connection_table_dtypes)
     for i, row in enumerate(connection_table):
         connection_table_array[i] = row
     dataset = hdf5_file.create_dataset('connection table', compression=compiler.compression, data=connection_table_array, maxshape=(None,))
