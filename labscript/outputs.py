@@ -1601,7 +1601,7 @@ class Shutter(DigitalOut):
     def generate_code(self, hdf5_file):
         classname = self.__class__.__name__
         calibration_table_dtypes = [
-            ("name", "a256"), ("open_delay", float), ("close_delay", float)
+            ("name", "S256"), ("open_delay", float), ("close_delay", float)
         ]
         if classname not in hdf5_file["calibrations"]:
             hdf5_file["calibrations"].create_dataset(

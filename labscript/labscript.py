@@ -213,7 +213,7 @@ def save_time_markers(hdf5_file):
         hdf5_file (:obj:`h5py:h5py.File`): Handle to file to save to.
     """
     time_markers = compiler.time_markers
-    dtypes = [('label','a256'), ('time', float), ('color', '(1,3)int')]
+    dtypes = [('label','S256'), ('time', float), ('color', '(1,3)int')]
     data_array = zeros(len(time_markers), dtype=dtypes)
     for i, t in enumerate(time_markers):
         data_array[i] = time_markers[t]["label"], t, time_markers[t]["color"]
@@ -265,7 +265,7 @@ def generate_connection_table(hdf5_file):
     connection_table.sort()
     vlenstring = h5py.special_dtype(vlen=str)
     connection_table_dtypes = [
-        ('name', "a256"),
+        ('name', "S256"),
         ('class', vlenstring),
         ('parent', vlenstring),
         ('parent port', vlenstring),
@@ -474,7 +474,7 @@ def generate_wait_table(hdf5_file):
     Args:
         hdf5_file (:obj:`h5py:h5py.File`): Handle to file to save to.
     """
-    dtypes = [('label','a256'), ('time', float), ('timeout', float)]
+    dtypes = [('label','S256'), ('time', float), ('timeout', float)]
     data_array = zeros(len(compiler.wait_table), dtype=dtypes)
     for i, t in enumerate(sorted(compiler.wait_table)):
         label, timeout = compiler.wait_table[t]
