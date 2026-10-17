@@ -551,23 +551,24 @@ class Pseudoclock(Device):
                     # instruction, then we'll get the last instruction
                     # out still, so that the total number of clock
                     # ticks matches the number of data points in the
-                    # Output.raw_output arrays. We'll make this last
-                    # cycle be at ten times the minimum step duration.
+                    # Output.raw_output arrays. This tick is on every clockline, so it
+                    # is one period of the slowest clock limit among the pseudoclock and
+                    # its clocklines, or twice the longest minimum clock high time if
+                    # that is longer, the same constraints as on every other tick.
                     else:
-                        # Find the slowest clock_limit
-                        enabled_clocks = []
-                        # The Pseudoclock clock limit
-                        local_clock_limit = 1.0/self.clock_resolution
-                        # Update with clock line limits
-                        for clock_line, outputs in outputs_by_clockline.items():
-                            if local_clock_limit > clock_line.clock_limit:
-                                local_clock_limit = clock_line.clock_limit
-                            enabled_clocks.append(clock_line)
+                        enabled_clocks = list(outputs_by_clockline)
+                        step = 1.0/self.clock_limit
+                        for clock_line in enabled_clocks:
+                            step = max(
+                                step,
+                                1.0/clock_line.clock_limit,
+                                2*clock_line.minimum_clock_high_time,
+                            )
                         clock.append(
                             {
                                 "start": time,
                                 "reps": 1,
-                                "step": 10.0/self.clock_limit,
+                                "step": step,
                                 "enabled_clocks": enabled_clocks,
                             }
                         )
