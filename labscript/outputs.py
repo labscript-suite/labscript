@@ -283,14 +283,39 @@ class Output(Device):
                 instruction = self.apply_calibration(instruction, units)
             # if we have limits, check the value is valid
             if self.limits:
-                if (instruction < self.limits[0]) or (instruction > self.limits[1]):
-                    raise LabscriptError(
-                        f"You cannot program the value {instruction} (base units) to "
-                        f"{self.name} as it falls outside the limits "
-                        f"({self.limits[0]} to {self.limits[1]})"
-                    )
+                instruction = self.apply_limits(instruction, time)
         self.instructions[time] = instruction
     
+    # Values beyond the limits by this fraction of the limit range or less are clipped
+    # to the limit, so that floating point round-off in a ramp that ends at a limit does
+    # not fail the check.
+    LIMITS_TOLERANCE = 1e-9
+
+    def apply_limits(self, values, t, function=None):
+        """Check that values (a number or an array, in base units) are within
+        self.limits, allowing for floating point round-off, and return them clipped to
+        the limits. Raises LabscriptError naming the instruction at time t (the ramp
+        `function` or a constant) and the offending values if any is outside the limits
+        by more than the tolerance."""
+        lower, upper = self.limits
+        tolerance = self.LIMITS_TOLERANCE * (upper - lower)
+        array = np.asarray(values)
+        if (array < lower - tolerance).any() or (array > upper + tolerance).any():
+            if function is not None:
+                raise LabscriptError(
+                    f'The function {function} called on "{self.name}" at t={t} '
+                    f"generated values from {array.min()} to {array.max()} (base "
+                    f"units), which fall outside the limits ({lower} to {upper})"
+                )
+            raise LabscriptError(
+                f'The value {values} (base units) programmed to "{self.name}" at t={t} '
+                f"falls outside the limits ({lower} to {upper})"
+            )
+        if (array < lower).any() or (array > upper).any():
+            clipped = np.clip(array, lower, upper)
+            return clipped.item() if clipped.ndim == 0 else clipped
+        return values
+
     def do_checks(self, trigger_times):
         """Basic error checking to ensure the user's instructions make sense.
 
@@ -362,15 +387,12 @@ class Output(Device):
                         f"t={trigger_time + self.trigger_delay}"
                     )
                 # Check that there are no instructions too soon before the trigger:
-                if (
-                    t < trigger_time
-                    and max(self.clock_limit, compiler.wait_delay) < trigger_time - t
-                ):
+                if t < trigger_time and round(trigger_time - t, 10) < 1/self.clock_limit:
                     raise LabscriptError(
                         f"{self.description} {self.name} has an instruction at t={t}. "
                         f"This is too soon before a trigger at t={trigger_time}, "
                         "the latest output possible before this trigger is at "
-                        f"t={trigger_time - max(self.clock_limit, compiler.wait_delay)}"
+                        f"t={trigger_time - 1/self.clock_limit}"
                     )
 
     def offset_instructions_from_trigger(self, trigger_times):
@@ -429,22 +451,23 @@ class Output(Device):
         times = list(self.instructions.keys())
         times.sort()
 
-        current_dict_time = None
+        # The most recent ramp; an instruction during it is a collision.
+        current_ramp = None
         for time in times:
-            if isinstance(self.instructions[time], dict) and current_dict_time is None:
-                current_dict_time = self.instructions[time]
-            elif (
-                current_dict_time is not None
-                and current_dict_time['initial time'] < time < current_dict_time['end time']
+            if (
+                current_ramp is not None
+                and current_ramp['initial time'] < time < current_ramp['end time']
             ):
                 raise LabscriptError(
                     f"{self.description} {self.name} has an instruction at "
                     f"t={time:.10f}s. This instruction collides with a ramp on this "
                     "output at that time. The collision "
-                    f"{current_dict_time['description']} is happening from "
-                    f"{current_dict_time['initial time']:.10f}s untill "
-                    f"{current_dict_time['end time']:.10f}s"
+                    f"{current_ramp['description']} is happening from "
+                    f"{current_ramp['initial time']:.10f}s untill "
+                    f"{current_ramp['end time']:.10f}s"
                 )
+            if isinstance(self.instructions[time], dict):
+                current_ramp = self.instructions[time]
 
         self.times = times
         return times
@@ -520,13 +543,10 @@ class Output(Device):
                         )
                     # if we have limits, check the value is valid
                     if self.limits:
-                        if ((outarray<self.limits[0])|(outarray>self.limits[1])).any():
-                            raise LabscriptError(
-                                f"The function {self.timeseries[i]['function']} called "
-                                f'on "{self.name}" at t={midpoints[0]} generated a '
-                                "value which falls outside the base unit limits "
-                                f"({self.limits[0]} to {self.limits[1]})"
-                            )
+                        outarray = self.apply_limits(
+                            outarray, self.timeseries[i]["initial time"],
+                            self.timeseries[i]["function"],
+                        )
                 else:
                     outarray = np.empty(time_len, dtype=self.dtype)
                     outarray.fill(self.timeseries[i])
@@ -1445,7 +1465,7 @@ class StaticDigitalQuantity(DigitalQuantity):
             LabscriptError: If output has already been set low.
         """
         if self._static_value is None:
-            self.add_instruction(0, 1)
+            self.add_instruction(self.t0, 1)
             self._static_value = 1
         else:
             raise LabscriptError(
@@ -1461,7 +1481,7 @@ class StaticDigitalQuantity(DigitalQuantity):
             LabscriptError: If output has already been set high.
         """
         if self._static_value is None:
-            self.add_instruction(0, 0) 
+            self.add_instruction(self.t0, 0)
             self._static_value = 0
         else:
             raise LabscriptError(
@@ -1578,7 +1598,7 @@ class Shutter(DigitalOut):
         # timing. Not throwing a warning here because if I did, every run
         # would throw a warning for every shutter. The documentation will
         # have to make a point of this.
-        t_calc = t-self.open_delay if t >= self.open_delay else 0
+        t_calc = max(t - self.open_delay, self.t0)
         self.actual_times[t] = {"time": t_calc, "instruction": 1}
         self.enable(t_calc)
 
@@ -1594,7 +1614,7 @@ class Shutter(DigitalOut):
         Args:
             t (float): Time, in seconds, when shutter should be closed.
         """
-        t_calc = t-self.close_delay if t >= self.close_delay else 0
+        t_calc = max(t - self.close_delay, self.t0)
         self.actual_times[t] = {"time": t_calc, "instruction": 0}
         self.disable(t_calc)
 
@@ -1832,7 +1852,7 @@ class DDSQuantity(Device):
         )
 
         self.gate = None
-        digital_gate = digital_gate or {}
+        digital_gate = dict(digital_gate or {})
         if "device" in digital_gate and "connection" in digital_gate:
             dev = digital_gate.pop("device")
             conn = digital_gate.pop("connection")
@@ -1950,10 +1970,14 @@ class DDSQuantity(Device):
             float: Duration of the pulse, in seconds.
         """
         if print_summary:
-            functions.print_time(
-                t,
-                f"{self.name} pulse at {frequency/MHz:.4f} MHz for {duration/ms:.3f} ms",
-            )
+            if frequency is None:
+                summary = f"{self.name} pulse for {duration/ms:.3f} ms"
+            else:
+                summary = (
+                    f"{self.name} pulse at {frequency/MHz:.4f} MHz for "
+                    f"{duration/ms:.3f} ms"
+                )
+            functions.print_time(t, summary)
         self.setamp(t, amplitude, amplitude_units)
         if frequency is not None:
             self.setfreq(t, frequency, frequency_units)
@@ -1962,7 +1986,7 @@ class DDSQuantity(Device):
         if amplitude != 0 and self.gate is not None:
             self.enable(t)
             self.disable(t + duration)
-            self.setamp(t + duration, 0)
+        self.setamp(t + duration, 0)
         return duration
 
 
@@ -2074,7 +2098,8 @@ class StaticDDS(Device):
             phase_conv_params,
         )        
 
-        digital_gate = digital_gate or {}
+        self.gate = None
+        digital_gate = dict(digital_gate or {})
         if "device" in digital_gate and "connection" in digital_gate:
             dev = digital_gate.pop("device")
             conn = digital_gate.pop("connection")
@@ -2119,33 +2144,37 @@ class StaticDDS(Device):
         """Enable the Output.
 
         Args:
-            t (float, optional): Time, in seconds, to enable the output at.
+            t (float, optional): Time, in seconds, to enable the output at. If not
+                given, the output is enabled from the start of the shot.
 
         Raises:
             LabscriptError: If the DDS is not instantiated with a digital gate.
         """        
-        if self.gate:
-            self.gate.go_high(t)
-        else:
+        if self.gate is None:
             raise LabscriptError(
                 f"DDS {self.name} does not have a digital gate, so you cannot use the "
                 "enable(t) method."
             )
+        if t is None:
+            t = self.gate.t0
+        self.gate.go_high(t)
 
     def disable(self, t=None):
         """Disable the Output.
 
         Args:
-            t (float, optional): Time, in seconds, to disable the output at.
+            t (float, optional): Time, in seconds, to disable the output at. If not
+                given, the output is disabled from the start of the shot.
 
         Raises:
             LabscriptError: If the DDS is not instantiated with a digital gate.
         """
-        if self.gate:
-            self.gate.go_low(t)
-        else:
+        if self.gate is None:
             raise LabscriptError(
                 f"DDS {self.name} does not have a digital gate, so you cannot use the "
                 "disable(t) method."
             )
+        if t is None:
+            t = self.gate.t0
+        self.gate.go_low(t)
 

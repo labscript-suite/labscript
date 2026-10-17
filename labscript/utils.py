@@ -230,8 +230,10 @@ def suppress_mild_warnings(state=True):
     """
     previous_warning_setting = compiler.suppress_mild_warnings
     compiler.suppress_mild_warnings = state
-    yield
-    compiler.suppress_mild_warnings = previous_warning_setting
+    try:
+        yield
+    finally:
+        compiler.suppress_mild_warnings = previous_warning_setting
 
 
 @contextlib.contextmanager
@@ -247,8 +249,10 @@ def suppress_all_warnings(state=True):
     """
     previous_warning_setting = compiler.suppress_all_warnings
     compiler.suppress_all_warnings = state
-    yield
-    compiler.suppress_all_warnings = previous_warning_setting
+    try:
+        yield
+    finally:
+        compiler.suppress_all_warnings = previous_warning_setting
 
 
 class LabscriptError(Exception):
