@@ -146,6 +146,25 @@ class Pseudoclock(Device):
         # if device.connection not in self.clock_lines:
             # self.clock_lines[
 
+    def _outputs_with_instructions_at(self, outputs, *times):
+        """Text for an error message naming the outputs that have an instruction at
+        each of the given times, or an empty string if none of the outputs does."""
+        lines = []
+        for t in times:
+            names = [
+                output.name
+                for output in outputs
+                if any(
+                    abs(instruction_time - t) <= self.clock_resolution
+                    for instruction_time in output.instructions
+                )
+            ]
+            if names:
+                lines.append(f"Outputs with an instruction at t={t}: {', '.join(names)}.")
+        if not lines:
+            return ""
+        return " " + " ".join(lines)
+
     def collect_change_times(self, all_outputs, outputs_by_clockline):
         """Asks all connected outputs for a list of times that they
         change state. 
@@ -225,13 +244,16 @@ class Pseudoclock(Device):
 
         # Check that the pseudoclock can handle updates this fast
         for i, t in enumerate(all_change_times[:-1]):
-            dt = all_change_times[i+1] - t
+            dt = round(all_change_times[i+1] - t, 10)
             if dt < 1.0/self.clock_limit:
                 raise LabscriptError(
                     "Commands have been issued to devices attached to "
                     f"{self.name} at t={t} and t={all_change_times[i+1]}. "
                     "This Pseudoclock cannot support update delays shorter "
                     f"than {1.0/self.clock_limit} seconds."
+                    + self._outputs_with_instructions_at(
+                        all_outputs, t, all_change_times[i+1]
+                    )
                 )
 
         ########################################################################
@@ -258,7 +280,7 @@ class Pseudoclock(Device):
             # Also add the stop time as as change time. First check that it
             # isn't too close to the time of the last instruction:
             if not self.parent_device.stop_time in change_time_list:
-                dt = self.parent_device.stop_time - change_time_list[-1]
+                dt = round(self.parent_device.stop_time - change_time_list[-1], 10)
                 if abs(dt) < 1.0/clock_line.clock_limit:
                     raise LabscriptError(
                         "The stop time of the experiment is "
@@ -268,6 +290,9 @@ class Pseudoclock(Device):
                         "devices cannot support update delays shorter than "
                         f"{1.0/clock_line.clock_limit} seconds. Please set the "
                         "stop_time a bit later."
+                        + self._outputs_with_instructions_at(
+                            outputs_by_clockline[clock_line], change_time_list[-1]
+                        )
                     )
 
                 change_time_list.append(self.parent_device.stop_time)
@@ -285,7 +310,7 @@ class Pseudoclock(Device):
             j = 0
             # Check that no two instructions are too close together:
             for i, t in enumerate(change_time_list[:-1]):
-                dt = change_time_list[i+1] - t
+                dt = round(change_time_list[i+1] - t, 10)
                 if dt < 1.0/clock_line.clock_limit:
                     raise LabscriptError(
                         "Commands have been issued to devices attached to "
@@ -293,7 +318,10 @@ class Pseudoclock(Device):
                         f"t={change_time_list[i+1]}. One or more connected "
                         f"devices on ClockLine {clock_line.name} cannot "
                         "support update delays shorter than "
-                        f"{1.0/clock_line.clock_limit} seconds"
+                        f"{1.0/clock_line.clock_limit} seconds."
+                        + self._outputs_with_instructions_at(
+                            all_outputs, t, change_time_list[i+1]
+                        )
                     )
 
                 all_change_times_len = len(all_change_times)
@@ -304,7 +332,7 @@ class Pseudoclock(Device):
                 # Check that the next all change_time is not too close (and thus
                 # would force this clock tick to be faster than the minimum
                 # clock high time)
-                dt = all_change_times[j+1] - t
+                dt = round(all_change_times[j+1] - t, 10)
                 if dt < (2 * clock_line.minimum_clock_high_time):
                     raise LabscriptError(
                         "Commands have been issued to devices attached to "
@@ -316,6 +344,9 @@ class Pseudoclock(Device):
                         "than half the available time between the event at "
                         f"t={t} on ClockLine {clock_line.name} and the next "
                         "event on another ClockLine."
+                        + self._outputs_with_instructions_at(
+                            all_outputs, t, all_change_times[j+1]
+                        )
                     )
 
             # because we made the list into a set and back to a list, it is now
@@ -415,8 +446,13 @@ class Pseudoclock(Device):
                 )
 
             if maxrate:
-                # If there was ramping at this timestep, how many clock ticks fit before the next instruction?
-                n_ticks, remainder = np.divmod((all_change_times[i+1] - time)*maxrate, 1)
+                # If there was ramping at this timestep, how many clock ticks fit before
+                # the next instruction? The product is rounded to nine decimal places so
+                # that a count such as 10.999999999 from floating point round-off is
+                # eleven ticks and not ten with a remainder.
+                n_ticks, remainder = np.divmod(
+                    round((all_change_times[i+1] - time)*maxrate, 9), 1
+                )
                 n_ticks = int(n_ticks)
                 # Can we squeeze the final clock cycle in at the end?
                 if remainder and remainder/float(maxrate) >= 1/float(local_clock_limit):
@@ -515,23 +551,24 @@ class Pseudoclock(Device):
                     # instruction, then we'll get the last instruction
                     # out still, so that the total number of clock
                     # ticks matches the number of data points in the
-                    # Output.raw_output arrays. We'll make this last
-                    # cycle be at ten times the minimum step duration.
+                    # Output.raw_output arrays. This tick is on every clockline, so it
+                    # is one period of the slowest clock limit among the pseudoclock and
+                    # its clocklines, or twice the longest minimum clock high time if
+                    # that is longer, the same constraints as on every other tick.
                     else:
-                        # Find the slowest clock_limit
-                        enabled_clocks = []
-                        # The Pseudoclock clock limit
-                        local_clock_limit = 1.0/self.clock_resolution
-                        # Update with clock line limits
-                        for clock_line, outputs in outputs_by_clockline.items():
-                            if local_clock_limit > clock_line.clock_limit:
-                                local_clock_limit = clock_line.clock_limit
-                            enabled_clocks.append(clock_line)
+                        enabled_clocks = list(outputs_by_clockline)
+                        step = 1.0/self.clock_limit
+                        for clock_line in enabled_clocks:
+                            step = max(
+                                step,
+                                1.0/clock_line.clock_limit,
+                                2*clock_line.minimum_clock_high_time,
+                            )
                         clock.append(
                             {
                                 "start": time,
                                 "reps": 1,
-                                "step": 10.0/self.clock_limit,
+                                "step": step,
                                 "enabled_clocks": enabled_clocks,
                             }
                         )
@@ -639,7 +676,7 @@ class TriggerableDevice(Device):
         if isinstance(parent_device, Trigger):
             if self.trigger_edge_type != parent_device.trigger_edge_type:
                 raise LabscriptError(
-                    f"Trigger edge type for {name} is {self.trigger_edge_type}', but "
+                    f"Trigger edge type for {name} is '{self.trigger_edge_type}', but "
                     f"existing Trigger object {parent_device.name} has edge type "
                     f"'{parent_device.trigger_edge_type}'"
                 )
@@ -651,7 +688,9 @@ class TriggerableDevice(Device):
             )
             parent_device = self.trigger_device
             connection = "trigger"
-            
+        else:
+            self.trigger_device = None
+
         self.__triggers = []
         Device.__init__(self, name, parent_device, connection, **kwargs)
 
@@ -662,6 +701,11 @@ class TriggerableDevice(Device):
             t (float): Time, in seconds, to produce a trigger.
             duration (float): Duration, in seconds, of the trigger pulse.
         """
+        if self.trigger_device is None:
+            raise LabscriptError(
+                f"{self.description} {self.name} has no trigger device, so it cannot be "
+                "triggered."
+            )
         # Only ask for a trigger if one has not already been requested by another device
         # attached to the same trigger:
         already_requested = False
@@ -701,6 +745,8 @@ class TriggerableDevice(Device):
         Raises:
             LabscriptError: If correct triggers do not exist for all devices.
         """
+        if self.trigger_device is None:
+            return
         # Check that all devices sharing a trigger device have triggers when we have triggers:
         for device in self.trigger_device.child_devices:
             if device is not self:

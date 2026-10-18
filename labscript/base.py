@@ -34,6 +34,16 @@ from .utils import (
 _builtins_dict = builtins.__dict__
 
 
+def _labscript_names():
+    """The names that `from labscript import *` defines in an experiment script. A
+    device name must not be one of them, since the device is made available by name."""
+    import labscript
+    try:
+        return set(labscript.__all__)
+    except AttributeError:
+        return {name for name in vars(labscript) if not name.startswith('_')}
+
+
 class Device(object):
     """Parent class of all device and input/output channels.
     
@@ -125,7 +135,7 @@ class Device(object):
             parent_device.add_device(self)
 
         # Check that the name doesn't already exist in the python namespace
-        if name in locals() or name in globals() or name in _builtins_dict:
+        if name in _builtins_dict or name in _labscript_names():
             raise LabscriptError(
                 f"{name} already exists in the Python namespace. "
                 f"Please choose another name for this {self.__class__.__name__}."
@@ -351,13 +361,22 @@ class Device(object):
         Raises:
             LabscriptError: If `device` is not an allowed child of this device.
         """
-        if any([isinstance(device, DeviceClass) for DeviceClass in self.allowed_children]):
-            self.child_devices.append(device)
-        else:
+        if not any([isinstance(device, DeviceClass) for DeviceClass in self.allowed_children]):
             raise LabscriptError(
                 f"Devices of type {device.description} cannot be attached to devices "
                 f"of type {self.description}."
             )
+        # Outputs must not share a connection: each would program the same channel.
+        from .outputs import Output
+        if isinstance(device, Output):
+            for other in self.child_devices:
+                if isinstance(other, Output) and other.connection == device.connection:
+                    raise LabscriptError(
+                        f"{device.description} {device.name} and {other.description} "
+                        f"{other.name} are both connected to {device.connection!r} of "
+                        f"{self.name}. Each connection may be used by one output."
+                    )
+        self.child_devices.append(device)
     
     @property    
     def pseudoclock_device(self):
@@ -393,7 +412,7 @@ class Device(object):
                 convert_back_to = set
             else:
                 convert_back_to = float
-            times = np.array(times)
+            times = np.array(list(times) if isinstance(times, set) else times)
         # quantise the times to the pseudoclock clock resolution
         times = (times/self.pseudoclock_device.clock_resolution).round()*self.pseudoclock_device.clock_resolution
         

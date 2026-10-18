@@ -19,6 +19,7 @@ import os
 import sys
 import subprocess
 import keyword
+import tokenize
 import threading
 from functools import lru_cache
 import numpy as np
@@ -305,7 +306,7 @@ def _have_vcs(vcs):
     try:
         subprocess.check_output([vcs, '--version'])
         return True
-    except FileNotFoundError:
+    except (OSError, subprocess.CalledProcessError):
         msg = f"""Warning: Cannot run {vcs} commands, {vcs} info for labscriptlib files
         will not be saved. You can disable this warning by setting
         [labscript]/save_{vcs}_info = False in labconfig."""
@@ -390,7 +391,8 @@ def save_labscripts(hdf5_file):
         hdf5_file (:obj:`h5py:h5py.File`): Handle to file to save to.
     """
     if compiler.labscript_file is not None:
-        script_text = open(compiler.labscript_file).read()
+        with tokenize.open(compiler.labscript_file) as f:
+            script_text = f.read()
     else:
         script_text = ''
     script = hdf5_file.create_dataset('script',data=script_text)
@@ -417,7 +419,8 @@ def save_labscripts(hdf5_file):
                     # __init__.py file. Doesn't seem to want to double count files if
                     # you just import the contents of a file within a module
                     continue
-                hdf5_file.create_dataset(save_path, data=open(path).read())
+                with tokenize.open(path) as f:
+                    hdf5_file.create_dataset(save_path, data=f.read())
                 with _vcs_cache_rlock:
                     if not path in _vcs_cache:
                         # Add file to watch list and create its entry in the cache.
@@ -573,6 +576,8 @@ def wait(label, t, timeout=5):
     """
     if not str(label):
         raise LabscriptError('Wait must have a name')
+    if compiler.master_pseudoclock is None:
+        raise LabscriptError('wait() requires a pseudoclock, and this experiment has none')
     max_delay = trigger_all_pseudoclocks(t)
     if t in compiler.wait_table:
         raise LabscriptError('There is already a wait at t=%s'%str(t))
@@ -636,7 +641,7 @@ def start():
     
         # ensure we don't tick faster than attached devices to the master pseudoclock can handle
         clockline_limits = [clockline.clock_limit for pseudoclock in master_pseudoclock.child_devices for clockline in pseudoclock.child_devices]
-        min_clock_limit = min(min_clock_limit, min(clockline_limits))
+        min_clock_limit = min([min_clock_limit, *clockline_limits])
     
         # check the minimum trigger duration for the waitmonitor
         if compiler.wait_monitor is not None:
@@ -714,7 +719,7 @@ def load_globals(hdf5_filename):
     params = labscript_utils.shot_utils.get_shot_globals(hdf5_filename)
     with h5py.File(hdf5_filename,'r') as hdf5_file:
         for name in params.keys():
-            if name in globals() or name in locals() or name in _builtins_dict:
+            if name in globals() or name in _builtins_dict:
                 raise LabscriptError('Error whilst parsing globals from %s. \'%s\''%(hdf5_filename,name) +
                                      ' is already a name used by Python, labscript, or Pylab.'+
                                      ' Please choose a different variable name to avoid a conflict.')
