@@ -204,14 +204,14 @@ def bitfield(arrays,dtype):
     Returns:
         :obj:`numpy:numpy.ndarray`: Numpy array with data type `dtype`.
     """
-    n = {np.uint8: 8, np.uint16: 16, np.uint32: 32}
+    dtype = np.dtype(dtype)
     if np.array_equal(arrays[0], 0):
         y = np.zeros(
-            max([len(arr) if np.iterable(arr) else 1 for arr in arrays]), dtype=np.dtype
+            max([len(arr) if np.iterable(arr) else 1 for arr in arrays]), dtype=dtype
         )
     else:
         y = np.array(arrays[0], dtype=dtype)
-    for i in range(1, n[dtype]):
+    for i in range(1, 8 * dtype.itemsize):
         if np.iterable(arrays[i]):
             y |= arrays[i] << i
     return y
