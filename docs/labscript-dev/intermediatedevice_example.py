@@ -1,3 +1,4 @@
+import numpy as np
 from labscript import *
 
 class NIBoard(IntermediateDevice):
@@ -7,7 +8,7 @@ class NIBoard(IntermediateDevice):
     # Some device specific parameters:
     n_analogs = 4
     n_digitals = 32
-    digital_dtype = uint32
+    digital_dtype = np.uint32
     
     # The maximum rate that the outputs can update:
     clock_limit = 500e3
@@ -71,7 +72,7 @@ class NIBoard(IntermediateDevice):
                 
         # Now we collect up all the output.raw_output arrays from the
         # analog outputs, and load them into a numpy recarray:
-        analog_out_table = empty((len(self.parent_device.times),len(analogs)), dtype=float32)
+        analog_out_table = np.empty((len(self.parent_device.times),len(analogs)), dtype=np.float32)
         analog_connections = analogs.keys()
         analog_connections.sort()
         analog_out_attrs = []
@@ -108,7 +109,7 @@ class NIBoard(IntermediateDevice):
         # to all come out empty.
         acquisitions_table_dtypes = [('connection','S256'), ('label','S256'), ('start',float),
                                      ('stop',float), ('wait label','S256'),('scale factor',float), ('units','S256')]
-        acquisition_table= empty(len(acquisitions), dtype=acquisitions_table_dtypes)
+        acquisition_table= np.empty(len(acquisitions), dtype=acquisitions_table_dtypes)
         # OK, now we're putting them all into the numpy array:
         for i, acq in enumerate(acquisitions):
             acquisition_table[i] = acq
