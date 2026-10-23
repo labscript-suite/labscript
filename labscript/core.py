@@ -876,6 +876,7 @@ class PseudoclockDevice(TriggerableDevice):
         Args:
             outputs (list): List of outputs to check.
         """
+        TriggerableDevice.do_checks(self)
         for output in outputs:
             output.do_checks(self.trigger_times)
 

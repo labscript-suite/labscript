@@ -30,12 +30,11 @@ from labscript_utils.filewatcher import FileWatcher
 
 # This imports the default Qt library that other labscript suite code will
 # import as well, since it all uses qtutils. By having a Qt library already
-# imported, we ensure matplotlib (imported by pylab) will notice this and use
-# the same Qt library and API version, and therefore not conflict with any
-# other code is using:
+# imported, we ensure matplotlib, if imported by an experiment script, will
+# notice this and use the same Qt library and API version, and therefore not
+# conflict with any other code is using:
 import qtutils
 
-from pylab import *
 
 from labscript_utils import dedent
 from labscript_utils.properties import set_attributes
@@ -206,7 +205,7 @@ def save_time_markers(hdf5_file):
     """
     time_markers = compiler.time_markers
     dtypes = [('label','S256'), ('time', float), ('color', '(1,3)int')]
-    data_array = zeros(len(time_markers), dtype=dtypes)
+    data_array = np.zeros(len(time_markers), dtype=dtypes)
     for i, t in enumerate(time_markers):
         data_array[i] = time_markers[t]["label"], t, time_markers[t]["color"]
     time_markers_dataset = hdf5_file.create_dataset('time_markers', data = data_array)
@@ -266,7 +265,7 @@ def generate_connection_table(hdf5_file):
         ('BLACS_connection', vlenstring),
         ('properties', vlenstring),
     ]
-    connection_table_array = empty(len(connection_table), dtype=connection_table_dtypes)
+    connection_table_array = np.empty(len(connection_table), dtype=connection_table_dtypes)
     for i, row in enumerate(connection_table):
         connection_table_array[i] = row
     dataset = hdf5_file.create_dataset('connection table', compression=compiler.compression, data=connection_table_array, maxshape=(None,))
@@ -469,7 +468,7 @@ def generate_wait_table(hdf5_file):
         hdf5_file (:obj:`h5py:h5py.File`): Handle to file to save to.
     """
     dtypes = [('label','S256'), ('time', float), ('timeout', float)]
-    data_array = zeros(len(compiler.wait_table), dtype=dtypes)
+    data_array = np.zeros(len(compiler.wait_table), dtype=dtypes)
     for i, t in enumerate(sorted(compiler.wait_table)):
         label, timeout = compiler.wait_table[t]
         data_array[i] = label, t, timeout
