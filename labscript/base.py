@@ -15,6 +15,7 @@
 
 import builtins
 import keyword
+from functools import cache
 
 import numpy as np
 
@@ -34,14 +35,15 @@ from .utils import (
 _builtins_dict = builtins.__dict__
 
 
+@cache
 def _labscript_names():
     """The names that `from labscript import *` defines in an experiment script. A
     device name must not be one of them, since the device is made available by name."""
     import labscript
     try:
-        return set(labscript.__all__)
+        return frozenset(labscript.__all__)
     except AttributeError:
-        return {name for name in vars(labscript) if not name.startswith('_')}
+        return frozenset(name for name in vars(labscript) if not name.startswith('_'))
 
 
 class Device(object):
@@ -381,18 +383,26 @@ class Device(object):
     @property    
     def pseudoclock_device(self):
         """:obj:`PseudoclockDevice`: Stores the clocking pseudoclock, which may be itself."""
+        try:
+            return self._pseudoclock_device
+        except AttributeError:
+            pass
         if is_pseudoclock_device(self):
             return self 
         parent = self.parent_device
         try:
             while parent is not None and not is_pseudoclock_device(parent):
                 parent = parent.parent_device
-            return parent
         except Exception as e:
             raise LabscriptError(
                 f"Couldn't find parent pseudoclock device of {self.name}, what's going "
                 f"on? Original error was {e}."
             )
+        if parent is not None:
+            # A device's ancestors do not change once they are connected to a
+            # pseudoclock device:
+            self._pseudoclock_device = parent
+        return parent
     
     def quantise_to_pseudoclock(self, times):
         """Quantises `times` to the resolution of the controlling pseudoclock.

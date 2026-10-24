@@ -291,6 +291,10 @@ def _file_watcher_callback(name, info, event):
 
 _file_watcher = FileWatcher(_file_watcher_callback)
 
+# Absolute paths of imported modules' files, by the module's __file__ attribute if that
+# is an absolute path:
+_module_file_abspaths = {}
+
 @lru_cache(None)
 def _have_vcs(vcs):
     try:
@@ -393,9 +397,14 @@ def save_labscripts(hdf5_file):
     except ImportError:
         return
     prefix = os.path.dirname(labscriptlib.__file__)
-    for module in sys.modules.values():
-        if getattr(module, '__file__', None) is not None:
-            path = os.path.abspath(module.__file__)
+    for module in list(sys.modules.values()):
+        module_file = getattr(module, '__file__', None)
+        if module_file is not None:
+            path = _module_file_abspaths.get(module_file)
+            if path is None:
+                path = os.path.abspath(module_file)
+                if os.path.isabs(module_file):
+                    _module_file_abspaths[module_file] = path
             if path.startswith(prefix) and (path.endswith('.pyc') or path.endswith('.py')):
                 if 'signature_bootstrap.py' in path or 'shibokensupport' in path:
                     # ignore PySide6 shenaniganry
