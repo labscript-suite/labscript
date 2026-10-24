@@ -243,18 +243,19 @@ class Pseudoclock(Device):
         all_change_times.sort()  
 
         # Check that the pseudoclock can handle updates this fast
-        for i, t in enumerate(all_change_times[:-1]):
-            dt = round(all_change_times[i+1] - t, 10)
-            if dt < 1.0/self.clock_limit:
-                raise LabscriptError(
-                    "Commands have been issued to devices attached to "
-                    f"{self.name} at t={t} and t={all_change_times[i+1]}. "
-                    "This Pseudoclock cannot support update delays shorter "
-                    f"than {1.0/self.clock_limit} seconds."
-                    + self._outputs_with_instructions_at(
-                        all_outputs, t, all_change_times[i+1]
-                    )
+        all_change_times_numpy = np.array(all_change_times)
+        dts = np.round(np.diff(all_change_times_numpy), 10)
+        for i in np.flatnonzero(dts < 1.0/self.clock_limit)[:1]:
+            t = all_change_times[i]
+            raise LabscriptError(
+                "Commands have been issued to devices attached to "
+                f"{self.name} at t={t} and t={all_change_times[i+1]}. "
+                "This Pseudoclock cannot support update delays shorter "
+                f"than {1.0/self.clock_limit} seconds."
+                + self._outputs_with_instructions_at(
+                    all_outputs, t, all_change_times[i+1]
                 )
+            )
 
         ########################################################################
         # For each clockline, make sure we have a change time for triggers,    #
@@ -306,12 +307,27 @@ class Pseudoclock(Device):
                 # detailed error info.
                 change_time_list.sort()
 
-            # index to keep track of in all_change_times
-            j = 0
-            # Check that no two instructions are too close together:
-            for i, t in enumerate(change_time_list[:-1]):
-                dt = round(change_time_list[i+1] - t, 10)
-                if dt < 1.0/clock_line.clock_limit:
+            # Check that no two instructions are too close together, and that the
+            # next change time on any clockline is not so close that this clock tick
+            # would be shorter than the minimum clock high time:
+            change_times_numpy = np.array(change_time_list)
+            dts = np.round(np.diff(change_times_numpy), 10)
+            too_fast = dts < 1.0/clock_line.clock_limit
+            # Index in all_change_times of the change time after each change time on
+            # this clockline except the last:
+            starts = change_times_numpy[:-1]
+            next_indices = np.minimum(
+                np.searchsorted(all_change_times_numpy, starts),
+                len(all_change_times) - 1,
+            ) + 1
+            has_next = next_indices < len(all_change_times)
+            too_short = np.zeros(len(starts), dtype=bool)
+            too_short[has_next] = np.round(
+                all_change_times_numpy[next_indices[has_next]] - starts[has_next], 10
+            ) < (2 * clock_line.minimum_clock_high_time)
+            for i in np.flatnonzero(too_fast | too_short | ~has_next)[:1]:
+                t = change_time_list[i]
+                if too_fast[i]:
                     raise LabscriptError(
                         "Commands have been issued to devices attached to "
                         f"clockline {clock_line.name} at t={t} and "
@@ -323,31 +339,21 @@ class Pseudoclock(Device):
                             all_outputs, t, change_time_list[i+1]
                         )
                     )
-
-                all_change_times_len = len(all_change_times)
-                # increment j until we reach the current time
-                while all_change_times[j] < t and j < all_change_times_len-1:
-                    j += 1
-                # j should now index all_change_times at "t"
-                # Check that the next all change_time is not too close (and thus
-                # would force this clock tick to be faster than the minimum
-                # clock high time)
-                dt = round(all_change_times[j+1] - t, 10)
-                if dt < (2 * clock_line.minimum_clock_high_time):
-                    raise LabscriptError(
-                        "Commands have been issued to devices attached to "
-                        f"{self.name} at t={t} and t={all_change_times[j+1]}. "
-                        "One or more connected devices on ClockLine "
-                        f"{clock_line.name} cannot support clock ticks with a "
-                        "digital high time shorter than "
-                        f"{clock_line.minimum_clock_high_time} which is more "
-                        "than half the available time between the event at "
-                        f"t={t} on ClockLine {clock_line.name} and the next "
-                        "event on another ClockLine."
-                        + self._outputs_with_instructions_at(
-                            all_outputs, t, all_change_times[j+1]
-                        )
+                next_change_time = all_change_times[next_indices[i]]
+                raise LabscriptError(
+                    "Commands have been issued to devices attached to "
+                    f"{self.name} at t={t} and t={next_change_time}. "
+                    "One or more connected devices on ClockLine "
+                    f"{clock_line.name} cannot support clock ticks with a "
+                    "digital high time shorter than "
+                    f"{clock_line.minimum_clock_high_time} which is more "
+                    "than half the available time between the event at "
+                    f"t={t} on ClockLine {clock_line.name} and the next "
+                    "event on another ClockLine."
+                    + self._outputs_with_instructions_at(
+                        all_outputs, t, next_change_time
                     )
+                )
 
             # because we made the list into a set and back to a list, it is now
             # a different object so modifying it won't update the list in the
@@ -367,13 +373,26 @@ class Pseudoclock(Device):
         all_times = {}
         clock = []
         clock_line_current_indices = {}
+        # The ramp instructions on each clockline, by index in the clockline's change
+        # times:
+        ramps_by_clockline = {}
         for clock_line, outputs in outputs_by_clockline.items():
             clock_line_current_indices[clock_line] = 0
             all_times[clock_line] = []
+            ramps = {}
+            for output in outputs:
+                if not hasattr(output, "timeseries"):
+                    continue
+                for index, instruction in enumerate(output.timeseries):
+                    if isinstance(instruction, dict):
+                        ramps.setdefault(index, []).append(instruction)
+            ramps_by_clockline[clock_line] = ramps
+
+        wait_times = set(self.parent_device.trigger_times[1:])
 
         # iterate over all change times
         for i, time in enumerate(all_change_times):
-            if time in self.parent_device.trigger_times[1:]:
+            if time in wait_times:
                 # A wait instruction:
                 clock.append("WAIT")
 
@@ -408,28 +427,24 @@ class Pseudoclock(Device):
             maxrate = 0
             local_clock_limit = self.clock_limit # the Pseudoclock clock limit
             for clock_line in enabled_clocks:
-                for output in outputs_by_clockline[clock_line]:
-                    if not hasattr(output, "timeseries"):
-                        continue
-                    # Check if output is sweeping and has highest clock rate
-                    # so far. If so, store its clock rate to max_rate:
-                    output_instruction = output.timeseries[
-                        clock_line_current_indices[clock_line]
-                    ]
-                    if isinstance(output_instruction, dict):
-                        if clock_line not in enabled_looping_clocks:
-                            enabled_looping_clocks.append(clock_line)
+                # Check if an output is sweeping and has the highest clock rate so
+                # far. If so, store its clock rate to max_rate:
+                for output_instruction in ramps_by_clockline[clock_line].get(
+                    clock_line_current_indices[clock_line], ()
+                ):
+                    if clock_line not in enabled_looping_clocks:
+                        enabled_looping_clocks.append(clock_line)
 
-                        if output_instruction["clock rate"] > maxrate:
-                            # It does have the highest clock rate? Then store that rate
-                            # to max_rate:
-                            maxrate = output_instruction["clock rate"]
+                    if output_instruction["clock rate"] > maxrate:
+                        # It does have the highest clock rate? Then store that rate
+                        # to max_rate:
+                        maxrate = output_instruction["clock rate"]
 
-                        # only check this for ramping clock_lines
-                        # non-ramping clock-lines have already had the clock_limit
-                        # checked within collect_change_times()
-                        if local_clock_limit > clock_line.clock_limit:
-                            local_clock_limit = clock_line.clock_limit
+                    # only check this for ramping clock_lines
+                    # non-ramping clock-lines have already had the clock_limit
+                    # checked within collect_change_times()
+                    if local_clock_limit > clock_line.clock_limit:
+                        local_clock_limit = clock_line.clock_limit
 
             if maxrate:
                 # round to the nearest clock rate that the pseudoclock can actually support:
