@@ -14,6 +14,7 @@
 """Classes for devices channels that are outputs"""
 
 import sys
+from bisect import bisect_left
 
 import numpy as np
 
@@ -360,7 +361,11 @@ class Output(Device):
                     instruction["units"],
                 )
         # Checks for trigger times:
+        trigger_delay = self.trigger_delay
+        min_interval = 1/self.clock_limit
         for trigger_time in trigger_times:
+            trigger_start = round(trigger_time, 10)
+            trigger_end = round(trigger_time + trigger_delay, 10)
             for t, inst in self.instructions.items():
                 # Check no ramps are happening at the trigger time:
                 if (
@@ -375,24 +380,20 @@ class Output(Device):
                         f"t={trigger_time}, and so cannot be performed."
                     )
                 # Check that nothing is happening during the delay time after the trigger:
-                if (
-                    round(trigger_time, 10)
-                    < round(t, 10)
-                    < round(trigger_time + self.trigger_delay, 10)
-                ):
+                if trigger_start < round(t, 10) < trigger_end:
                     raise LabscriptError(
                         f"{self.description} {self.name} has an instruction at t={t}. "
                         f"This is too soon after a trigger at t={trigger_time}, "
                         "the earliest output possible after this trigger is at "
-                        f"t={trigger_time + self.trigger_delay}"
+                        f"t={trigger_time + trigger_delay}"
                     )
                 # Check that there are no instructions too soon before the trigger:
-                if t < trigger_time and round(trigger_time - t, 10) < 1/self.clock_limit:
+                if t < trigger_time and round(trigger_time - t, 10) < min_interval:
                     raise LabscriptError(
                         f"{self.description} {self.name} has an instruction at t={t}. "
                         f"This is too soon before a trigger at t={trigger_time}, "
                         "the latest output possible before this trigger is at "
-                        f"t={trigger_time - 1/self.clock_limit}"
+                        f"t={trigger_time - min_interval}"
                     )
 
     def offset_instructions_from_trigger(self, trigger_times):
@@ -401,14 +402,26 @@ class Output(Device):
         Args:
             trigger_times (iterable): Times of all trigger events.
         """
+        # The offset at a time t depends on the number of triggers before t:
+        sorted_trigger_times = sorted(trigger_times)
+        trigger_delay = self.trigger_delay
+        offsets = [
+            round(trigger_delay * n_triggers_prior + trigger_times[0], 10)
+            for n_triggers_prior in range(len(trigger_times) + 1)
+        ] if trigger_times else []
+
+        def offset_at(t):
+            return offsets[bisect_left(sorted_trigger_times, t)]
+
+        times = list(self.instructions)
+        new_times = self.quantise_to_pseudoclock(
+            np.array([round(t - offset_at(t), 10) for t in times])
+        ).tolist()
         offset_instructions = {}
-        for t, instruction in self.instructions.items():
-            # How much of a delay is there for this instruction? That depends how many triggers there are prior to it:
-            n_triggers_prior = len([time for time in trigger_times if time < t])
-            # The cumulative offset at this point in time:
-            offset = self.trigger_delay * n_triggers_prior + trigger_times[0]
-            offset = round(offset, 10)
+        for t, new_time in zip(times, new_times):
+            instruction = self.instructions[t]
             if isinstance(instruction, dict):
+                offset = offset_at(t)
                 offset_instruction = instruction.copy()
                 offset_instruction["end time"] = self.quantise_to_pseudoclock(
                     round(instruction["end time"] - offset, 10)
@@ -418,8 +431,6 @@ class Output(Device):
                 )
             else:
                 offset_instruction = instruction
-
-            new_time = self.quantise_to_pseudoclock(round(t - offset, 10))
             offset_instructions[new_time] = offset_instruction
         self.instructions = offset_instructions
 
@@ -427,10 +438,7 @@ class Output(Device):
         # Pseudoclock/ClockLine so that the times in list are consistent with the ones
         # in self.instructions
         for i, times in enumerate(self.ramp_limits):
-            n_triggers_prior = len([time for time in trigger_times if time < times[0]])
-            # The cumulative offset at this point in time:
-            offset = self.trigger_delay * n_triggers_prior + trigger_times[0]
-            offset = round(offset, 10)
+            offset = offset_at(times[0])
 
             # offset start and end time of ramps
             # NOTE: This assumes ramps cannot proceed across a trigger command
@@ -490,13 +498,12 @@ class Output(Device):
         instruction it has. This might be a single value, or it might
         be a reference to a function for a ramp etc. This list of states
         is stored in self.timeseries rather than being returned."""
-        self.timeseries = []
-        i = 0
-        time_len = len(self.times)
-        for change_time in change_times:
-            while i < time_len and change_time >= self.times[i]:
-                i += 1
-            self.timeseries.append(self.instructions[self.times[i-1]])     
+        # For each change time, the index of the last instruction at or before it:
+        indices = np.maximum.accumulate(
+            np.searchsorted(self.times, change_times, side='right')
+        ) - 1
+        instructions = [self.instructions[t] for t in self.times]
+        self.timeseries = [instructions[i] for i in indices.tolist()]
 
     def expand_timeseries(self,all_times,flat_all_times_len):
         """This function evaluates the ramp functions in self.timeseries
