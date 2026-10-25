@@ -362,7 +362,6 @@ class Output(Device):
                 )
         # Checks for trigger times:
         trigger_delay = self.trigger_delay
-        min_interval = 1/self.clock_limit
         for trigger_time in trigger_times:
             trigger_start = round_time(trigger_time)
             trigger_end = round_time(trigger_time + trigger_delay)
@@ -386,14 +385,6 @@ class Output(Device):
                         f"This is too soon after a trigger at t={trigger_time}, "
                         "the earliest output possible after this trigger is at "
                         f"t={trigger_time + trigger_delay}"
-                    )
-                # Check that there are no instructions too soon before the trigger:
-                if t < trigger_time and round_time(trigger_time - t) < min_interval:
-                    raise LabscriptError(
-                        f"{self.description} {self.name} has an instruction at t={t}. "
-                        f"This is too soon before a trigger at t={trigger_time}, "
-                        "the latest output possible before this trigger is at "
-                        f"t={trigger_time - min_interval}"
                     )
 
     def offset_instructions_from_trigger(self, trigger_times):
