@@ -14,7 +14,7 @@
 """Utility functions"""
 
 import contextlib
-from inspect import getcallargs
+from inspect import signature
 from functools import wraps
 
 import numpy as np
@@ -38,6 +38,22 @@ def print_time(t, description):
         description (str): Descriptive label to print with it
     """
     print(f"t={t:.9f}s: {description}")
+
+
+def round_time(t):
+    """Return round(t, 10), the time t rounded to 0.1 ns.
+
+    For a NumPy float64, round() uses NumPy's rounding, which multiplies by 1e10, rounds
+    to the nearest integer and divides by 1e10. This function does the same arithmetic
+    with Python floats, which is about ten times faster.
+    """
+    if type(t) is np.float64:
+        try:
+            return np.float64(round(float(t) * 1e10) / 1e10)
+        except (OverflowError, ValueError):
+            # inf or nan
+            pass
+    return round(t, 10)
 
 
 def is_remote_connection(connection):
@@ -108,26 +124,35 @@ def set_passed_properties(property_names=None):
     property_names = property_names or {}
 
     def decorator(func):
+        if not property_names:
+            return func
+
+        func_signature = signature(func, follow_wrapped=False)
+        all_property_names = list(
+            dict.fromkeys(name for names in property_names.values() for name in names)
+        )
+
         @wraps(func)
         def new_function(inst, *args, **kwargs):
 
             return_value = func(inst, *args, **kwargs)
 
-            # Get a dict of the call arguments/keyword arguments by name:
-            call_values = getcallargs(func, inst, *args, **kwargs)
-
-            all_property_names = set()
-            for names in property_names.values():
-                all_property_names.update(names)
-
+            call_values = None
             property_values = {}
             for name in all_property_names:
                 # If there is an instance attribute with that name, use that, otherwise
                 # use the call value:
-                if hasattr(inst, name):
+                try:
                     property_values[name] = getattr(inst, name)
-                else:
-                    property_values[name] = call_values[name]
+                    continue
+                except AttributeError:
+                    pass
+                if call_values is None:
+                    # Get a dict of the call arguments/keyword arguments by name:
+                    bound_arguments = func_signature.bind(inst, *args, **kwargs)
+                    bound_arguments.apply_defaults()
+                    call_values = bound_arguments.arguments
+                property_values[name] = call_values[name]
 
             # Save them:
             inst.set_properties(property_values, property_names)
