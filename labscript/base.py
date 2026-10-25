@@ -37,13 +37,11 @@ _builtins_dict = builtins.__dict__
 
 @cache
 def _labscript_names():
-    """The names that `from labscript import *` defines in an experiment script. A
-    device name must not be one of them, since the device is made available by name."""
+    """The names that `from labscript import *` defines. A device cannot have one of
+    these names, because the device is placed in builtins, and a module-level name
+    shadows a builtin."""
     import labscript
-    try:
-        return frozenset(labscript.__all__)
-    except AttributeError:
-        return frozenset(name for name in vars(labscript) if not name.startswith('_'))
+    return frozenset(name for name in vars(labscript) if not name.startswith('_'))
 
 
 class Device(object):
@@ -137,9 +135,14 @@ class Device(object):
             parent_device.add_device(self)
 
         # Check that the name doesn't already exist in the python namespace
-        if name in _builtins_dict or name in _labscript_names():
+        if name in _builtins_dict:
             raise LabscriptError(
                 f"{name} already exists in the Python namespace. "
+                f"Please choose another name for this {self.__class__.__name__}."
+            )
+        if name in _labscript_names():
+            raise LabscriptError(
+                f"{name} is defined by `from labscript import *`. "
                 f"Please choose another name for this {self.__class__.__name__}."
             )
         if keyword.iskeyword(name):
