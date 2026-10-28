@@ -717,7 +717,7 @@ def load_globals(hdf5_filename):
     for name, value in params.items():
         if name in globals() or name in _builtins_dict:
             raise LabscriptError('Error whilst parsing globals from %s. \'%s\''%(hdf5_filename,name) +
-                                 ' is already a name used by Python, labscript, or Pylab.'+
+                                 ' is already a name used by Python or labscript.'+
                                  ' Please choose a different variable name to avoid a conflict.')
         if name in keyword.kwlist:
             raise LabscriptError('Error whilst parsing globals from %s. \'%s\''%(hdf5_filename,name) +
