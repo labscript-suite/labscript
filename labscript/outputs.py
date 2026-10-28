@@ -1868,11 +1868,12 @@ class DDSQuantity(Device):
         # they *have* specified a gate device, but the parent device
         # has its own gating (such as the PulseBlaster), it should
         # check this and throw an error in its add_device method. See
-        # labscript_devices.PulseBlaster.PulseBlaster.add_device for an
-        # example of this.
+        # labscript_devices.PulseBlaster.labscript_devices.PulseBlaster.add_device
+        # for an example of this.
         # In some subclasses we need to hold off on calling the parent
         # device's add_device function until further code has run,
-        # e.g., see PulseBlasterDDS in PulseBlaster.py
+        # e.g., see PulseBlasterDDS in
+        # labscript_devices/PulseBlaster/labscript_devices.py
         if call_parents_add_device:
             self.parent_device.add_device(self)
 

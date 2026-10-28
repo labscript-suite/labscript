@@ -5,7 +5,7 @@ The labscript API is used to define the logic of an experiment that you wish to 
 To give you an idea of what a sample experiment looks like, the simplest experiment script (that does something) using the labscript API is below::
 
     from labscript import *
-    from labscript_devices.PulseBlaster import PulseBlaster
+    from labscript_devices.PulseBlaster.labscript_devices import PulseBlaster
     
     # Connection Table
     PulseBlaster(name='pulseblaster_0', board_number=0)
