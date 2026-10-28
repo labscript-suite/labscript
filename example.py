@@ -26,11 +26,11 @@ from labscript import (
     stop,
     wait,
 )
-from labscript_devices.PulseBlaster import PulseBlaster
+from labscript_devices.PulseBlaster.labscript_devices import PulseBlaster
 from labscript_devices.NI_DAQmx.labscript_devices import NI_PCIe_6363
-from labscript_devices.NovaTechDDS9M import NovaTechDDS9M
+from labscript_devices.NovaTechDDS9M.labscript_devices import NovaTechDDS9M
 from labscript_devices.Camera import Camera
-from labscript_devices.PineBlaster import PineBlaster
+from labscript_devices.PineBlaster.labscript_devices import PineBlaster
 from labscript_devices.NI_DAQmx.labscript_devices import NI_PCI_6733
 from labscript_utils.unitconversions import example1, example2, example3
 
