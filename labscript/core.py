@@ -66,6 +66,12 @@ class IntermediateDevice(Device):
 
   
 class ClockLine(Device):
+    """An output of a pseudoclock that clocks one or more
+    :obj:`IntermediateDevice` instances.
+
+    The clock limit of the clock line is that of its slowest child device, or that
+    of the pseudoclock if no child device has a clock limit.
+    """
     description = "Generic ClockLine"
     allowed_children = [IntermediateDevice]
     _clock_limit = None
@@ -73,7 +79,19 @@ class ClockLine(Device):
 
     @set_passed_properties(property_names = {})
     def __init__(self, name, pseudoclock, connection, ramping_allowed=True, **kwargs):
-        
+        """Creates a ClockLine.
+
+        Args:
+            name (str): python variable name to assign the device instance to.
+            pseudoclock (:obj:`Pseudoclock`): Pseudoclock that produces this clock
+                line.
+            connection (str): Output of the pseudoclock device on which the clock
+                line is produced.
+            ramping_allowed (bool, optional): If `False`, outputs of devices on
+                this clock line cannot have ramps, and adding a ramp raises
+                `LabscriptError`.
+            **kwargs: Passed to :meth:`~labscript.base.Device.__init__`.
+        """
         # TODO: Verify that connection is valid connection of Pseudoclock.parent_device
         # (the PseudoclockDevice)
         Device.__init__(self, name, pseudoclock, connection, **kwargs)
@@ -666,10 +684,17 @@ class TriggerableDevice(Device):
         """Instantiate a Triggerable Device.
 
         Args:
-            name (str):
-            parent_device ():
-            connection (str):
-            parentless (bool, optional):
+            name (str): python variable name to assign the device instance to.
+            parent_device (:obj:`~labscript.base.Device`): Device with the digital
+                output that triggers this device, or an existing :obj:`Trigger
+                <labscript.outputs.Trigger>`. For a device that is not a
+                :obj:`Trigger <labscript.outputs.Trigger>`, a :obj:`Trigger
+                <labscript.outputs.Trigger>` named `<name>_trigger` is created on
+                `connection` and becomes the parent of this device.
+            connection (str): Digital output of `parent_device` that triggers this
+                device.
+            parentless (bool, optional): If `True`, `parent_device` and
+                `connection` may be `None`, and the device has no trigger.
             **kwargs: Passed to :meth:`Device.__init__`.
 
         Raises:
@@ -781,12 +806,17 @@ class PseudoclockDevice(TriggerableDevice):
     description = "Generic Pseudoclock Device"
     allowed_children = [Pseudoclock]
     trigger_edge_type = "rising"
-    # How long after a trigger the next instruction is actually output:
     trigger_delay = 0
-    # How long a trigger line must remain high/low in order to be detected:
-    trigger_minimum_duration = 0 
-    # How long after the start of a wait instruction the device is actually capable of resuming:
+    """float: Time, in seconds, from a trigger to the output of the next
+    instruction."""
+    trigger_minimum_duration = 0
+    """float: Minimum duration, in seconds, of a trigger pulse that the device
+    detects."""
     wait_delay = 0
+    """float: Time, in seconds, from the start of a wait to the earliest time at
+    which the device can be triggered to resume. The time returned by
+    :func:`wait() <labscript.labscript.wait>` includes the largest `wait_delay` of
+    the secondary pseudoclock devices."""
     
     @set_passed_properties(property_names = {})
     def __init__(self, name, trigger_device=None, trigger_connection=None, **kwargs):
@@ -865,7 +895,9 @@ class PseudoclockDevice(TriggerableDevice):
         Args:
             t (float): Time, in seconds, to trigger this device.
             duration (float): Duration, in seconds, of the trigger pulse.
-            wait_delay (float, optional): Time, in seconds, to delay the trigger.
+            wait_delay (float, optional): Time, in seconds, that is added to `t`
+                in the trigger time that is recorded for a secondary pseudoclock
+                device. It does not delay the trigger pulse.
         """
         if isinstance(t, str) and t == "initial":
             t = self.initial_trigger_time

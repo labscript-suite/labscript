@@ -52,7 +52,10 @@ class Output(Device):
             parent_device (:obj:`IntermediateDevice`): Parent device the output
                 is connected to.
             connection (str): Channel of parent device output is connected to.
-            limits (tuple, optional): `(min,max)` allowed for the output.
+            limits (tuple, optional): `(min,max)` allowed for the output, in base
+                units. When it compiles the shot, labscript raises `LabscriptError`
+                for an instruction with a value outside the limits. The limits are
+                not saved in the shot file, and BLACS does not use them.
             unit_conversion_class (:obj:`labscript_utils:labscript_utils.unitconversions`, optional):
                 Unit concersion class to use for the output.
             unit_conversion_parameters (dict, optional): Dictonary or kwargs to
@@ -754,16 +757,18 @@ class AnalogQuantity(Output):
     def sine4_reverse_ramp(
         self, t, duration, initial, final, samplerate, units=None, truncation=1.
     ):
-        """Command the output to perform a decreasing ramp defined by one half period of a quartic sine wave.
+        """Command the output to perform the time reverse of :meth:`~labscript.outputs.AnalogQuantity.sine4_ramp`: a
+        ramp from `final` at time `t` to `initial` at time `t+duration`.
 
         Defined by
-        `f(t) = (final-initial)*(sin(pi*t/(2*duration)))^4 + initial`
+        `f(t) = (final-initial)*(sin(pi/2+pi*t/(2*duration)))^4 + initial`
 
         Args:
             t (float): Time, in seconds, to begin the ramp.
             duration (float): Length, in seconds, of the ramp.
-            initial (float): Initial output value, at time `t`.
-            final (float): Final output value, at time `t+duration`.
+            initial (float): Output value at the end of the ramp, time
+                `t+duration`.
+            final (float): Output value at the start of the ramp, time `t`.
             samplerate (float): Rate, in Hz, to update the output.
             units: Units the output values are given in, as specified by the
                 unit conversion class.
@@ -1168,13 +1173,17 @@ class AnalogQuantity(Output):
         Args:
             t (float): Time, in seconds, to start the function.
             duration (float): Length in time, in seconds, to perform the function.
-            function (func): Function handle that defines the output waveform.
-                First argument is the relative time from function start, in seconds.
+            function (func): Function that defines the output waveform. It is
+                called as `function(t_rel, duration, *args, **kwargs)`, where
+                `t_rel` is the time, in seconds, from the start of the ramp.
             *args: Arguments passed to `function`.
-            **kwargs: Keyword arguments pass to `function`.
-                Standard kwargs common to other output functions are: `units`, 
-                `samplerate`, and `truncation`. These kwargs are optional, but will
-                not be passed to `function` if present.
+            **kwargs: Keyword arguments passed to `function`, except `samplerate`,
+                `units` and `truncation`, which are used by this method and not
+                passed to `function`. `samplerate` (float), the rate, in Hz, at which
+                to update the output, is required. `units` is optional, and is the
+                units of the output values, as specified by the unit conversion
+                class. `truncation` is optional, and is the fraction of the ramp to
+                perform, from 0 to 1.
 
         Returns:
             float: Duration the function is to be evaluate for. Equivalent to 
@@ -2045,8 +2054,6 @@ class StaticDDS(Device):
                 Unit conversion class for the phase of the output.
             phase_conv_params (dict, optional): Keyword arguments passed to the 
                 unit conversion class for the phase of the output.
-            call_parents_add_device (bool, optional): Have the parent device run
-                its `add_device` method.
             **kwargs: Keyword arguments passed to :func:`Device.__init__`.
         """
         # We tell Device.__init__ to not call
