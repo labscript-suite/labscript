@@ -80,14 +80,22 @@ class Device(object):
             name (str): python variable name to assign this device to.
             parent_device (:obj:`Device`): Parent of this device.
             connection (str): Connection on this device that links to parent.
-            call_parents_add_device (bool, optional): Flag to command device to
-                call its parent device's add_device when adding a device.
-            added_properties (dict, optional):
-            gui :
-            worker :
+            call_parents_add_device (bool, optional): If `True`, call
+                `parent_device.add_device(self)`. A subclass that passes `False`
+                must call it later in its own `__init__`.
+            added_properties (dict, optional): Saved in the shot file as the device
+                property `added_properties`.
+            gui (:obj:`RemoteBLACS <labscript.remote.RemoteBLACS>`, optional): The
+                BLACS that shows the device's tab. BLACS does not support remote
+                GUIs, and raises an error for a device with a `gui` other than the
+                main BLACS.
+            worker (:obj:`RemoteBLACS <labscript.remote.RemoteBLACS>`, optional): The
+                computer on which BLACS runs the device's worker process. If `gui` is
+                given and `worker` is not, `worker` is `gui`.
             start_order (int, optional): Priority when starting, sorted with all devices.
             stop_order (int, optional): Priority when stopping, sorted with all devices.
-            **kwargs: Other options to pass to parent.
+            **kwargs: Must be empty. Any other keyword argument raises
+                `LabscriptError`.
         """
 
         # Verify that no invalid kwargs were passed and the set properties

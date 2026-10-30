@@ -83,14 +83,15 @@ def sine4_ramp(duration, initial, final):
     return lambda t: (final-initial)*(np.sin(np.pi*(t)/(2*duration)))**4 + initial
     
 def sine4_reverse_ramp(duration, initial, final):
-    """Defines a quartic sinusoidally decreasing ramp.
+    """Defines the time reverse of :func:`sine4_ramp`: a ramp from `final` at
+    `t = 0` to `initial` at `t = duration`.
 
     f(t) = (final-initial)*(sin(pi/2+pi*t/(2*duration)))^4 + initial
 
     Args:
         duration (float): Length of time for the ramp to complete.
-        initial (float): Initial value of ramp.
-        final (float): Final value of ramp.
+        initial (float): Value at the end of the ramp, `t = duration`.
+        final (float): Value at the start of the ramp, `t = 0`.
 
     Returns:
         func: Function that takes a single parameter `t`.
@@ -125,7 +126,7 @@ def exp_ramp_t(duration,initial,final,time_constant):
         duration (float): Length of time for the ramp to complete
         initial (float): Initial value of ramp.
         final (float): Final value of ramp.
-        zero (float): Zero offset of ramp.
+        time_constant (float): Time constant of the exponential.
 
     Returns:
         func: Function that takes a single parameter `t`.
@@ -148,6 +149,26 @@ def piecewise_accel(duration,initial,final):
     + (9./2*t**3/duration**3 - 27./2 * t**2/duration**2 + 27./2*t/duration - 7./2) * (t>= 2*duration/3))
 
 def square_wave(duration, level_0, level_1, frequency, phase, duty_cycle):
+    """Defines a square wave.
+
+    The output is `level_0` for the part of each period in which the phase is from
+    0 to `duty_cycle`, and `level_1` for the rest of the period. The phase at time
+    `t` is `(frequency*t + phase) % 1`. A phase that is closer to a transition
+    than half of the phase change in 0.1 ns is rounded to the transition, so that
+    the output changes there.
+
+    Args:
+        duration (float): Not used.
+        level_0 (float): Output value in the first part of each period.
+        level_1 (float): Output value in the second part of each period.
+        frequency (float): Frequency, in Hz.
+        phase (float): Phase at `t = 0`, as a fraction of a period, from 0 to 1.
+        duty_cycle (float): Fraction of each period, from 0 to 1, for which the
+            output is `level_0`.
+
+    Returns:
+        Function that takes a single parameter `t`.
+    """
     def square_wave_fixed_parameters(t):
         # Phase goes from 0 to 1 (NOT 2 pi) over one period.
         edge_phase_0_to_1 = duty_cycle

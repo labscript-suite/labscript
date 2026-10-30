@@ -198,17 +198,14 @@ def fastflatten(inarray, dtype):
 
 
 def max_or_zero(*args, **kwargs):
-    """Returns max of the arguments or zero if sequence is empty.
-    
-    This protects the call to `max()` which would normally throw an error on an empty
-    sequence.
+    """Returns the largest item of a sequence, or zero if the sequence is empty.
 
     Args:
-        *args: Items to compare.
+        *args: One sequence of items to compare.
         **kwargs: Passed to `max()`.
 
     Returns:
-        : Max of *args.
+        The largest item of the sequence, or 0 if it is empty.
     """
     if not args:
         return 0
